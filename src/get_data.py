@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict
 
 # NOTE: Only for Equity for now.
+# TODO: Consider getting credit data here later
 
 
 class Assets(BaseModel):
