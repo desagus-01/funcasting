@@ -13,3 +13,8 @@ dependencies = [
     "pytest>=8.4.2",
     "scipy>=1.16.1",
 ]
+
+[tool.setuptools]
+packages = ["maths"]
+package-dir = {"" = "src"}
+
