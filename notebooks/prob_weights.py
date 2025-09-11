@@ -1,7 +1,11 @@
 import numpy as np
 
 from get_data import get_example_assets
-from maths.non_parametric import exp_decay_probs, time_crisp_window
+from maths.non_parametric import (
+    exp_decay_probs,
+    state_crisp_conditioning,
+    time_crisp_window,
+)
 
 tickers = ["AAPPL", "MSFT", "GOOG"]
 
@@ -13,6 +17,6 @@ exp_dec_probs = exp_decay_probs(increms_df, 50)
 
 time_probs = time_crisp_window(increms_df, len(increms_df))
 
-ex_state_condition = np.zeros(len(increms_df), dtype=np.int16)
+ex_state_conds = np.random.choice([1, 0], size=len(increms_df))
 
-print(time_probs)
+print(state_crisp_conditioning(increms_df, ex_state_conds))

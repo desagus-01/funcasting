@@ -34,7 +34,7 @@ def state_crisp_conditioning(
     vector: Sized, condition_vector: NDArray[np.int16]
 ) -> NDArray[np.float64]:
     """
-    Returns a probability vector based on state condition passed
+    Returns a probability vector based on state condition passed.
     """
 
     if len(vector) != len(condition_vector):
