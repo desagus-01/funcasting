@@ -8,3 +8,9 @@ def test_exp_decay_probs_sum_to_one():
     res = exp_decay_probs(ex, 50)
 
     assert np.isclose(res.sum(), 1.0)
+
+
+def test_exp_decay_ndim():
+    ex = np.random.rand(1, 50)
+    res = exp_decay_probs(ex, 50)
+    assert res.ndim == 1
