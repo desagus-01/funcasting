@@ -2,7 +2,7 @@ from typing import Annotated
 
 import numpy as np
 from numpy.typing import NDArray
-from pydantic import AfterValidator, ConfigDict, TypeAdapter
+from pydantic import AfterValidator, ConfigDict
 
 
 def _as_prob_vector(a: NDArray[np.float64]) -> NDArray[np.float64]:

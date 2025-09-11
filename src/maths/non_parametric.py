@@ -7,7 +7,8 @@ from pydantic import validate_call
 from data_types.vectors import ProbVector, model_cfg
 
 
-def exp_decay_probs(vector: Sized, half_life: int) -> NDArray[np.float64]:
+@validate_call(config=model_cfg, validate_return=True)
+def exp_decay_probs(vector: Sized, half_life: int) -> ProbVector:
     """
     Returns probability vector with exponential decay.
 
@@ -18,12 +19,13 @@ def exp_decay_probs(vector: Sized, half_life: int) -> NDArray[np.float64]:
     decay_rate = float(np.log(2) / half_life)
     latest_date = n - 1
 
-    weights: NDArray[np.float64] = np.exp(-decay_rate * (latest_date - n_array))
+    p: NDArray[np.float64] = np.exp(-decay_rate * (latest_date - n_array))
 
-    return weights / np.sum(weights)  # standardise to ensure probs
+    return p / np.sum(p)
 
 
-def time_crisp_window(vector: Sized, window: int) -> NDArray[np.float64]:
+@validate_call(config=model_cfg, validate_return=True)
+def time_crisp_window(vector: Sized, window: int) -> ProbVector:
     """
     Returns a probability vector based on the window chosen.
     """
