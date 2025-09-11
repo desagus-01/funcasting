@@ -3,6 +3,8 @@ from typing import Sized
 import numpy as np
 from numpy.typing import NDArray
 
+from data_types.vectors import ProbabilityArray
+
 
 def exp_decay_probs(vector: Sized, half_life: int) -> NDArray[np.float64]:
     """
@@ -24,22 +26,23 @@ def time_crisp_window(vector: Sized, window: int) -> NDArray[np.float64]:
     """
     Returns a probability vector based on the window chosen.
     """
-    n = len(vector)
-    p = np.zeros(n, dtype=np.float64)
+    p = np.zeros(len(vector), dtype=np.float64)
     p[-window:] = 1.0 / window
     return p
 
 
 def state_crisp_conditioning(
-    vector: Sized, condition_vector: NDArray[np.int16]
-) -> NDArray[np.float64]:
+    vector: Sized, condition_vector: NDArray[np.bool_]
+) -> ProbabilityArray:
     """
     Returns a probability vector based on state condition passed.
     """
 
     if len(vector) != len(condition_vector):
-        "Must be the same length!"
+        raise ValueError("Input and condition vector must have the same length.")
 
     p = np.zeros(len(condition_vector), dtype=np.float64)
-    p[condition_vector] = 1.0 / condition_vector.sum()
+    selected_indices = np.where(condition_vector)[0]
+
+    p[selected_indices] = 1.0 / len(selected_indices)
     return p

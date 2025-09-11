@@ -17,6 +17,8 @@ exp_dec_probs = exp_decay_probs(increms_df, 50)
 
 time_probs = time_crisp_window(increms_df, len(increms_df))
 
-ex_state_conds = np.random.choice([1, 0], size=len(increms_df))
+ex_state_conds = np.random.choice([True, False], size=len(increms_df))
 
-print(state_crisp_conditioning(increms_df, ex_state_conds))
+ex = state_crisp_conditioning(increms_df, ex_state_conds)
+
+print(ex)
