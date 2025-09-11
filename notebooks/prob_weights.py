@@ -21,4 +21,4 @@ ex_state_conds = np.random.choice([True, False], size=len(increms_df))
 
 ex = state_crisp_conditioning(increms_df, ex_state_conds)
 
-print(ex)
+print(type(ex))

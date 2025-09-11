@@ -1,30 +1,21 @@
+from typing import Annotated
+
 import numpy as np
 from numpy.typing import NDArray
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import AfterValidator, ConfigDict, TypeAdapter
 
 
-class ProbabilityArray(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-    probs: NDArray[np.float64]
+def _as_prob_vector(a: NDArray[np.float64]) -> NDArray[np.float64]:
+    if a.ndim != 1:
+        raise ValueError("Array must be 1D.")
+    if np.any(np.isnan(a)) or np.any(np.isinf(a)):
+        raise ValueError("Array must not contain NaN or infinite values.")
+    if np.any(a < 0):
+        raise ValueError("All probabilities must be non-negative.")
+    if not np.isclose(a.sum(dtype=np.float64), 1.0, rtol=0, atol=1e-12):
+        raise ValueError("Probabilities must sum to 1.")
+    return a
 
-    @field_validator("probs")
-    @classmethod
-    def check_is_numpy_and_1d(cls, v):
-        if not isinstance(v, np.ndarray):
-            raise TypeError("Input must be a NumPy array.")
-        if v.ndim != 1:
-            raise ValueError("Array must be 1D.")
-        return v
 
-    @field_validator("probs")
-    @classmethod
-    def check_non_negative(cls, v):
-        if np.any(v < 0):
-            raise ValueError("All probabilities must be non-negative.")
-        return v
-
-    @model_validator(mode="after")
-    def check_sum_to_one(self):
-        if not np.isclose(self.probs.sum(), 1.0):
-            raise ValueError(f"Probabilities must sum to 1")
-        return self
+ProbVector = Annotated[NDArray[np.float64], AfterValidator(_as_prob_vector)]
+model_cfg = ConfigDict(arbitrary_types_allowed=True)

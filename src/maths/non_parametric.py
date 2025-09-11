@@ -2,8 +2,9 @@ from typing import Sized
 
 import numpy as np
 from numpy.typing import NDArray
+from pydantic import validate_call
 
-from data_types.vectors import ProbabilityArray
+from data_types.vectors import ProbVector, model_cfg
 
 
 def exp_decay_probs(vector: Sized, half_life: int) -> NDArray[np.float64]:
@@ -31,9 +32,10 @@ def time_crisp_window(vector: Sized, window: int) -> NDArray[np.float64]:
     return p
 
 
+@validate_call(config=model_cfg, validate_return=True)
 def state_crisp_conditioning(
     vector: Sized, condition_vector: NDArray[np.bool_]
-) -> ProbabilityArray:
+) -> ProbVector:
     """
     Returns a probability vector based on state condition passed.
     """
