@@ -28,3 +28,18 @@ def time_crisp_window(vector: Sized, window: int) -> NDArray[np.float64]:
     p = np.zeros(n, dtype=np.float64)
     p[-window:] = 1.0 / window
     return p
+
+
+def state_crisp_conditioning(
+    vector: Sized, condition_vector: NDArray[np.int16]
+) -> NDArray[np.float64]:
+    """
+    Returns a probability vector based on state condition passed
+    """
+
+    if len(vector) != len(condition_vector):
+        "Must be the same length!"
+
+    p = np.zeros(len(condition_vector), dtype=np.float64)
+    p[condition_vector] = 1.0 / condition_vector.sum()
+    return p

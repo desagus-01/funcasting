@@ -13,4 +13,6 @@ exp_dec_probs = exp_decay_probs(increms_df, 50)
 
 time_probs = time_crisp_window(increms_df, len(increms_df))
 
+ex_state_condition = np.zeros(len(increms_df), dtype=np.int16)
+
 print(time_probs)
