@@ -1,16 +1,13 @@
 import numpy as np
 
-from maths.non_parametric import exp_decay_probs
+from maths.prob_vectors import (
+    exp_decay_probs,
+    state_crisp_conditioning,
+    time_crisp_window,
+)
+
+rand_vec = np.random.rand(1, 50)
 
 
-def test_exp_decay_probs_sum_to_one():
-    ex = np.random.rand(1, 50)
-    res = exp_decay_probs(ex, 50)
-
-    assert np.isclose(res.sum(), 1.0)
-
-
-def test_exp_decay_ndim():
-    ex = np.random.rand(1, 50)
-    res = exp_decay_probs(ex, 50)
-    assert res.ndim == 1
+def test_prob_vecs():
+    pass

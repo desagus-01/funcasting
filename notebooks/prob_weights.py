@@ -1,7 +1,7 @@
 import numpy as np
 
 from get_data import get_example_assets
-from maths.non_parametric import (
+from maths.prob_vectors import (
     exp_decay_probs,
     state_crisp_conditioning,
     time_crisp_window,
