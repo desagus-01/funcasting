@@ -51,6 +51,15 @@ def state_crisp_conditioning(
 
 def smooth_state_conditioning(
     length: int, half_life: int, condition_vector: NDArray[np.bool_]
-):
+) -> ProbVector:
     n_array = np.arange(length)
-    return 0
+    decay_rate = float(np.log(2) / half_life)
+    latest_date = length - 1
+
+    p = np.zeros(length, dtype=np.float64)
+    selected_indices = np.where(condition_vector)[0]
+    time_diff = latest_date - n_array
+
+    p[condition_vector] = np.exp(-decay_rate * time_diff[condition_vector])
+
+    return p / np.sum(p)
