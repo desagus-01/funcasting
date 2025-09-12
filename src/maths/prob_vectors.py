@@ -4,19 +4,17 @@ from pydantic import validate_call
 
 from data_types.vectors import ProbVector, model_cfg
 
+from .helpers import exponential_decay
+
 
 @validate_call(config=model_cfg, validate_return=True)
 def exp_decay_probs(length: int, half_life: int) -> ProbVector:
     """
-    Returns probability length with exponential decay.
+    Returns probability length with exponential decay by standardising results.
 
     This allows us to bake in recency bias to our otherwise uniform prior.
     """
-    n_array = np.arange(length)
-    decay_rate = float(np.log(2) / half_life)
-    latest_date = length - 1
-
-    p: NDArray[np.float64] = np.exp(-decay_rate * (latest_date - n_array))
+    p = exponential_decay(length, half_life)
 
     return p / np.sum(p)
 
@@ -49,17 +47,15 @@ def state_crisp_conditioning(
     return p
 
 
+@validate_call(config=model_cfg, validate_return=True)
 def smooth_state_conditioning(
     length: int, half_life: int, condition_vector: NDArray[np.bool_]
 ) -> ProbVector:
-    n_array = np.arange(length)
-    decay_rate = float(np.log(2) / half_life)
-    latest_date = length - 1
-
+    """
+    Applies exponential decay based on state conditions.
+    """
     p = np.zeros(length, dtype=np.float64)
-    selected_indices = np.where(condition_vector)[0]
-    time_diff = latest_date - n_array
-
-    p[condition_vector] = np.exp(-decay_rate * time_diff[condition_vector])
+    full_decay = exponential_decay(length, half_life)
+    p[condition_vector] = full_decay[condition_vector]
 
     return p / np.sum(p)

@@ -13,8 +13,21 @@ if &shortmess =~ 'A'
 else
   set shortmess=aoO
 endif
+badd +4 ~/Documents/projects/fund/funcasting/src/maths/prob_vectors.py
+badd +20 notebooks/prob_weights.py
+badd +7 ~/Documents/projects/fund/funcasting/src/maths/helpers.py
 argglobal
 %argdel
+edit ~/Documents/projects/fund/funcasting/src/maths/helpers.py
+let s:save_splitbelow = &splitbelow
+let s:save_splitright = &splitright
+set splitbelow splitright
+wincmd _ | wincmd |
+vsplit
+1wincmd h
+wincmd w
+let &splitbelow = s:save_splitbelow
+let &splitright = s:save_splitright
 wincmd t
 let s:save_winminheight = &winminheight
 let s:save_winminwidth = &winminwidth
@@ -22,8 +35,30 @@ set winminheight=0
 set winheight=1
 set winminwidth=0
 set winwidth=1
+wincmd =
 argglobal
-enew
+balt ~/Documents/projects/fund/funcasting/src/maths/prob_vectors.py
+setlocal foldmethod=expr
+setlocal foldexpr=nvim_treesitter#foldexpr()
+setlocal foldmarker={{{,}}}
+setlocal foldignore=#
+setlocal foldlevel=99
+setlocal foldminlines=1
+setlocal foldnestmax=20
+setlocal foldenable
+let s:l = 7 - ((6 * winheight(0) + 30) / 60)
+if s:l < 1 | let s:l = 1 | endif
+keepjumps exe s:l
+normal! zt
+keepjumps 7
+normal! 048|
+wincmd w
+argglobal
+if bufexists(fnamemodify("~/Documents/projects/fund/funcasting/src/maths/prob_vectors.py", ":p")) | buffer ~/Documents/projects/fund/funcasting/src/maths/prob_vectors.py | else | edit ~/Documents/projects/fund/funcasting/src/maths/prob_vectors.py | endif
+if &buftype ==# 'terminal'
+  silent file ~/Documents/projects/fund/funcasting/src/maths/prob_vectors.py
+endif
+balt notebooks/prob_weights.py
 setlocal foldmethod=manual
 setlocal foldexpr=nvim_treesitter#foldexpr()
 setlocal foldmarker={{{,}}}
@@ -32,6 +67,17 @@ setlocal foldlevel=99
 setlocal foldminlines=1
 setlocal foldnestmax=20
 setlocal foldenable
+silent! normal! zE
+let &fdl = &fdl
+let s:l = 4 - ((3 * winheight(0) + 30) / 60)
+if s:l < 1 | let s:l = 1 | endif
+keepjumps exe s:l
+normal! zt
+keepjumps 4
+normal! 0
+wincmd w
+2wincmd w
+wincmd =
 tabnext 1
 if exists('s:wipebuf') && len(win_findbuf(s:wipebuf)) == 0 && getbufvar(s:wipebuf, '&buftype') isnot# 'terminal'
   silent exe 'bwipe ' . s:wipebuf
