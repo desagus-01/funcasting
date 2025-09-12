@@ -15,6 +15,6 @@ ex_state_conds = np.random.choice([True, False], size=increms_df)
 
 ex = state_crisp_conditioning(increms_df, ex_state_conds)
 
-smooooooth = smooth_state_conditioning(increms_df, 50, ex_state_conds)
+smooooooth = smooth_state_conditioning(increms_df, 50, 2, ex_state_conds)
 
 print(smooooooth)

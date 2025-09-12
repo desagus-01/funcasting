@@ -4,7 +4,7 @@ from pydantic import validate_call
 
 from data_types.vectors import ProbVector, model_cfg
 
-from .helpers import exponential_decay
+from .helpers import exponential_decay, kernel_smoothing
 
 
 @validate_call(config=model_cfg, validate_return=True)
@@ -49,13 +49,13 @@ def state_crisp_conditioning(
 
 @validate_call(config=model_cfg, validate_return=True)
 def smooth_state_conditioning(
-    length: int, half_life: int, condition_vector: NDArray[np.bool_]
+    length: int, half_life: int, kernel_type: int, condition_vector: NDArray[np.bool_]
 ) -> ProbVector:
     """
     Applies exponential decay based on state conditions.
     """
     p = np.zeros(length, dtype=np.float64)
-    full_decay = exponential_decay(length, half_life)
+    full_decay = kernel_smoothing(length, half_life, kernel_type)
     p[condition_vector] = full_decay[condition_vector]
 
     return p / np.sum(p)
