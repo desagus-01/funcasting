@@ -52,7 +52,7 @@ def smooth_state_conditioning(
     length: int, half_life: int, kernel_type: int, condition_vector: NDArray[np.bool_]
 ) -> ProbVector:
     """
-    Applies exponential decay based on state conditions.
+    Applies kernel based smoothing based on state conditions.
     """
     p = np.zeros(length, dtype=np.float64)
     full_decay = kernel_smoothing(length, half_life, kernel_type)

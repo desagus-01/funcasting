@@ -3,13 +3,16 @@ from numpy.typing import NDArray
 
 
 def kernel_smoothing(
-    length: int, half_life: int, kernel_type: int
+    length: int, half_life: float, kernel_type: float
 ) -> NDArray[np.float64]:
+    """
+    General function for kernel smoothing, allowes for exponential, gaussian among other through the kernel_type parameter.
+    """
     n_array = np.arange(length)
-    smoothing_rate: float = half_life / (np.log(2.0) ** (1.0 / kernel_type))
-    dist_to_ref = (length - 1) - n_array
+    bandwidth: float = half_life / (np.log(2.0) ** (1.0 / kernel_type))
+    dist_to_ref = (length - 1) - n_array  # assumes ref is latest
 
-    return np.exp(-((dist_to_ref / smoothing_rate) ** kernel_type))
+    return np.exp(-((dist_to_ref / bandwidth) ** kernel_type))
 
 
 def exponential_decay(length: int, half_life: int) -> NDArray[np.float64]:
