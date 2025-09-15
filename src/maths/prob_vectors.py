@@ -4,19 +4,20 @@ from pydantic import validate_call
 
 from data_types.vectors import ProbVector, model_cfg
 
-from .helpers import exponential_decay, kernel_smoothing
+from .helpers import kernel_smoothing
 
-
-@validate_call(config=model_cfg, validate_return=True)
-def exp_decay_probs(length: int, half_life: int) -> ProbVector:
-    """
-    Returns probability length with exponential decay by standardising results.
-
-    This allows us to bake in recency bias to our otherwise uniform prior.
-    """
-    p = exponential_decay(length, half_life)
-
-    return p / np.sum(p)
+#
+# @validate_call(config=model_cfg, validate_return=True)
+# def exp_decay_probs(length: int, half_life: int) -> ProbVector:
+#     """
+#     Returns probability length with exponential decay by standardising results.
+#
+#     This allows us to bake in recency bias to our otherwise uniform prior.
+#     """
+#     p = exponential_decay(length, half_life)
+#
+#     return p / np.sum(p)
+#
 
 
 @validate_call(config=model_cfg, validate_return=True)
@@ -48,14 +49,14 @@ def state_crisp_conditioning(
 
 
 @validate_call(config=model_cfg, validate_return=True)
-def smooth_state_conditioning(
-    length: int, half_life: int, kernel_type: int, condition_vector: NDArray[np.bool_]
+def state_smooth_conditioning(
+    data: NDArray[np.floating],
+    reference: float,
+    half_life: int,
+    kernel_type: int,
 ) -> ProbVector:
     """
-    Applies kernel based smoothing based on state conditions.
+    Applies kernel based smoothing based on reference target.
     """
-    p = np.zeros(length, dtype=np.float64)
-    full_decay = kernel_smoothing(length, half_life, kernel_type)
-    p[condition_vector] = full_decay[condition_vector]
-
-    return p / np.sum(p)
+    full_decay = kernel_smoothing(data, reference, half_life, kernel_type)
+    return full_decay / np.sum(full_decay)

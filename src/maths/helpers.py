@@ -3,15 +3,16 @@ from numpy.typing import NDArray
 
 
 def kernel_smoothing(
-    length: int, half_life: float, kernel_type: float
+    data_array: NDArray[np.floating],
+    reference: float,
+    half_life: float,
+    kernel_type: float,
 ) -> NDArray[np.float64]:
     """
-    General function for kernel smoothing, allowes for exponential, gaussian among other through the kernel_type parameter.
+    General function for kernel smoothing, allows for exponential, gaussian among other through the kernel_type parameter.
     """
-    n_array = np.arange(length)
     bandwidth: float = half_life / (np.log(2.0) ** (1.0 / kernel_type))
-    dist_to_ref = (length - 1) - n_array  # assumes ref is latest
-
+    dist_to_ref = np.abs(data_array - reference)
     return np.exp(-((dist_to_ref / bandwidth) ** kernel_type))
 
 
