@@ -9,6 +9,7 @@ dependencies = [
     "dotenv>=0.9.9",
     "numpy>=2.3.3",
     "polars>=1.33.1",
+    "pre-commit>=4.3.0",
     "pydantic>=2.11.7",
     "pytest>=8.4.2",
     "scipy>=1.16.1",
@@ -17,4 +18,14 @@ dependencies = [
 [tool.setuptools]
 packages = ["maths"]
 package-dir = {"" = "src"}
+
+
+
+[tool.basedpyright]
+typeCheckingMode = "recommended"
+failOnWarnings = false
+allowedUntypedLibraries = ['pydantic', 'requests']
+reportExplicitAny = false
+reportAny = false
+
 
