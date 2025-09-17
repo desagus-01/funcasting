@@ -4,20 +4,19 @@ from pydantic import validate_call
 
 from data_types.vectors import ProbVector, model_cfg
 
-from .helpers import kernel_smoothing
+from .helpers import exponential_time_decay, kernel_smoothing
 
-#
-# @validate_call(config=model_cfg, validate_return=True)
-# def exp_decay_probs(length: int, half_life: int) -> ProbVector:
-#     """
-#     Returns probability length with exponential decay by standardising results.
-#
-#     This allows us to bake in recency bias to our otherwise uniform prior.
-#     """
-#     p = exponential_decay(length, half_life)
-#
-#     return p / np.sum(p)
-#
+
+@validate_call(config=model_cfg, validate_return=True)
+def exp_decay_probs(length: int, half_life: int) -> ProbVector:
+    """
+    Returns probability length with exponential decay by standardising results.
+
+    This allows us to bake in recency bias to our otherwise uniform prior.
+    """
+    p = exponential_time_decay(length, half_life)
+
+    return p / np.sum(p)
 
 
 @validate_call(config=model_cfg, validate_return=True)
@@ -59,4 +58,5 @@ def state_smooth_conditioning(
     Applies kernel based smoothing based on reference target.
     """
     full_decay = kernel_smoothing(data, reference, half_life, kernel_type)
+    full_decay = kernel_smoothing(data, half_life, kernel_type, reference)
     return full_decay / np.sum(full_decay)
