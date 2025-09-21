@@ -26,7 +26,4 @@ def kernel_smoothing(
 def exponential_time_decay(
     data_array: NDArray[np.floating], half_life: int
 ) -> NDArray[np.float64]:
-    """
-    Applies Exponential Decay for a given length
-    """
-    return (kernel_smoothing(data_array, half_life, 1, None, time_based=True),)
+    return kernel_smoothing(data_array, half_life, 1, None, time_based=True)

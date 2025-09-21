@@ -8,13 +8,11 @@ from .helpers import exponential_time_decay, kernel_smoothing
 
 
 @validate_call(config=model_cfg, validate_return=True)
-def exp_decay_probs(length: int, half_life: int) -> ProbVector:
+def exp_decay_probs(data_array: NDArray[np.floating], half_life: int) -> ProbVector:
     """
     Returns probability length with exponential decay by standardising results.
-
-    This allows us to bake in recency bias to our otherwise uniform prior.
     """
-    p = exponential_time_decay(length, half_life)
+    p = exponential_time_decay(data_array, half_life)
 
     return p / np.sum(p)
 
