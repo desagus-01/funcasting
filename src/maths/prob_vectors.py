@@ -18,19 +18,7 @@ def exp_decay_probs(data_array: NDArray[np.floating], half_life: int) -> ProbVec
 
 
 @validate_call(config=model_cfg, validate_return=True)
-def time_crisp_window(length: int, window: int) -> ProbVector:
-    """
-    Returns a probability length based on the window chosen.
-    """
-    p = np.zeros(length, dtype=np.float64)
-    p[-window:] = 1.0 / window
-    return p
-
-
-@validate_call(config=model_cfg, validate_return=True)
-def state_crisp_conditioning(
-    length: int, condition_vector: NDArray[np.bool_]
-) -> ProbVector:
+def state_crisp_probs(length: int, condition_vector: NDArray[np.bool_]) -> ProbVector:
     """
     Returns a probability length based on state condition passed.
     """
@@ -46,7 +34,7 @@ def state_crisp_conditioning(
 
 
 @validate_call(config=model_cfg, validate_return=True)
-def state_smooth_conditioning(
+def state_smooth_probs(
     data: NDArray[np.floating],
     reference: float,
     half_life: int,
@@ -56,5 +44,4 @@ def state_smooth_conditioning(
     Applies kernel based smoothing based on reference target.
     """
     full_decay = kernel_smoothing(data, reference, half_life, kernel_type)
-    full_decay = kernel_smoothing(data, half_life, kernel_type, reference)
     return full_decay / np.sum(full_decay)

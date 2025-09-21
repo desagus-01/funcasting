@@ -6,8 +6,8 @@ from data_types.vectors import ProbVector
 from get_data import get_example_assets
 from maths.prob_vectors import (
     exp_decay_probs,
-    state_crisp_conditioning,
-    state_smooth_conditioning,
+    state_crisp_probs,
+    state_smooth_probs,
 )
 
 
@@ -38,11 +38,11 @@ u = increms_df["AAPL"].to_numpy().mean()
 # smoothing methods
 half_life = 50
 ex_state_conds = np.random.choice([True, False], size=increms_n)
-exp_dec_probs = exp_decay_probs(increms_df["AAPL"].to_numpy(), half_life)
-state_crisp_probs = state_crisp_conditioning(increms_n, ex_state_conds)
-state_smooth_probs = state_smooth_conditioning(
-    increms_df["AAPL"].to_numpy(), u, half_life, 1
-)
+exp_prob = state_smooth_probs(increms_df["AAPL"].to_numpy(), u, half_life, 1)
 
 
-plot_post_prob(exp_dec_probs)
+gaussian_probs = state_smooth_probs(increms_df["AAPL"].to_numpy(), u, half_life, 2)
+
+
+plot_post_prob(exp_prob)
+plot_post_prob(gaussian_probs)
