@@ -15,7 +15,7 @@ def kernel_smoothing(
     if time_based:
         data_n = len(data_array)
         data_array = np.arange(data_n)
-        dist_to_ref = data_n - 1 - data_array
+        dist_to_ref = data_n - 1 - data_array  # uses last data point as ref
     else:
         dist_to_ref = np.abs(reference - data_array)
 

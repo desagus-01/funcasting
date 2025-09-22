@@ -39,6 +39,7 @@ def state_smooth_probs(
     half_life: float,
     kernel_type: float,
     reference: float | None,
+    time_based: bool = False,
 ) -> ProbVector:
     """
     Applies kernel based smoothing based on reference target and normalises to probability.
@@ -48,5 +49,6 @@ def state_smooth_probs(
         half_life=half_life,
         kernel_type=kernel_type,
         reference=reference,
+        time_based=time_based,
     )
     return full_decay / np.sum(full_decay)
