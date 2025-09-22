@@ -35,13 +35,18 @@ def state_crisp_probs(length: int, condition_vector: NDArray[np.bool_]) -> ProbV
 
 @validate_call(config=model_cfg, validate_return=True)
 def state_smooth_probs(
-    data: NDArray[np.floating],
-    reference: float,
-    half_life: int,
-    kernel_type: int,
+    data_array: NDArray[np.floating],
+    half_life: float,
+    kernel_type: float,
+    reference: float | None,
 ) -> ProbVector:
     """
-    Applies kernel based smoothing based on reference target.
+    Applies kernel based smoothing based on reference target and normalises to probability.
     """
-    full_decay = kernel_smoothing(data, reference, half_life, kernel_type)
+    full_decay = kernel_smoothing(
+        data_array=data_array,
+        half_life=half_life,
+        kernel_type=kernel_type,
+        reference=reference,
+    )
     return full_decay / np.sum(full_decay)

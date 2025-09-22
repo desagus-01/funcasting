@@ -38,10 +38,9 @@ u = increms_df["AAPL"].to_numpy().mean()
 # smoothing methods
 half_life = 50
 ex_state_conds = np.random.choice([True, False], size=increms_n)
-exp_prob = state_smooth_probs(increms_df["AAPL"].to_numpy(), u, half_life, 1)
 
-
-gaussian_probs = state_smooth_probs(increms_df["AAPL"].to_numpy(), u, half_life, 2)
+exp_prob = state_smooth_probs(increms_df["AAPL"].to_numpy(), half_life, 1, u)
+gaussian_probs = state_smooth_probs(increms_df["AAPL"].to_numpy(), half_life, 2, u)
 
 
 plot_post_prob(exp_prob)
