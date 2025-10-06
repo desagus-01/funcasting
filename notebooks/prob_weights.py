@@ -1,5 +1,8 @@
+import numpy as np
+
 from get_data import get_example_assets
-from maths.helpers import kl_div
+from maths.constraints import view_on_mean
+from maths.helpers import simple_entropy_pooling
 from maths.prob_vectors import state_smooth_probs, uniform_probs
 
 tickers = ["AAPPL", "MSFT", "GOOG"]
@@ -28,4 +31,7 @@ posterior = state_smooth_probs(
     reference=u,
 )
 
-print(kl_div(prior, posterior))
+
+mean_const = view_on_mean(increms_df["AAPL"].to_numpy(), np.array([0.015]))
+
+print(simple_entropy_pooling(prior, mean_const[0], mean_const[1]))

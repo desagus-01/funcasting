@@ -1,5 +1,6 @@
 > [!TODO]
 > - [ ] Study and implement relative entropy pooling method
+> - [ ] Test simple optimization for REP, based on view on mean 
 > - [ ] Try adding matrix based state smoothing (look at Meucci) 
 
 ## Completed

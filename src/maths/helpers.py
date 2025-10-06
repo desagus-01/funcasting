@@ -1,3 +1,4 @@
+import cvxpy as cp
 import numpy as np
 from numpy.typing import NDArray
 
@@ -33,3 +34,24 @@ def kl_div(prior: ProbVector, posterior: ProbVector) -> float:
     Calculates the KL divergence between two probability vectors.
     """
     return np.sum(posterior * np.log(posterior / prior))
+
+
+def simple_entropy_pooling(
+    prior: ProbVector,
+    Aeq: NDArray[np.floating],
+    beq: NDArray[np.floating],
+    **solver_kwargs,
+) -> ProbVector:
+    posterior = cp.Variable(prior.shape[0])
+
+    constraints = [
+        cp.sum(posterior) == 1,
+        Aeq @ posterior == beq,
+    ]
+
+    obj = cp.Minimize(cp.sum(cp.kl_div(posterior, prior)))
+
+    prob = cp.Problem(obj, constraints)
+    prob.solve(solver="SCS", **solver_kwargs)
+
+    return prob, prob.status, posterior.value
