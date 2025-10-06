@@ -4,10 +4,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from data_types.vectors import ProbVector
-from get_data import get_example_assets
-from maths.prob_vectors import (
-    state_smooth_probs,
-)
 
 
 def choose_hist_bin(data: NDArray[np.floating] | ProbVector) -> int:
@@ -39,25 +35,3 @@ def plot_post_prob(prob_vector: ProbVector, kernel_label: str | None = None) -> 
 
     plt.tight_layout()
     plt.show()
-
-
-# getting data
-tickers = ["AAPL", "MSFT", "GOOG"]
-assets = get_example_assets(tickers)
-increms_df = assets.increments
-increms_n = increms_df.height
-u = increms_df["AAPL"].to_numpy().mean() + 2.0
-
-# smoothing methods
-half_life = 3
-ex_state_conds = np.random.choice([True, False], size=increms_n)
-
-
-gaussian_probs = state_smooth_probs(
-    data_array=increms_df["AAPL"].to_numpy(),
-    half_life=half_life,
-    kernel_type=2,
-    reference=u,
-)
-
-plot_post_prob(gaussian_probs)

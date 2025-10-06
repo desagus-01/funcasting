@@ -29,13 +29,6 @@ def kernel_smoothing(
     return np.exp(-((dist_to_ref / bandwidth) ** kernel_type))
 
 
-def kl_div(prior: ProbVector, posterior: ProbVector) -> float:
-    """
-    Calculates the KL divergence between two probability vectors.
-    """
-    return np.sum(posterior * np.log(posterior / prior))
-
-
 def simple_entropy_pooling(
     prior: ProbVector,
     Aeq: NDArray[np.floating],
@@ -45,7 +38,6 @@ def simple_entropy_pooling(
     posterior = cp.Variable(prior.shape[0])
 
     constraints = [
-        cp.sum(posterior) == 1,
         Aeq @ posterior == beq,
     ]
 
