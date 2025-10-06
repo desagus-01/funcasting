@@ -6,8 +6,6 @@ from numpy.typing import NDArray
 from data_types.vectors import ProbVector
 from get_data import get_example_assets
 from maths.prob_vectors import (
-    exp_decay_probs,
-    state_crisp_probs,
     state_smooth_probs,
 )
 
@@ -44,7 +42,7 @@ def plot_post_prob(prob_vector: ProbVector, kernel_label: str | None = None) -> 
 
 
 # getting data
-tickers = ["AAPPL", "MSFT", "GOOG"]
+tickers = ["AAPL", "MSFT", "GOOG"]
 assets = get_example_assets(tickers)
 increms_df = assets.increments
 increms_n = increms_df.height
@@ -67,7 +65,6 @@ gaussian_probs = state_smooth_probs(
     kernel_type=2,
     reference=u,
 )
-
 
 plot_post_prob(exp_prob)
 plot_post_prob(gaussian_probs)

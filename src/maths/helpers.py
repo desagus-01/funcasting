@@ -1,6 +1,8 @@
 import numpy as np
 from numpy.typing import NDArray
 
+from data_types.vectors import ProbVector
+
 
 def kernel_smoothing(
     data_array: NDArray[np.floating],
@@ -12,6 +14,9 @@ def kernel_smoothing(
     """
     General function for kernel smoothing, allows for exponential, gaussian among other through the kernel_type parameter.
     """
+    if kernel_type < 0:
+        raise ValueError("Kernel type must be positive integer")
+
     if time_based:
         data_n = len(data_array)
         data_array = np.arange(data_n)
@@ -23,7 +28,8 @@ def kernel_smoothing(
     return np.exp(-((dist_to_ref / bandwidth) ** kernel_type))
 
 
-def exponential_time_decay(
-    data_array: NDArray[np.floating], half_life: int
-) -> NDArray[np.float64]:
-    return kernel_smoothing(data_array, half_life, 1, None, time_based=True)
+def kl_div(prior: ProbVector, posterior: ProbVector) -> float:
+    """
+    Calculates the KL divergence between two probability vectors.
+    """
+    return np.sum(posterior * np.log(posterior / prior))

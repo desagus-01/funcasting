@@ -4,17 +4,15 @@ from pydantic import validate_call
 
 from data_types.vectors import ProbVector, model_cfg
 
-from .helpers import exponential_time_decay, kernel_smoothing
+from .helpers import kernel_smoothing
 
 
 @validate_call(config=model_cfg, validate_return=True)
-def exp_decay_probs(data_array: NDArray[np.floating], half_life: int) -> ProbVector:
+def uniform_probs(len: int) -> ProbVector:
     """
-    Returns probability length with exponential decay by standardising results.
+    Returns a uniform probability vector
     """
-    p = exponential_time_decay(data_array, half_life)
-
-    return p / np.sum(p)
+    return np.ones(len) / len
 
 
 @validate_call(config=model_cfg, validate_return=True)

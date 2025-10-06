@@ -28,5 +28,5 @@ failOnWarnings = false
 allowedUntypedLibraries = ['pydantic', 'requests']
 reportExplicitAny = false
 reportAny = false
-
+reportMissingTypeStubs = false
 

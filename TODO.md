@@ -1,7 +1,7 @@
 > [!TODO]
-> - [ ] Compare visual results between exponential and gaussian kernels 
-> - [ ] Add visuals for probabilities
-
+> - [ ] Study and implement relative entropy pooling method
+> - [ ] Try adding matrix based state smoothing (look at Meucci) 
 
 ## Completed
+> - [X] Add implementation of KL divergence and test 
 > - [X] Make sure that time exponential decay works as intended 
