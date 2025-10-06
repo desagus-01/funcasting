@@ -22,7 +22,7 @@ def kernel_smoothing(
         data_n = len(data_array)
         data_array = np.arange(data_n)
         dist_to_ref = data_n - 1 - data_array  # uses last data point as ref
-    else:
+    elif not time_based and reference is not None:
         dist_to_ref = np.abs(reference - data_array)
 
     bandwidth: float = half_life / (np.log(2.0) ** (1.0 / kernel_type))
@@ -31,19 +31,21 @@ def kernel_smoothing(
 
 def simple_entropy_pooling(
     prior: ProbVector,
-    Aeq: NDArray[np.floating],
-    beq: NDArray[np.floating],
+    scenario_matrix: NDArray[np.floating],
+    view_targets: NDArray[np.floating],
+    *,
+    solver: str = "SCS",
     **solver_kwargs,
-) -> ProbVector:
+):
     posterior = cp.Variable(prior.shape[0])
 
     constraints = [
-        Aeq @ posterior == beq,
+        scenario_matrix @ posterior == view_targets,
     ]
 
     obj = cp.Minimize(cp.sum(cp.kl_div(posterior, prior)))
 
     prob = cp.Problem(obj, constraints)
-    prob.solve(solver="SCS", **solver_kwargs)
+    prob.solve(solver, **solver_kwargs)
 
-    return prob, prob.status, posterior.value
+    return posterior.value

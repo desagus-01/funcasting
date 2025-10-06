@@ -17,14 +17,15 @@ tickers = ["AAPL", "MSFT", "GOOG"]
 assets = get_example_assets(tickers)
 increms_df = assets.increments
 increms_n = increms_df.height
-u = increms_df["AAPL"].to_numpy().mean() + 0.05
+u = increms_df["AAPL"].to_numpy().mean()
 
 # smoothing methods
 half_life = 3
 
 prior = uniform_probs(increms_n)
 
-posterior = state_smooth_probs(
+
+prior_2 = state_smooth_probs(
     data_array=increms_df["AAPL"].to_numpy(),
     half_life=half_life,
     kernel_type=2,
@@ -35,7 +36,7 @@ posterior = state_smooth_probs(
 mean_const = view_on_mean(increms_df["AAPL"].to_numpy(), np.array([u]))
 
 
-test = entropy_pooling_probs(prior, mean_const[0], mean_const[1])
+test = entropy_pooling_probs(prior_2, mean_const[0], mean_const[1])
 
 # plot_post_prob(prior)
 

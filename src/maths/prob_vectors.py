@@ -4,7 +4,7 @@ from pydantic import validate_call
 
 from data_types.vectors import ProbVector, model_cfg
 
-from .helpers import kernel_smoothing, simple_entropy_pooling
+from .core import kernel_smoothing, simple_entropy_pooling
 
 
 @validate_call(config=model_cfg, validate_return=True)
@@ -60,4 +60,4 @@ def entropy_pooling_probs(
     **solver_kwargs,
 ) -> ProbVector:
     res = simple_entropy_pooling(prior, Aeq, beq, **solver_kwargs)
-    return res[2] / np.sum(res[2])
+    return res / np.sum(res)
