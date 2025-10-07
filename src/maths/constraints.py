@@ -15,7 +15,7 @@ def view_on_mean(
     sign_type: ConstraintSignLike,
 ) -> View:
     """
-    Build equality constraints for mean targets
+    Builds view for mean targets
     """
 
     if target_mean.shape[0] != data.ndim:

@@ -17,7 +17,7 @@ tickers = ["AAPL", "MSFT", "GOOG"]
 assets = get_example_assets(tickers)
 increms_df = assets.increments
 increms_n = increms_df.height
-u = increms_df["AAPL"].to_numpy().mean()
+u = increms_df["AAPL"].to_numpy().mean() + 0.02
 
 # smoothing methods
 half_life = 3

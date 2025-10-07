@@ -34,6 +34,7 @@ def build_constraints(
     views: View,
     posterior: cp.Variable,
 ) -> list[CvxConstraint]:
+    base: list[CvxConstraint] = [cp.sum(posterior) == 1]  # ensures we get probabilities
     match (views.const_type, views.sign_type):
         case (ConstraintType.equality, ConstraintSigns.equal):
             constraint = views.data @ posterior == views.views_targets
@@ -49,7 +50,7 @@ def build_constraints(
                 f"Invalid combination: const_type={views.const_type}, sign_type={views.sign_type}"
             )
 
-    return [constraint]
+    return [constraint] + base
 
 
 def simple_entropy_pooling(
@@ -57,7 +58,8 @@ def simple_entropy_pooling(
     views: View,
     solver: str = "SCS",
     **solver_kwargs: str,
-) -> NDArray[np.floating]:
+) -> ProbVector:
+    # ) -> NDArray[np.floating]:
     posterior = cp.Variable(prior.shape[0], nonneg=True)  # ensures probs > 0
     constraints = build_constraints(views=views, posterior=posterior)
     obj = cp.Minimize(cp.sum(cp.kl_div(posterior, prior)))

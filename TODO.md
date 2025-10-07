@@ -1,7 +1,6 @@
 > [!TODO]
 > - [ ] Make sure you understand differences in kl div and relative entrop 
 > - [ ] Make entropy pooling more robust 
-    > - [ ] Start by making constraints
 > - [ ] Check how much would the implementations differ for different types of views 
 > - [ ] Try adding matrix based state smoothing (look at Meucci) 
 

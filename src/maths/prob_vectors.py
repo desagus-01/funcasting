@@ -57,5 +57,4 @@ def entropy_pooling_probs(
     prior: ProbVector,
     views: View,
 ) -> ProbVector:
-    res = simple_entropy_pooling(prior, views)
-    return res / res.sum()
+    return simple_entropy_pooling(prior, views)

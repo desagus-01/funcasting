@@ -13,7 +13,7 @@ def _as_prob_vector(a: NDArray[np.float64]) -> NDArray[np.float64]:
         raise ValueError("Array must not contain NaN or infinite values.")
     if np.any(a < 0):
         raise ValueError("All probabilities must be non-negative.")
-    if not np.isclose(a.sum(dtype=np.float64), 1.0, rtol=0, atol=1e-12):
+    if not np.isclose(a.sum(dtype=np.float64), 1.0, rtol=0, atol=1e-9):
         raise ValueError("Probabilities must sum to 1.")
     return a
 
