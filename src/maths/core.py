@@ -3,7 +3,7 @@ import numpy as np
 from cvxpy.constraints.constraint import Constraint as CvxConstraint
 from numpy.typing import NDArray
 
-from data_types.vectors import ProbVector, View
+from data_types.vectors import ConstraintSigns, ConstraintType, ProbVector, View
 
 
 def kernel_smoothing(
@@ -30,17 +30,26 @@ def kernel_smoothing(
     return np.exp(-((dist_to_ref / bandwidth) ** kernel_type))
 
 
-# TODO: Write out all possibilities
 def build_constraints(
     views: View,
     posterior: cp.Variable,
 ) -> list[CvxConstraint]:
-    if views.const_type == "ineq" and views.sign_type == "gtr":
-        view = views.data @ posterior >= views.views_targets
-    else:
-        view = views.data @ posterior == views.views_targets
+    match (views.const_type, views.sign_type):
+        case (ConstraintType.equality, ConstraintSigns.equal):
+            constraint = views.data @ posterior == views.views_targets
 
-    return [view]
+        case (ConstraintType.inequality, ConstraintSigns.equal_greater):
+            constraint = views.data @ posterior >= views.views_targets
+
+        case (ConstraintType.inequality, ConstraintSigns.equal_less):
+            constraint = views.data @ posterior <= views.views_targets
+
+        case _:
+            raise ValueError(
+                f"Invalid combination: const_type={views.const_type}, sign_type={views.sign_type}"
+            )
+
+    return [constraint]
 
 
 def simple_entropy_pooling(

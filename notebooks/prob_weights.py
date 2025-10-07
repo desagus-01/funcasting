@@ -33,17 +33,29 @@ prior_2 = state_smooth_probs(
 )
 
 
-mean_const = view_on_mean(increms_df["AAPL"].to_numpy(), np.array([u]), "ineq", "gtr")
+mean_ineq = view_on_mean(
+    increms_df["AAPL"].to_numpy(),
+    np.array([u]),
+    "inequality",
+    "equal_less",
+)
 
 
-# test = entropy_pooling_probs(prior_2, mean_const)
+mean_eq = view_on_mean(
+    increms_df["AAPL"].to_numpy(),
+    np.array([u]),
+    "equality",
+    "equal",
+)
 
-test = entropy_pooling_probs(prior_2, mean_const)
 
-print(test)
+test_ineq = entropy_pooling_probs(prior_2, mean_ineq)
+test_eq = entropy_pooling_probs(prior_2, mean_eq)
 
-# test = entropy_pooling_probs(prior_2, mean_const[0], mean_const[1])
 
-# plot_post_prob(prior)
+print(test_ineq)
+print(test_eq)
+print(test_ineq == test_eq)
 
-plot_post_prob(test)
+plot_post_prob(test_ineq)
+plot_post_prob(test_eq)
