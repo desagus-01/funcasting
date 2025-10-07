@@ -55,9 +55,9 @@ def state_smooth_probs(
 @validate_call(config=model_cfg, validate_return=True)
 def entropy_pooling_probs(
     prior: ProbVector,
-    Aeq: NDArray[np.floating],
-    beq: NDArray[np.floating],
+    scenario_matrix: NDArray[np.floating],
+    view_targets: NDArray[np.floating],
     **solver_kwargs,
 ) -> ProbVector:
-    res = simple_entropy_pooling(prior, Aeq, beq, **solver_kwargs)
-    return res / np.sum(res)
+    res = simple_entropy_pooling(prior, scenario_matrix, view_targets, **solver_kwargs)
+    return res / res.sum()

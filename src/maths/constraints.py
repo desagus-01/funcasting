@@ -5,7 +5,9 @@ from numpy.typing import NDArray
 def view_on_mean(
     data: NDArray[np.floating],
     target_mean: NDArray[np.floating],
-) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+    eq_ineq: str,
+    ineq_sign: str | None,
+) -> tuple[NDArray[np.floating], NDArray[np.floating], str, str | None]:
     """
     Build equality constraints for mean targets
     """
@@ -20,4 +22,4 @@ def view_on_mean(
 
     target_mean = np.asarray(target_mean, dtype=float).reshape(-1)
 
-    return data.T, target_mean
+    return data.T, target_mean, eq_ineq, ineq_sign

@@ -2,8 +2,8 @@ import numpy as np
 
 from get_data import get_example_assets
 from maths.constraints import view_on_mean
-from maths.prob_vectors import entropy_pooling_probs, state_smooth_probs, uniform_probs
-from maths.visuals import plot_post_prob
+from maths.core import simple_entropy_pooling
+from maths.prob_vectors import state_smooth_probs, uniform_probs
 
 tickers = ["AAPPL", "MSFT", "GOOG"]
 
@@ -33,11 +33,17 @@ prior_2 = state_smooth_probs(
 )
 
 
-mean_const = view_on_mean(increms_df["AAPL"].to_numpy(), np.array([u]))
+mean_const = view_on_mean(increms_df["AAPL"].to_numpy(), np.array([u]), "ineq", "gtr")
 
 
-test = entropy_pooling_probs(prior_2, mean_const[0], mean_const[1])
+# test = entropy_pooling_probs(prior_2, mean_const)
+
+test = simple_entropy_pooling(prior_2, mean_const)
+
+print(test)
+
+# test = entropy_pooling_probs(prior_2, mean_const[0], mean_const[1])
 
 # plot_post_prob(prior)
 
-plot_post_prob(test)
+# plot_post_prob(test)
