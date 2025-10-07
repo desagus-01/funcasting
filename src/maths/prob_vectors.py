@@ -2,7 +2,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import validate_call
 
-from data_types.vectors import ProbVector, model_cfg
+from data_types.vectors import ProbVector, View, model_cfg
 
 from .core import kernel_smoothing, simple_entropy_pooling
 
@@ -55,9 +55,7 @@ def state_smooth_probs(
 @validate_call(config=model_cfg, validate_return=True)
 def entropy_pooling_probs(
     prior: ProbVector,
-    scenario_matrix: NDArray[np.floating],
-    view_targets: NDArray[np.floating],
-    **solver_kwargs,
+    views: View,
 ) -> ProbVector:
-    res = simple_entropy_pooling(prior, scenario_matrix, view_targets, **solver_kwargs)
+    res = simple_entropy_pooling(prior, views)
     return res / res.sum()

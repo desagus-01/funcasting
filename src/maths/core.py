@@ -3,7 +3,7 @@ import numpy as np
 from cvxpy.constraints.constraint import Constraint as CvxConstraint
 from numpy.typing import NDArray
 
-from data_types.vectors import ProbVector
+from data_types.vectors import ProbVector, View
 
 
 def kernel_smoothing(
@@ -32,35 +32,26 @@ def kernel_smoothing(
 
 # TODO: Write out all possibilities
 def build_constraints(
-    views: tuple[NDArray[np.floating], NDArray[np.floating], str, str | None],
+    views: View,
     posterior: cp.Variable,
 ) -> list[CvxConstraint]:
-    if views[2] == "ineq" and views[3] == "gtr":
-        view = views[0] @ posterior >= views[1]
+    if views.const_type == "ineq" and views.sign_type == "gtr":
+        view = views.data @ posterior >= views.views_targets
     else:
-        view = views[0] @ posterior == views[1]
+        view = views.data @ posterior == views.views_targets
 
     return [view]
 
 
 def simple_entropy_pooling(
     prior: ProbVector,
-    views: tuple[NDArray[np.floating], NDArray[np.floating], str, str | None],
-    # scenario_matrix: NDArray[np.floating],
-    # view_targets: NDArray[np.floating],
+    views: View,
     solver: str = "SCS",
     **solver_kwargs: str,
 ) -> NDArray[np.floating]:
     posterior = cp.Variable(prior.shape[0], nonneg=True)  # ensures probs > 0
-
     constraints = build_constraints(views=views, posterior=posterior)
-    #
-    # constraints: list[CvxConstraint] = [
-    #     scenario_matrix @ posterior == view_targets,
-    # ]
-    #
     obj = cp.Minimize(cp.sum(cp.kl_div(posterior, prior)))
-
     prob = cp.Problem(obj, constraints)
     _ = prob.solve(solver, **solver_kwargs)
 

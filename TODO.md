@@ -1,12 +1,13 @@
 > [!TODO]
-> - [ ] Simplify names for entropy pooling methods 
 > - [ ] Make sure you understand differences in kl div and relative entrop 
 > - [ ] Make entropy pooling more robust 
     > - [ ] Start by making constraints
-> - [ ] Make data structure for equalities vs non-equalities for constraints 
+> - [ ] Create func to build constraints more robustly 
 > - [ ] Try adding matrix based state smoothing (look at Meucci) 
 
 ## Completed
+> - [X] Make data structure for equalities vs non-equalities for constraints 
+> - [X] Simplify names for entropy pooling methods 
 > - [X] Test simple optimization for REP, based on view on mean 
 > - [X] Visualize results of different posteriors 
 > - [X] Study and implement relative entropy pooling method
