@@ -55,6 +55,6 @@ def state_smooth_probs(
 @validate_call(config=model_cfg, validate_return=True)
 def entropy_pooling_probs(
     prior: ProbVector,
-    views: View,
+    views: list[View],
 ) -> ProbVector:
     return simple_entropy_pooling(prior, views)

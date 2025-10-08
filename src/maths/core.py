@@ -50,17 +50,21 @@ def assign_constraint_equation(views: View, posterior: cp.Variable) -> CvxConstr
 
 
 def build_constraints(
-    views: View,
+    views: list[View],
     posterior: cp.Variable,
 ) -> list[CvxConstraint]:
     base: list[CvxConstraint] = [cp.sum(posterior) == 1]  # ensures we get probabilities
-    constraint = assign_constraint_equation(views, posterior)
-    return [constraint] + base
+    # constraint = assign_constraint_equation(views, posterior)
+    constraints = []
+    for view in views:
+        constraints.append(assign_constraint_equation(view, posterior))
+
+    return constraints + base
 
 
 def simple_entropy_pooling(
     prior: ProbVector,
-    views: View,
+    views: list[View],
     solver: str = "SCS",
     **solver_kwargs: str,
 ) -> ProbVector:

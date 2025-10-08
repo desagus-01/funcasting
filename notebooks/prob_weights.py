@@ -1,6 +1,7 @@
 from get_data import get_example_assets
 from maths.constraints import view_on_mean
-from maths.prob_vectors import uniform_probs
+from maths.prob_vectors import entropy_pooling_probs, uniform_probs
+from maths.visuals import plot_post_prob
 
 # set-up
 tickers = ["AAPL", "MSFT", "GOOG"]
@@ -8,7 +9,7 @@ assets = get_example_assets(tickers)
 increms_df = assets.increments.drop("date")
 increms_np = increms_df.to_numpy()
 increms_n = increms_df.height
-u = increms_np.mean(axis=0) + 0.03
+u = increms_np.mean(axis=0) - 0.03
 half_life = 3
 
 
@@ -34,20 +35,16 @@ mean_ineq = view_on_mean(
 mean_eq = view_on_mean(
     increms_np,
     u,
-    ["inequality"] * u.shape[0],
-    ["equal_less"] * u.shape[0],
+    ["equality"] * u.shape[0],
+    ["equal"] * u.shape[0],
 )
 
-print(mean_eq)
 
-
-# test_ineq = entropy_pooling_probs(prior, mean_ineq)
-# test_eq = entropy_pooling_probs(prior_2, mean_eq)
+test_ineq = entropy_pooling_probs(prior, mean_ineq)
+# test_eq = entropy_pooling_probs(prior, mean_eq)
 #
 #
-# print(test_ineq)
-# print(test_eq)
 # print(test_ineq == test_eq)
-#
-# plot_post_prob(test_ineq)
+
+plot_post_prob(test_ineq)
 # plot_post_prob(test_eq)
