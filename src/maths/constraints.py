@@ -8,29 +8,31 @@ from data_types.vectors import (
 )
 
 
+# TODO: Think of how not need view on each asset
 def view_on_mean(
     data: NDArray[np.floating],
-    target_mean: NDArray[np.floating],
-    const_type: ConstraintTypeLike,
-    sign_type: ConstraintSignLike,
-) -> View:
+    target_mean_vec: NDArray[np.floating],
+    const_type: list[ConstraintTypeLike],
+    sign_type: list[ConstraintSignLike],
+) -> list[View]:
     """
-    Builds view for mean targets
+    Builds view for mean targets, currently requires for you to have a view on each asset.
     """
-
-    if target_mean.shape[0] != data.ndim:
+    # Checks we have equal amounts of data, constraints, and targets
+    if not (len(target_mean_vec) == len(const_type) == len(sign_type) == data.shape[1]):
         raise ValueError(
-            f"target_mean length {target_mean.shape[0]} must equal data columns {data.ndim}"
+            "All inputs must have the same length as the number of assets."
         )
 
-    if data.ndim == 1:
+    if data.shape[1] == 1:
         data = data[:, None]
 
-    target_mean = np.asarray(target_mean, dtype=float).reshape(-1)
-
-    return View(
-        data=data.T,
-        views_targets=target_mean,
-        const_type=const_type,
-        sign_type=sign_type,
-    )
+    return [
+        View(
+            data=data.T[i],
+            views_targets=np.array(target_mean_vec[i]),
+            const_type=const_type[i],
+            sign_type=sign_type[i],
+        )
+        for i in range(data.T.shape[0])
+    ]

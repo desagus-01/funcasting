@@ -6,6 +6,7 @@ from numpy.typing import NDArray
 from data_types.vectors import ConstraintSigns, ConstraintType, ProbVector, View
 
 
+# TODO: Change to it works on multi arrays
 def kernel_smoothing(
     data_array: NDArray[np.floating],
     half_life: float,
@@ -30,11 +31,7 @@ def kernel_smoothing(
     return np.exp(-((dist_to_ref / bandwidth) ** kernel_type))
 
 
-def build_constraints(
-    views: View,
-    posterior: cp.Variable,
-) -> list[CvxConstraint]:
-    base: list[CvxConstraint] = [cp.sum(posterior) == 1]  # ensures we get probabilities
+def assign_constraint_equation(views: View, posterior: cp.Variable) -> CvxConstraint:
     match (views.const_type, views.sign_type):
         case (ConstraintType.equality, ConstraintSigns.equal):
             constraint = views.data @ posterior == views.views_targets
@@ -49,7 +46,15 @@ def build_constraints(
             raise ValueError(
                 f"Invalid combination: const_type={views.const_type}, sign_type={views.sign_type}"
             )
+    return constraint
 
+
+def build_constraints(
+    views: View,
+    posterior: cp.Variable,
+) -> list[CvxConstraint]:
+    base: list[CvxConstraint] = [cp.sum(posterior) == 1]  # ensures we get probabilities
+    constraint = assign_constraint_equation(views, posterior)
     return [constraint] + base
 
 
