@@ -10,7 +10,7 @@ from data_types.vectors import ConstraintSigns, ConstraintType, ProbVector, View
 def kernel_smoothing(
     data_array: NDArray[np.floating],
     half_life: float,
-    kernel_type: float,
+    kernel_type: int,
     reference: float | None,
     time_based: bool = False,
 ) -> NDArray[np.float64]:
@@ -29,6 +29,27 @@ def kernel_smoothing(
 
     bandwidth: float = half_life / (np.log(2.0) ** (1.0 / kernel_type))
     return np.exp(-((dist_to_ref / bandwidth) ** kernel_type))
+
+
+def ens(prob_vector: ProbVector) -> int:
+    """
+    Effective number of scenarios (ENS) as measures by the exponential of the entropy
+    """
+    max = prob_vector.shape[0]
+
+    ens = np.exp(-(np.sum(prob_vector * np.log(prob_vector))))
+
+    if (ens < 1) or (ens > max):
+        raise RuntimeError(
+            "ENS is larger than total number of scenarios or smaller than 1."
+        )
+
+    return int(ens) + 1  # ensure rounding is ok
+
+
+# TODO: Finish writing this
+def effective_rank(views_target):
+    pass
 
 
 def assign_constraint_equation(views: View, posterior: cp.Variable) -> CvxConstraint:
@@ -54,22 +75,47 @@ def build_constraints(
     posterior: cp.Variable,
 ) -> list[CvxConstraint]:
     base: list[CvxConstraint] = [cp.sum(posterior) == 1]  # ensures we get probabilities
-    # constraint = assign_constraint_equation(views, posterior)
-    constraints = []
+    constraints: list[CvxConstraint] = []
     for view in views:
         constraints.append(assign_constraint_equation(view, posterior))
 
     return constraints + base
 
 
+# TODO: Finish writing this
+def get_ep_diags(
+    views: list[View], constraints: list[CvxConstraint], posterior_probs: ProbVector
+) -> list[dict]:
+    info: list[dict] = []
+    for view, constraint in zip(views, constraints):
+        dual_raw = constraint.dual_value
+
+        if view.const_type == ConstraintType.equality:
+            slack = view.data @ posterior_probs - view.views_targets
+            active = abs(slack) <= 1e-5
+            sensitivity = dual_raw
+
+        info.append(
+            {
+                "type": view.const_type,
+                "sign": view.const_type,
+                "active": active,
+                "sensitivity": sensitivity,
+            }
+        )
+
+    return info
+
+
 def simple_entropy_pooling(
     prior: ProbVector,
     views: list[View],
     solver: str = "SCS",
+    include_diags: bool = False,
     **solver_kwargs: str,
 ) -> ProbVector:
     # ) -> NDArray[np.floating]:
-    posterior = cp.Variable(prior.shape[0], nonneg=True)  # ensures probs > 0
+    posterior = cp.Variable(prior.shape[0])
     constraints = build_constraints(views=views, posterior=posterior)
     obj = cp.Minimize(cp.sum(cp.kl_div(posterior, prior)))
     prob = cp.Problem(obj, constraints)
@@ -77,5 +123,8 @@ def simple_entropy_pooling(
 
     if posterior.value is None:
         raise RuntimeError("Optimization failed or returned no solution!")
+
+    if include_diags:
+        print(get_ep_diags(views, constraints, posterior.value))
 
     return np.asarray(posterior.value, dtype=float)

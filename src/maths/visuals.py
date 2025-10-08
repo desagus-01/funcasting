@@ -13,13 +13,10 @@ def choose_hist_bin(data: NDArray[np.floating] | ProbVector) -> int:
     return int(np.sqrt(len(data)))
 
 
-def plot_post_prob(prob_vector: ProbVector, kernel_label: str | None = None) -> None:
+def plt_prob_eval(prob_vector: ProbVector) -> None:
     p_cum = np.cumsum(prob_vector)
 
     fig, axs = plt.subplots(3, 1, figsize=(10, 12))
-    fig.suptitle(
-        "Posterior Probability" + (f" ({kernel_label})" if kernel_label else "")
-    )
 
     axs[0].plot(prob_vector)
     axs[0].yaxis.set_major_formatter(mtick.PercentFormatter(1.0, 4))
