@@ -82,36 +82,34 @@ def build_constraints(
     return constraints + base
 
 
-# TODO: Finish writing this
-def get_ep_diags(
+def get_constraints_diags(
     views: list[View], constraints: list[CvxConstraint], posterior_probs: ProbVector
 ) -> list[dict[str, int | bool | str]]:
+    """
+    Gives some diagnostics regarding the constraints added to the entropy pooling problem:
+
+    active: True means that the constraint is relevant to shaping the posterior probability.
+
+    sensitivity: The langrange multiplier, tell us the magnitude of the constraint has on the optimization (ie how much it is relevant).
+
+    """
     info: list[dict] = []
+
     for view, constraint in zip(views, constraints):
-        dual_raw = constraint.dual_value
-        if view.const_type == "equality":
-            slack = view.data @ posterior_probs - view.views_targets
-            active = abs(slack) <= 1e-5
-            sensitivity = dual_raw
-        else:  # inequalities
-            if view.sign_type == "equal_less":
-                residual = view.data @ posterior_probs - view.views_targets
-                slack = residual
-                sensitivity = dual_raw  # ≥ 0 if binding
-                active = residual >= 1e-5
-            elif view.sign_type == "equal_greater":
-                residual = view.data @ posterior_probs - view.views_targets
-                slack = -residual  # need to flip because of cvxpy
-                sensitivity = -dual_raw  # ≥ 0 if binding
-                active = (-residual) >= -1e-5
-            else:
-                raise ValueError("Unexpected inequality sign_type")
+        sensitivity = (
+            constraint.dual_value
+            if view.sign_type != "equal_greater"
+            else -constraint.dual_value
+        )
 
         info.append(
             {
                 "type": view.const_type,
-                "sign": view.const_type,
-                "active": active,
+                "sign": view.sign_type,
+                "constraint_value": view.views_targets,
+                "active": bool(
+                    abs(view.data @ posterior_probs - view.views_targets) <= 1e-5
+                ),
                 "sensitivity": sensitivity,
             }
         )
@@ -137,6 +135,6 @@ def simple_entropy_pooling(
         raise RuntimeError("Optimization failed or returned no solution!")
 
     if include_diags:
-        print(get_ep_diags(views, constraints, posterior.value))
+        print(get_constraints_diags(views, constraints, posterior.value))
 
     return np.asarray(posterior.value, dtype=float)
