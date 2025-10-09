@@ -89,7 +89,7 @@ def get_ep_diags(
     info: list[dict] = []
     for view, constraint in zip(views, constraints):
         dual_raw = constraint.dual_value
-        if view.const_type == "e":
+        if view.const_type == "equality":
             slack = view.data @ posterior_probs - view.views_targets
             active = abs(slack) <= 1e-5
             sensitivity = dual_raw
