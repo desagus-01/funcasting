@@ -14,7 +14,9 @@ def _as_prob_vector(a: NDArray[np.float64]) -> NDArray[np.float64]:
     if np.any(a < 0):
         raise ValueError("All probabilities must be non-negative.")
     if not np.isclose(a.sum(dtype=np.float64), 1.0, rtol=0, atol=1e-5):
-        raise ValueError("Probabilities must sum to 1.")
+        raise ValueError(
+            f"Probabilities must sum to 1. Currently this is {a.sum(dtype=np.float64)}"
+        )
     return a
 
 

@@ -35,7 +35,7 @@ def state_crisp_probs(length: int, condition_vector: NDArray[np.bool_]) -> ProbV
 def state_smooth_probs(
     data_array: NDArray[np.floating],
     half_life: float,
-    kernel_type: float,
+    kernel_type: int,
     reference: float | None,
     time_based: bool = False,
 ) -> ProbVector:
@@ -56,5 +56,14 @@ def state_smooth_probs(
 def entropy_pooling_probs(
     prior: ProbVector,
     views: list[View],
+    confidence: float = 1.0,
+    include_diags: bool = False,
 ) -> ProbVector:
-    return simple_entropy_pooling(prior, views)
+    """
+    Implements entropy pooling optimization using KL divergence as the objective function, then adds confidence value linearly to the resulting posterior.
+    """
+    entropy_pooling_res = simple_entropy_pooling(
+        prior, views, include_diags=include_diags
+    )
+
+    return confidence * entropy_pooling_res + (1 - confidence) * prior

@@ -1,7 +1,7 @@
 from get_data import get_example_assets
 from maths.constraints import view_on_mean
-from maths.core import simple_entropy_pooling
-from maths.prob_vectors import state_smooth_probs, uniform_probs
+from maths.prob_vectors import entropy_pooling_probs, state_smooth_probs, uniform_probs
+from maths.visuals import plt_prob_eval
 
 # set-up
 tickers = ["AAPL", "MSFT", "GOOG"]
@@ -44,9 +44,9 @@ mean_eq = view_on_mean(
 
 
 # test_eq = simple_entropy_pooling(prior, mean_eq, include_diags=True)
-test_ineq = simple_entropy_pooling(prior_2, mean_ineq, include_diags=True)
+test_ineq = entropy_pooling_probs(prior_2, mean_ineq, 0.5, include_diags=True)
+test_ineq_2 = entropy_pooling_probs(prior_2, mean_ineq, 0, include_diags=True)
 
-print(increms_np.T @ test_ineq - u)
-
-# plt_prob_eval(prior)
-# plt_prob_eval(test_ineq)
+plt_prob_eval(prior_2)
+plt_prob_eval(test_ineq)
+plt_prob_eval(test_ineq_2)
