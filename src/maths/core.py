@@ -85,15 +85,27 @@ def build_constraints(
 # TODO: Finish writing this
 def get_ep_diags(
     views: list[View], constraints: list[CvxConstraint], posterior_probs: ProbVector
-) -> list[dict]:
+) -> list[dict[str, int | bool | str]]:
     info: list[dict] = []
     for view, constraint in zip(views, constraints):
         dual_raw = constraint.dual_value
-
-        if view.const_type == ConstraintType.equality:
+        if view.const_type == "e":
             slack = view.data @ posterior_probs - view.views_targets
             active = abs(slack) <= 1e-5
             sensitivity = dual_raw
+        else:  # inequalities
+            if view.sign_type == "equal_less":
+                residual = view.data @ posterior_probs - view.views_targets
+                slack = residual
+                sensitivity = dual_raw  # ≥ 0 if binding
+                active = residual >= 1e-5
+            elif view.sign_type == "equal_greater":
+                residual = view.data @ posterior_probs - view.views_targets
+                slack = -residual  # need to flip because of cvxpy
+                sensitivity = -dual_raw  # ≥ 0 if binding
+                active = (-residual) >= -1e-5
+            else:
+                raise ValueError("Unexpected inequality sign_type")
 
         info.append(
             {
