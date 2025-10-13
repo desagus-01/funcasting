@@ -23,6 +23,7 @@ def view_on_mean(
 
     return [
         View(
+            type="mean",
             risk_driver=key,
             data=data[key].to_numpy().T,
             views_target=np.array(target_means[key]),
@@ -30,6 +31,27 @@ def view_on_mean(
             sign_type=sign_type[i],
         )
         for i, key in enumerate(target_means.keys())
+    ]
+
+
+def view_on_sorting(
+    data: DataFrame,
+    target_sorting: dict[str, int],
+) -> list[View]:
+    """
+    Builds the constraints based on the sorting order, usually target_sorting should be based on the mean of each asset, but made this flexible for now.
+    """
+
+    return [
+        View(
+            type="sorting",
+            risk_driver=key,
+            data=data[key].to_numpy().T,
+            views_target=np.array(target_sorting[key]),
+            const_type="inequality",
+            sign_type="equal_less",
+        )
+        for key in target_sorting.keys()
     ]
 
 
