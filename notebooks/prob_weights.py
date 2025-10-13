@@ -43,10 +43,13 @@ mean_eq = view_on_mean(
 )
 
 
+# mean_targets = view.targets for view in mean_ineq
+
+mean_targets = [float(view.views_targets) for view in mean_ineq]
+
 # test_eq = simple_entropy_pooling(prior, mean_eq, include_diags=True)
 test_ineq = entropy_pooling_probs(prior_2, mean_ineq, 0.5, include_diags=True)
 test_ineq_2 = entropy_pooling_probs(prior_2, mean_ineq, 0, include_diags=True)
 
-plt_prob_eval(prior_2)
-plt_prob_eval(test_ineq)
-plt_prob_eval(test_ineq_2)
+plt_prob_eval(prior, data_long)
+plt_prob_eval(test_ineq, data_long, mean_targets)

@@ -124,7 +124,6 @@ def simple_entropy_pooling(
     include_diags: bool = False,
     **solver_kwargs: str,
 ) -> ProbVector:
-    # ) -> NDArray[np.floating]:
     posterior = cp.Variable(prior.shape[0])
     constraints = build_constraints(views=views, posterior=posterior)
     obj = cp.Minimize(cp.sum(cp.kl_div(posterior, prior)))
