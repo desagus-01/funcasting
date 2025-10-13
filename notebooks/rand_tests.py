@@ -6,6 +6,16 @@ from data_types.vectors import (
     ConstraintTypeLike,
     View,
 )
+from get_data import get_example_assets
+from maths.core import (
+    simple_entropy_pooling,
+)
+from maths.prob_vectors import uniform_probs
+
+# set-up
+tickers = ["AAPL", "MSFT", "GOOG"]
+assets = get_example_assets(tickers)
+increms_df = assets.increments.drop("date")
 
 
 def view_on_mean(
@@ -33,26 +43,12 @@ def view_on_mean(
     ]
 
 
-#
-# # TODO: Properly define this
-# def view_on_mean_market(
-#     data: NDArray[np.floating],
-#     target_mean: NDArray[np.floating],
-#     const_type: ConstraintTypeLike,
-#     sign_type: ConstraintSignLike,
-# ) -> View:
-#     """
-#     Build the constraint based on overall 'market' targeted mean.
-#     """
-#     # Checks we have equal amounts of data, constraints, and targets
-#     if not (len(target_mean) == len(const_type) == len(sign_type) == data.shape[1]):
-#         raise ValueError(
-#             "All inputs must have the same length as the number of assets."
-#         )
-#
-#     return View(
-#         data=data.T,
-#         views_targets=np.array(target_mean),
-#         const_type=const_type,
-#         sign_type=sign_type,
-#     )
+targs = {"AAPL": 0.01, "GOOG": 0.02}
+consts = ["inequality", "inequality"]
+signs = ["equal_less", "equal_less"]
+
+x = view_on_mean(increms_df, targs, consts, signs)
+
+prior = uniform_probs(increms_df.height)
+
+print(simple_entropy_pooling(prior, x))

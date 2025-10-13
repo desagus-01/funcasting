@@ -39,8 +39,9 @@ ConstraintSignLike: TypeAlias = (
 
 class View(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
+    risk_driver: str
     data: NDArray[np.floating]
-    views_targets: NDArray[np.floating]
+    views_target: NDArray[np.floating]
     const_type: ConstraintTypeLike
     sign_type: ConstraintSignLike
 

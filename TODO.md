@@ -1,8 +1,11 @@
 > [!TODO] Higher Priority
 > - [ ] Finish setting up effective_ranks (helps us know whether our views are fine to use by determining rank of matrix)
-> - [ ] Add remaining constraints to the problem 
+> - [ ] Constraints:
+    > - [ ] Add to mean view so that it only affects one affects selected assets instead of all 
+    > - [ ] Try adding 'market' constraint     
 
 > [!TODO] Lower Priority
+> - [ ] Change assigned prob plot to always start at 0 
 > - [ ] Organize files in a more logical manner
 > - [ ] Write classes? 
 

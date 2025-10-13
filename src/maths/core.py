@@ -55,13 +55,13 @@ def effective_rank(views_target):
 def assign_constraint_equation(views: View, posterior: cp.Variable) -> CvxConstraint:
     match (views.const_type, views.sign_type):
         case (ConstraintType.equality, ConstraintSigns.equal):
-            constraint = views.data @ posterior == views.views_targets
+            constraint = views.data @ posterior == views.views_target
 
         case (ConstraintType.inequality, ConstraintSigns.equal_greater):
-            constraint = views.data @ posterior >= views.views_targets
+            constraint = views.data @ posterior >= views.views_target
 
         case (ConstraintType.inequality, ConstraintSigns.equal_less):
-            constraint = views.data @ posterior <= views.views_targets
+            constraint = views.data @ posterior <= views.views_target
 
         case _:
             raise ValueError(
@@ -82,6 +82,7 @@ def build_constraints(
     return constraints + base
 
 
+# TODO: Fix info dict
 def get_constraints_diags(
     views: list[View], constraints: list[CvxConstraint], posterior_probs: ProbVector
 ) -> list[dict[str, int | bool | str]]:
@@ -104,11 +105,12 @@ def get_constraints_diags(
 
         info.append(
             {
+                "risk_driver": view.risk_driver,
                 "type": view.const_type,
                 "sign": view.sign_type,
-                "constraint_value": view.views_targets,
+                "constraint_value": view.views_target,
                 "active": bool(
-                    abs(view.data @ posterior_probs - view.views_targets) <= 1e-5
+                    abs(view.data @ posterior_probs - view.views_target) <= 1e-5
                 ),
                 "sensitivity": sensitivity,
             }
