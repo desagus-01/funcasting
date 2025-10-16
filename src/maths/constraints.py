@@ -34,24 +34,31 @@ def view_on_mean(
     ]
 
 
-def view_on_sorting(
+def view_on_exp_return_ranking(
     data: DataFrame,
-    target_sorting: dict[str, int],
+    asset_ranking: list[str],
 ) -> list[View]:
     """
-    Builds the constraints based on the sorting order, usually target_sorting should be based on the mean of each asset, but made this flexible for now.
+    Build view based on which assets should have a higher expected return (ie A >= B >= C ...).
     """
 
+    # TODO:Add check to make sure assets in asset_ranking match with those of data
+
+    exp_values = (
+        data.select(asset_ranking).mean().to_numpy().flatten()
+    )  # re-ordering to match with asset_ranking
+
+    diffs = -np.diff(exp_values)
     return [
         View(
             type="sorting",
-            risk_driver=key,
-            data=data[key].to_numpy().T,
-            views_target=np.array(target_sorting[key]),
+            risk_driver=asset,
+            data=data[asset].to_numpy().T,
+            views_target=np.array(diff),
             const_type="inequality",
-            sign_type="equal_less",
+            sign_type="equal_greater",
         )
-        for key in target_sorting.keys()
+        for asset, diff in zip(asset_ranking[:-1], diffs)
     ]
 
 

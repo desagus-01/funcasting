@@ -2,6 +2,7 @@
 > - [ ] Finish setting up effective_ranks (helps us know whether our views are fine to use by determining rank of matrix)
 > - [ ] Constraints:
     > - [ ] Add 'sorting' constraint 
+    > - [ ] Need to change how constraints are build to allow for this 
     > - [ ] Try adding 'market' constraint     
     > - [ ] Add volatility constraint 
 
