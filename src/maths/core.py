@@ -105,6 +105,12 @@ def get_constraints_diags(
             if view.sign_type != "equal_greater"
             else -constraint.dual_value
         )
+        if view.type == "sorting":
+            active = bool(
+                view.data[0] @ posterior_probs >= view.data[1] @ posterior_probs
+            )
+        else:
+            active = bool(abs(view.data @ posterior_probs - view.views_target <= 1e-5))
 
         info.append(
             {
@@ -112,9 +118,7 @@ def get_constraints_diags(
                 "type": view.const_type,
                 "sign": view.sign_type,
                 "constraint_value": view.views_target,
-                "active": bool(
-                    abs(view.data @ posterior_probs - view.views_target) <= 1e-5
-                ),
+                "active": active,
                 "sensitivity": sensitivity,
             }
         )
