@@ -34,7 +34,7 @@ def view_on_mean(
     ]
 
 
-def view_on_exp_return_ranking(
+def view_on_ranking(
     data: DataFrame,
     asset_ranking: list[str],
 ) -> list[View]:
@@ -42,23 +42,20 @@ def view_on_exp_return_ranking(
     Build view based on which assets should have a higher expected return (ie A >= B >= C ...).
     """
 
-    # TODO:Add check to make sure assets in asset_ranking match with those of data
+    assets_to_iterate = range(len(asset_ranking) - 1)
 
-    exp_values = (
-        data.select(asset_ranking).mean().to_numpy().flatten()
-    )  # re-ordering to match with asset_ranking
+    comparisons = [(asset_ranking[i], asset_ranking[i + 1]) for i in assets_to_iterate]
 
-    diffs = -np.diff(exp_values)
     return [
         View(
             type="sorting",
-            risk_driver=asset,
+            risk_driver=comparisons[asset],
             data=data[asset].to_numpy().T,
-            views_target=np.array(diff),
+            views_target=None,
             const_type="inequality",
             sign_type="equal_greater",
         )
-        for asset, diff in zip(asset_ranking[:-1], diffs)
+        for asset in assets_to_iterate
     ]
 
 

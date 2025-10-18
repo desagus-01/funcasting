@@ -1,5 +1,5 @@
 from get_data import get_example_assets
-from maths.constraints import view_on_exp_return_ranking
+from maths.constraints import view_on_ranking
 
 # set-up
 tickers = ["AAPL", "MSFT", "GOOG"]
@@ -10,5 +10,5 @@ increms_n = increms_df.height
 u = increms_np.mean(axis=0) - 0.019
 half_life = 3
 
-x = view_on_exp_return_ranking(increms_df, ["GOOG", "AAPL", "MSFT"])
+x = view_on_ranking(increms_df, ["GOOG", "AAPL", "MSFT"])
 print(x)

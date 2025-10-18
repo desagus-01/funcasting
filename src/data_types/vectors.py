@@ -37,12 +37,17 @@ ConstraintSignLike: TypeAlias = (
 )
 
 
+# TODO: This is working for both types of constraints, think of making it abstract
 class View(BaseModel):
+    """
+    Allows to create a view on a single scenario
+    """
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
     type: str
-    risk_driver: str
+    risk_driver: tuple[str, str] | str
     data: NDArray[np.floating]
-    views_target: NDArray[np.floating]
+    views_target: NDArray[np.floating] | None
     const_type: ConstraintTypeLike
     sign_type: ConstraintSignLike
 
