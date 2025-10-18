@@ -53,20 +53,23 @@ def effective_rank(views_target):
 
 
 def assign_constraint_equation(views: View, posterior: cp.Variable) -> CvxConstraint:
-    match (views.const_type, views.sign_type):
-        case (ConstraintType.equality, ConstraintSigns.equal):
-            constraint = views.data @ posterior == views.views_target
+    if views.type == "sorting":
+        constraint = views.data[0] @ posterior >= views.data[1] @ posterior
+    else:
+        match (views.const_type, views.sign_type):
+            case (ConstraintType.equality, ConstraintSigns.equal):
+                constraint = views.data @ posterior == views.views_target
 
-        case (ConstraintType.inequality, ConstraintSigns.equal_greater):
-            constraint = views.data @ posterior >= views.views_target
+            case (ConstraintType.inequality, ConstraintSigns.equal_greater):
+                constraint = views.data @ posterior >= views.views_target
 
-        case (ConstraintType.inequality, ConstraintSigns.equal_less):
-            constraint = views.data @ posterior <= views.views_target
+            case (ConstraintType.inequality, ConstraintSigns.equal_less):
+                constraint = views.data @ posterior <= views.views_target
+            case _:
+                raise ValueError(
+                    f"Unsupported constraint type/sign: {views.const_type}, {views.sign_type}"
+                )
 
-        case _:
-            raise ValueError(
-                f"Invalid combination: const_type={views.const_type}, sign_type={views.sign_type}"
-            )
     return constraint
 
 

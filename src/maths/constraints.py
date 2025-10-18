@@ -50,7 +50,7 @@ def view_on_ranking(
         View(
             type="sorting",
             risk_driver=comparisons[asset],
-            data=data[asset].to_numpy().T,
+            data=data[comparisons[asset]].to_numpy().T,
             views_target=None,
             const_type="inequality",
             sign_type="equal_greater",
