@@ -1,3 +1,5 @@
+import operator as _op
+
 import cvxpy as cp
 import numpy as np
 from cvxpy.constraints.constraint import Constraint as CvxConstraint
@@ -52,6 +54,28 @@ def effective_rank(views_target):
     pass
 
 
+def assign_constraint_equation(views, posterior, prior):
+    if views.type == "sorting":
+        return views.data[0] @ posterior >= views.data[1] @ posterior
+
+    if views.type == "std" and views.views_target is not None:
+        mu_ref = views.data @ prior
+        return (views.data**2) @ posterior == views.views_target**2 + mu_ref**2
+
+    op = {
+        (ConstraintType.equality, ConstraintSigns.equal): _op.eq,
+        (ConstraintType.inequality, ConstraintSigns.equal_greater): _op.ge,
+        (ConstraintType.inequality, ConstraintSigns.equal_less): _op.le,
+    }.get((views.const_type, views.sign_type))
+
+    if op is None:
+        raise ValueError(
+            f"Unsupported constraint type/sign: {views.const_type}, {views.sign_type}"
+        )
+
+    return op(views.data @ posterior, views.views_target)
+
+
 def assign_constraint_equation(
     views: View, posterior: cp.Variable, prior: ProbVector
 ) -> CvxConstraint:
@@ -60,7 +84,7 @@ def assign_constraint_equation(
 
     elif views.type == "std" and views.views_target is not None:
         mu_ref = views.data @ prior  # prior-anchored mean (scalar)
-        constraint = (views.data**2) @ posterior == views.views_target**2 + mu_ref**2
+        constraint = views.data**2 @ posterior == views.views_target**2 + mu_ref**2
 
     else:
         match (views.const_type, views.sign_type):

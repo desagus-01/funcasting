@@ -31,7 +31,9 @@ prior = uniform_probs(increms_n)
 posterior = cp.Variable(prior.shape[0])
 
 
-x = view_on_std(increms_df, {"AAPL": 0.03}, ["equality"], ["equal"])
+x = view_on_std(
+    increms_df, {"AAPL": 0.03, "MSFT": 0.01}, ["equality"] * 2, ["equal"] * 2
+)
 
 y = build_constraints(x, posterior, prior)
 
