@@ -34,6 +34,29 @@ def view_on_mean(
     ]
 
 
+def view_on_std(
+    data: DataFrame,
+    target_std: dict[str, float],
+    const_type: list[ConstraintTypeLike],
+    sign_type: list[ConstraintSignLike],
+) -> list[View]:
+    # Checks we have equal amounts of data, constraints, and targets
+    if not (len(target_std.keys()) == len(const_type) == len(sign_type)):
+        raise ValueError("All inputs must have the same length as the number of views.")
+
+    return [
+        View(
+            type="std",
+            risk_driver=key,
+            data=data[key].to_numpy().T,
+            views_target=np.array(target_std[key]),
+            const_type=const_type[i],
+            sign_type=sign_type[i],
+        )
+        for i, key in enumerate(target_std.keys())
+    ]
+
+
 def view_on_ranking(
     data: DataFrame,
     asset_ranking: list[str],
@@ -57,28 +80,3 @@ def view_on_ranking(
         )
         for asset in assets_to_iterate
     ]
-
-
-#
-# # TODO: Properly define this
-# def view_on_mean_market(
-#     data: NDArray[np.floating],
-#     target_mean: NDArray[np.floating],
-#     const_type: ConstraintTypeLike,
-#     sign_type: ConstraintSignLike,
-# ) -> View:
-#     """
-#     Build the constraint based on overall 'market' targeted mean.
-#     """
-#     # Checks we have equal amounts of data, constraints, and targets
-#     if not (len(target_mean) == len(const_type) == len(sign_type) == data.shape[1]):
-#         raise ValueError(
-#             "All inputs must have the same length as the number of assets."
-#         )
-#
-#     return View(
-#         data=data.T,
-#         views_targets=np.array(target_mean),
-#         const_type=const_type,
-#         sign_type=sign_type,
-#     )

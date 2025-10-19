@@ -52,9 +52,17 @@ def effective_rank(views_target):
     pass
 
 
-def assign_constraint_equation(views: View, posterior: cp.Variable) -> CvxConstraint:
+def assign_constraint_equation(
+    views: View, posterior: cp.Variable, prior: ProbVector
+) -> CvxConstraint:
     if views.type == "sorting":
         constraint = views.data[0] @ posterior >= views.data[1] @ posterior
+    elif views.type == "std":
+        prior_mean = views.data @ prior
+        constraint = (
+            (views.data**2) @ posterior
+            <= views.views_target**2 + (views.data @ prior) ** 2,
+        )
     else:
         match (views.const_type, views.sign_type):
             case (ConstraintType.equality, ConstraintSigns.equal):
@@ -76,11 +84,12 @@ def assign_constraint_equation(views: View, posterior: cp.Variable) -> CvxConstr
 def build_constraints(
     views: list[View],
     posterior: cp.Variable,
+    prior: ProbVector,
 ) -> list[CvxConstraint]:
     base: list[CvxConstraint] = [cp.sum(posterior) == 1]  # ensures we get probabilities
     constraints: list[CvxConstraint] = []
     for view in views:
-        constraints.append(assign_constraint_equation(view, posterior))
+        constraints.append(assign_constraint_equation(view, posterior, prior))
 
     return constraints + base
 
@@ -134,7 +143,7 @@ def simple_entropy_pooling(
     **solver_kwargs: str,
 ) -> ProbVector:
     posterior = cp.Variable(prior.shape[0])
-    constraints = build_constraints(views=views, posterior=posterior)
+    constraints = build_constraints(views=views, posterior=posterior, prior=prior)
     obj = cp.Minimize(cp.sum(cp.kl_div(posterior, prior)))
     prob = cp.Problem(obj, constraints)
     _ = prob.solve(solver, **solver_kwargs)
