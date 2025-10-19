@@ -18,6 +18,7 @@ increms_df = assets.increments.drop("date")
 increms_np = increms_df.to_numpy()
 increms_n = increms_df.height
 u = increms_np.mean(axis=0) - 0.01
+sigma = increms_np.std(axis=0)
 half_life = 3
 
 

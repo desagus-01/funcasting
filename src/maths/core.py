@@ -57,12 +57,11 @@ def assign_constraint_equation(
 ) -> CvxConstraint:
     if views.type == "sorting":
         constraint = views.data[0] @ posterior >= views.data[1] @ posterior
-    elif views.type == "std":
-        prior_mean = views.data @ prior
-        constraint = (
-            (views.data**2) @ posterior
-            <= views.views_target**2 + (views.data @ prior) ** 2,
-        )
+
+    elif views.type == "std" and views.views_target is not None:
+        mu_ref = views.data @ prior  # prior-anchored mean (scalar)
+        constraint = (views.data**2) @ posterior == views.views_target**2 + mu_ref**2
+
     else:
         match (views.const_type, views.sign_type):
             case (ConstraintType.equality, ConstraintSigns.equal):

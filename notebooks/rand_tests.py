@@ -8,6 +8,7 @@ from maths.core import (
     simple_entropy_pooling,
 )
 from maths.prob_vectors import uniform_probs
+from maths.visuals import plt_prob_eval
 
 # set-up
 tickers = ["AAPL", "MSFT", "GOOG"]
@@ -18,12 +19,23 @@ increms_n = increms_df.height
 u = increms_np.mean(axis=0) - 0.019
 half_life = 3
 
+
+data_long = assets.increments.unpivot(
+    on=tickers, value_name="return", variable_name="ticker", index="date"
+)
+
+
+sigma = increms_np.std(axis=0)
+
 prior = uniform_probs(increms_n)
 posterior = cp.Variable(prior.shape[0])
 
 
-x = view_on_std(increms_df, {"AAPL": 0.20}, ["equality"], ["equal"])
+x = view_on_std(increms_df, {"AAPL": 0.03}, ["equality"], ["equal"])
 
 y = build_constraints(x, posterior, prior)
 
 z = simple_entropy_pooling(prior, x)
+
+
+plt_prob_eval(z, data_long)
