@@ -1,8 +1,9 @@
 import cvxpy as cp
+import numpy as np
 
 from get_data import get_example_assets
-from helpers import get_corr_info
-from maths.constraints import view_on_mean, view_on_ranking, view_on_std
+from helpers import get_corr_info, weighted_std
+from maths.constraints import view_on_corr, view_on_mean, view_on_ranking, view_on_std
 from maths.core import (
     assign_constraint_equation,
     build_constraints,
@@ -20,20 +21,29 @@ increms_n = increms_df.height
 u = increms_np.mean(axis=0) - 0.019
 half_life = 3
 
-print(get_corr_info(increms_df))
+x = get_corr_info(increms_df)
+
+y = view_on_corr(increms_df, x, ["equal"] * 3)
+
+
+data_long = assets.increments.unpivot(
+    on=tickers, value_name="return", variable_name="ticker", index="date"
+)
+
+
+sigma = increms_np.std(axis=0)
+
+prior = uniform_probs(increms_n)
+posterior = cp.Variable(prior.shape[0])
 
 #
-# data_long = assets.increments.unpivot(
-#     on=tickers, value_name="return", variable_name="ticker", index="date"
-# )
+# for o in y[0].data:
+#     print(weighted_std(o, prior))
 #
-#
-# sigma = increms_np.std(axis=0)
-#
-# prior = uniform_probs(increms_n)
-# posterior = cp.Variable(prior.shape[0])
-#
-#
+
+print(weighted_std(y[0].data, prior))
+
+
 # x = view_on_std(
 #     increms_df,
 #     {"AAPL": 0.03, "MSFT": 0.01},

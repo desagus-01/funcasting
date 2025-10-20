@@ -73,7 +73,7 @@ def assign_constraint_equation(views: View, posterior: cp.Variable, prior: ProbV
         case "corr":
             # Need to anchor both mean and std on prior
             mu_ref = views.data @ prior
-            std_ref = np.std(views.data @ prior)
+            std_ref = np.std(views.data * prior, axis=1)
             constraint = operator_used(
                 views.data @ posterior, views.views_target * std_ref + mu_ref
             )

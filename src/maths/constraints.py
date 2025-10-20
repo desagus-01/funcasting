@@ -1,6 +1,4 @@
 import numpy as np
-import polars as pl
-from numpy.typing import NDArray
 from polars import DataFrame
 
 from data_types.vectors import (

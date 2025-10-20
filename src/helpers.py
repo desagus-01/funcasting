@@ -1,6 +1,8 @@
+import numpy as np
 import polars as pl
+from numpy.typing import NDArray
 
-from data_types.vectors import CorrInfo, View
+from data_types.vectors import CorrInfo, ProbVector, View
 from globals import sign_operations
 
 
@@ -29,3 +31,11 @@ def get_corr_info(data: pl.DataFrame) -> list[CorrInfo]:
         CorrInfo(asset_pair=(corrs["index"], corrs["variable"]), corr=corrs["value"])
         for corrs in corr_df.rows(named=True)
     ]
+
+
+def weighted_std(
+    data: NDArray[np.floating], weights: ProbVector
+) -> NDArray[np.floating]:
+    average = data @ weights
+    variance = np.average((data - average) ** 2, weights=weights)
+    return np.sqrt(variance)
