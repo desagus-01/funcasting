@@ -8,6 +8,16 @@ from data_types.vectors import (
 )
 
 
+def view_on_marginal(data: DataFrame, target_data: DataFrame) -> View:
+    return View(
+        type="marginal",
+        risk_driver=target_data.columns,
+        data=data[target_data.columns].to_numpy().T,
+        views_target=target_data.to_numpy(),
+        sign_type="equal_less",
+    )
+
+
 def view_on_corr(
     data: DataFrame,
     corr_targets: list[CorrInfo],

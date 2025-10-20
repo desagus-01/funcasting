@@ -27,19 +27,16 @@ data_long = assets.increments.unpivot(
 prior = uniform_probs(increms_n)
 posterior = cp.Variable(prior.shape[0])
 
-x = get_corr_info(increms_df)
-#
-print(x)
+corr_views = get_corr_info(increms_df)
 
-# views = view_on_corr(increms_df, x, ["equal"] * 3)
-# mu_ref, std_ref = weighted_moments(views[0].data, prior)
-#
-# lhs = views[0].data[0] * views[0].data[1] @ prior
-#
-# rhs = views[0].views_target * std_ref[0] * std_ref[1] + mu_ref[0] * mu_ref[1]
-#
-#
-# probs = simple_entropy_pooling(prior, views)
-#
-#
-# plt_prob_eval(probs, data_long)
+for view in corr_views:
+    view.corr = 1
+
+
+views = view_on_corr(increms_df, corr_views, ["equal"] * 3)
+
+
+probs = simple_entropy_pooling(prior, views, include_diags=True)
+
+
+plt_prob_eval(probs, data_long)

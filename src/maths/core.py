@@ -71,8 +71,10 @@ def assign_constraint_equation(views: View, posterior: cp.Variable, prior: ProbV
             constraint = operator_used(views.data @ posterior, views.views_target)
 
         case "corr":
-            # Need to anchor both mean and std on prior
-            mu_ref, std_ref = weighted_moments(views.data, prior)
+            mu_ref, std_ref = weighted_moments(
+                views.data, prior
+            )  # Need to anchor both mean and std on prior
+
             constraint = operator_used(
                 (views.data[0] * views.data[1]) @ posterior,
                 views.views_target * std_ref[0] * std_ref[1] + mu_ref[0] * mu_ref[1],
@@ -121,6 +123,14 @@ def get_constraints_diags(
             active = bool(
                 view.data[0] @ posterior_probs >= view.data[1] @ posterior_probs
             )
+        elif view.type == "corr":
+            active = bool(
+                (
+                    view.data[0] * view.data[1] @ posterior_probs - view.views_target
+                    <= 1e-5
+                )
+            )
+
         else:
             active = bool(abs(view.data @ posterior_probs - view.views_target <= 1e-5))
 
