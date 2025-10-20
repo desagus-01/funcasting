@@ -4,7 +4,7 @@ from cvxpy.constraints.constraint import Constraint as CvxConstraint
 from numpy.typing import NDArray
 
 from data_types.vectors import ConstraintSigns, ProbVector, View
-from helpers import select_operator
+from helpers import select_operator, weighted_moments
 
 
 # TODO: Change to it works on multi arrays
@@ -72,10 +72,10 @@ def assign_constraint_equation(views: View, posterior: cp.Variable, prior: ProbV
 
         case "corr":
             # Need to anchor both mean and std on prior
-            mu_ref = views.data @ prior
-            std_ref = np.std(views.data * prior, axis=1)
+            mu_ref, std_ref = weighted_moments(views.data, prior)
             constraint = operator_used(
-                views.data @ posterior, views.views_target * std_ref + mu_ref
+                (views.data[0] * views.data[1]) @ posterior,
+                views.views_target * std_ref[0] * std_ref[1] + mu_ref[0] * mu_ref[1],
             )
 
         case _:

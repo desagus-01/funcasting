@@ -33,9 +33,9 @@ def get_corr_info(data: pl.DataFrame) -> list[CorrInfo]:
     ]
 
 
-def weighted_std(
+def weighted_moments(
     data: NDArray[np.floating], weights: ProbVector
-) -> NDArray[np.floating]:
-    average = data @ weights
-    variance = np.average((data - average) ** 2, weights=weights)
-    return np.sqrt(variance)
+) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+    avg = np.average(data, axis=1, weights=weights)
+    var = np.average((data.T - avg) ** 2, axis=0, weights=weights)
+    return avg, np.sqrt(var)
