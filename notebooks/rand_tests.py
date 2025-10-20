@@ -1,7 +1,8 @@
 import cvxpy as cp
 
 from get_data import get_example_assets
-from maths.constraints import view_on_ranking, view_on_std
+from helpers import get_corr_info
+from maths.constraints import view_on_mean, view_on_ranking, view_on_std
 from maths.core import (
     assign_constraint_equation,
     build_constraints,
@@ -19,26 +20,29 @@ increms_n = increms_df.height
 u = increms_np.mean(axis=0) - 0.019
 half_life = 3
 
+print(get_corr_info(increms_df))
 
-data_long = assets.increments.unpivot(
-    on=tickers, value_name="return", variable_name="ticker", index="date"
-)
-
-
-sigma = increms_np.std(axis=0)
-
-prior = uniform_probs(increms_n)
-posterior = cp.Variable(prior.shape[0])
-
-
-x = view_on_std(
-    increms_df,
-    {"AAPL": 0.03, "MSFT": 0.01, "GOOG": 0.015},
-    ["equal", "equal_greater", "equal_less"],
-)
-
-
-z = simple_entropy_pooling(prior, x)
-
-
-plt_prob_eval(z, data_long)
+#
+# data_long = assets.increments.unpivot(
+#     on=tickers, value_name="return", variable_name="ticker", index="date"
+# )
+#
+#
+# sigma = increms_np.std(axis=0)
+#
+# prior = uniform_probs(increms_n)
+# posterior = cp.Variable(prior.shape[0])
+#
+#
+# x = view_on_std(
+#     increms_df,
+#     {"AAPL": 0.03, "MSFT": 0.01},
+#     ["equal", "equal_greater"],
+# )
+#
+# a = view_on_mean(increms_df, {"AAPL": u[0], "MSFT": u[1]}, ["equal", "equal"])
+#
+# z = simple_entropy_pooling(prior, x)
+#
+#
+# plt_prob_eval(z, data_long)

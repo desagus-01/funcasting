@@ -70,6 +70,14 @@ def assign_constraint_equation(views: View, posterior: cp.Variable, prior: ProbV
         case "mean":
             constraint = operator_used(views.data @ posterior, views.views_target)
 
+        case "corr":
+            # Need to anchor both mean and std on prior
+            mu_ref = views.data @ prior
+            std_ref = np.std(views.data @ prior)
+            constraint = operator_used(
+                views.data @ posterior, views.views_target * std_ref + mu_ref
+            )
+
         case _:
             raise ValueError(f"Unsupported constraint type: {views.type}")
 

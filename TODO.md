@@ -1,7 +1,8 @@
 > [!TODO] Higher Priority
 > - [ ] Finish setting up effective_ranks (helps us know whether our views are fine to use by determining rank of matrix)
 > - [ ] Constraints:
-    > - [ ] Try adding 'market' constraint     
+    > - [ ] Add view on correlation
+    > - [ ] Add view on distribution
 
 > [!TODO] Lower Priority
 > - [ ] Change assigned prob plot to always start at 0 

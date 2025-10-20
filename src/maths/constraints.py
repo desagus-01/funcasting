@@ -1,21 +1,30 @@
-import operator as _op
-
 import numpy as np
+import polars as pl
+from numpy.typing import NDArray
 from polars import DataFrame
 
 from data_types.vectors import (
     ConstraintSignLike,
-    ConstraintSigns,
+    CorrInfo,
     View,
 )
 
 
-def select_operator(views: View):
-    return {
-        (ConstraintSigns.equal): _op.eq,
-        (ConstraintSigns.equal_greater): _op.ge,
-        (ConstraintSigns.equal_less): _op.le,
-    }.get(views.sign_type)
+def view_on_corr(
+    data: DataFrame,
+    corr_targets: list[CorrInfo],
+    sign_type: list[ConstraintSignLike],
+) -> list[View]:
+    return [
+        View(
+            type="corr",
+            risk_driver=corr_info.asset_pair,
+            data=data[list(corr_info.asset_pair)].to_numpy().T,
+            views_target=np.array(corr_info.corr),
+            sign_type=sign_type[i],
+        )
+        for i, corr_info in enumerate(corr_targets)
+    ]
 
 
 def view_on_mean(

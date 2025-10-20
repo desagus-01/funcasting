@@ -45,5 +45,10 @@ class View(BaseModel):
     sign_type: ConstraintSignLike
 
 
+class CorrInfo(BaseModel):
+    asset_pair: tuple[str, str]
+    corr: float
+
+
 ProbVector = Annotated[NDArray[np.float64], AfterValidator(_as_prob_vector)]
 model_cfg = ConfigDict(arbitrary_types_allowed=True)
