@@ -1,11 +1,10 @@
-import operator as _op
-
 import cvxpy as cp
 import numpy as np
 from cvxpy.constraints.constraint import Constraint as CvxConstraint
 from numpy.typing import NDArray
 
-from data_types.vectors import ConstraintSigns, ConstraintType, ProbVector, View
+from data_types.vectors import ConstraintSigns, ProbVector, View
+from helpers import select_operator
 
 
 # TODO: Change to it works on multi arrays
@@ -54,52 +53,25 @@ def effective_rank(views_target):
     pass
 
 
-def assign_constraint_equation(views, posterior, prior):
-    if views.type == "sorting":
-        return views.data[0] @ posterior >= views.data[1] @ posterior
+def assign_constraint_equation(views: View, posterior: cp.Variable, prior: ProbVector):
+    operator_used = select_operator(views)
+    match views.type:
+        case "sorting":
+            constraint = operator_used(
+                views.data[0] @ posterior, views.data[1] @ posterior
+            )
 
-    if views.type == "std" and views.views_target is not None:
-        mu_ref = views.data @ prior
-        return (views.data**2) @ posterior == views.views_target**2 + mu_ref**2
+        case "std":
+            mu_ref = views.data @ prior  # anchored on prior avg
+            constraint = operator_used(
+                views.data**2 @ posterior, views.views_target**2 + mu_ref**2
+            )
 
-    op = {
-        (ConstraintType.equality, ConstraintSigns.equal): _op.eq,
-        (ConstraintType.inequality, ConstraintSigns.equal_greater): _op.ge,
-        (ConstraintType.inequality, ConstraintSigns.equal_less): _op.le,
-    }.get((views.const_type, views.sign_type))
+        case "mean":
+            constraint = operator_used(views.data @ posterior, views.views_target)
 
-    if op is None:
-        raise ValueError(
-            f"Unsupported constraint type/sign: {views.const_type}, {views.sign_type}"
-        )
-
-    return op(views.data @ posterior, views.views_target)
-
-
-def assign_constraint_equation(
-    views: View, posterior: cp.Variable, prior: ProbVector
-) -> CvxConstraint:
-    if views.type == "sorting":
-        constraint = views.data[0] @ posterior >= views.data[1] @ posterior
-
-    elif views.type == "std" and views.views_target is not None:
-        mu_ref = views.data @ prior  # prior-anchored mean (scalar)
-        constraint = views.data**2 @ posterior == views.views_target**2 + mu_ref**2
-
-    else:
-        match (views.const_type, views.sign_type):
-            case (ConstraintType.equality, ConstraintSigns.equal):
-                constraint = views.data @ posterior == views.views_target
-
-            case (ConstraintType.inequality, ConstraintSigns.equal_greater):
-                constraint = views.data @ posterior >= views.views_target
-
-            case (ConstraintType.inequality, ConstraintSigns.equal_less):
-                constraint = views.data @ posterior <= views.views_target
-            case _:
-                raise ValueError(
-                    f"Unsupported constraint type/sign: {views.const_type}, {views.sign_type}"
-                )
+        case _:
+            raise ValueError(f"Unsupported constraint type: {views.type}")
 
     return constraint
 
@@ -147,7 +119,6 @@ def get_constraints_diags(
         info.append(
             {
                 "risk_driver": view.risk_driver,
-                "type": view.const_type,
                 "sign": view.sign_type,
                 "constraint_value": view.views_target,
                 "active": active,

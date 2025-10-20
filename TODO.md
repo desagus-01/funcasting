@@ -2,7 +2,6 @@
 > - [ ] Finish setting up effective_ranks (helps us know whether our views are fine to use by determining rank of matrix)
 > - [ ] Constraints:
     > - [ ] Try adding 'market' constraint     
-    > - [ ] Change to remove all the ifs of the constraint equation
 
 > [!TODO] Lower Priority
 > - [ ] Change assigned prob plot to always start at 0 
@@ -12,6 +11,7 @@
 
 
 ## Completed
+    > - [X] Change to remove all the ifs of the constraint equation
     > - [X] Add volatility constraint 
     > - [X] Need to change how constraints are build to allow for this 
     > - [X] Add 'sorting' constraint 
