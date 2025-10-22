@@ -8,11 +8,15 @@ from data_types.vectors import (
 )
 
 
-def view_on_marginal(data: DataFrame, target_data: DataFrame) -> View:
+def view_on_marginal(
+    data: DataFrame, target_data: DataFrame, risk_diver_name: str
+) -> View:
+    rd_data = data.select(risk_diver_name)
+
     return View(
         type="marginal",
-        risk_driver=target_data.columns,
-        data=data[target_data.columns].to_numpy().T,
+        risk_driver=risk_diver_name,
+        data=rd_data.to_numpy().T,
         views_target=target_data.to_numpy(),
         sign_type="equal_less",
     )
