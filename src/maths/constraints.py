@@ -8,6 +8,17 @@ from data_types.vectors import (
 )
 
 
+def view_on_quantile(data: DataFrame, quantile_target: float) -> View:
+    return View(
+        type="quantile",
+        risk_driver=data.columns[0],
+        data=data.to_numpy().T,
+        views_target=np.array(quantile_target),
+        sign_type="equal_less",
+    )
+
+
+# TODO: Fix this as needs the view_on_quantile before
 def view_on_marginal(
     data: DataFrame, target_data: DataFrame, risk_diver_name: str
 ) -> View:

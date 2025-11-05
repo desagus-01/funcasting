@@ -1,6 +1,7 @@
 import numpy as np
 import polars as pl
 import polars.selectors as cs
+from polars._typing import RankMethod
 from scipy.stats import ecdf
 
 from helpers import NDArray, ProbVector
@@ -9,7 +10,7 @@ from helpers import NDArray, ProbVector
 def prior_cdf(
     data: pl.DataFrame,
     prob_vector: ProbVector,
-    method: str = "average",
+    method: RankMethod = "average",
 ) -> pl.DataFrame:
     """
     Returns the quantiles, probs, and cumulative probs for a given data
@@ -30,6 +31,14 @@ def prior_cdf(
 
 def emp_cdf(data: NDArray[np.floating]):
     return ecdf(data).cdf
+
+
+def indicator_quantile_marginal(
+    data: pl.DataFrame, target_quantile: float
+) -> pl.DataFrame:
+    threshold = np.quantile(data, target_quantile)
+
+    return data.with_columns(quant_ind=(cs.numeric() <= threshold).cast(pl.Int8))
 
 
 # def pseudo_observations(
