@@ -1,42 +1,23 @@
-import cvxpy as cp
 import numpy as np
+import polars as pl
+from scipy.stats import ecdf
 
-from get_data import get_example_assets
-from helpers import get_corr_info, weighted_moments
-from maths.constraints import view_on_corr, view_on_mean, view_on_ranking, view_on_std
-from maths.core import (
-    assign_constraint_equation,
-    build_constraints,
-    simple_entropy_pooling,
-)
-from maths.prob_vectors import uniform_probs
-from maths.visuals import plt_prob_eval
+from maths.operations import emp_cdf, prior_cdf
+from template import test_template
 
-# set-up
-tickers = ["AAPL", "MSFT", "GOOG"]
-assets = get_example_assets(tickers)
-increms_df = assets.increments.drop("date")
-increms_np = increms_df.to_numpy()
-increms_n = increms_df.height
-u = increms_np.mean(axis=0) - 0.019
-half_life = 3
-data_long = assets.increments.unpivot(
-    on=tickers, value_name="return", variable_name="ticker", index="date"
+info = test_template()
+
+
+aapl_df = info["increms_df"].select(pl.col.AAPL)
+msft_np = info["increms_df"].select(pl.col.MSFT).to_numpy().flatten()
+
+
+prior_cdf = prior_cdf(aapl_df, info["uniform_prior"])
+emp_cdf = emp_cdf(msft_np)
+
+
+cdfs_df = prior_cdf.with_columns(target_quantiles=emp_cdf.quantiles).with_columns(
+    prior_less_target=pl.col.AAPL <= pl.col.target_quantiles
 )
 
-prior = uniform_probs(increms_n)
-posterior = cp.Variable(prior.shape[0])
-
-corr_views = get_corr_info(increms_df)
-
-for view in corr_views:
-    view.corr = 1
-
-
-views = view_on_corr(increms_df, corr_views, ["equal"] * 3)
-
-
-probs = simple_entropy_pooling(prior, views, include_diags=True)
-
-
-plt_prob_eval(probs, data_long)
+print(cdfs_df)
