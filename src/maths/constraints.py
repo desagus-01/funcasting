@@ -1,4 +1,5 @@
 import numpy as np
+import polars as pl
 from polars import DataFrame
 
 from data_types.vectors import (
@@ -9,7 +10,7 @@ from data_types.vectors import (
 from maths.operations import indicator_quantile_marginal
 
 
-def view_on_quantile(data: DataFrame, quant: float, quant_prob: float) -> View:
+def view_on_quantile(data: DataFrame, quant: float, quant_prob: float) -> list[View]:
     if quant_prob > quant:
         raise ValueError(
             f"Your target prob of {quant_prob}, must be smaller or equal to your current quant of {quant}!"
@@ -17,28 +18,15 @@ def view_on_quantile(data: DataFrame, quant: float, quant_prob: float) -> View:
 
     quant_ind = indicator_quantile_marginal(data, quant)
 
-    return View(
-        type="quantile",
-        risk_driver=data.columns[0],
-        data=quant_ind.to_numpy().T,
-        views_target=np.array(quant_prob),
-        sign_type="equal_less",
-    )
-
-
-# TODO: Fix this as needs the view_on_quantile before
-def view_on_marginal(
-    data: DataFrame, target_data: DataFrame, risk_diver_name: str
-) -> View:
-    rd_data = data.select(risk_diver_name)
-
-    return View(
-        type="marginal",
-        risk_driver=risk_diver_name,
-        data=rd_data.to_numpy().T,
-        views_target=target_data.to_numpy(),
-        sign_type="equal_less",
-    )
+    return [
+        View(
+            type="quantile",
+            risk_driver=data.columns[0],
+            data=quant_ind.select(pl.col.quant_ind).to_numpy().T,
+            views_target=np.array(quant_prob),
+            sign_type="equal_less",
+        )
+    ]
 
 
 def view_on_corr(
@@ -125,3 +113,17 @@ def view_on_ranking(
         )
         for asset in assets_to_iterate
     ]
+
+
+def view_on_marginal(
+    data: DataFrame, current_marginal: str, target_marginal: str
+) -> list[View]:
+    rd_np = data.select(target_marginal).to_numpy()
+
+    quant_view = view_on_quantile(data.select(target_marginal), 0.25, 0.25)
+    mean_view = view_on_mean(
+        data, {current_marginal: rd_np.mean()}, sign_type=["equal"]
+    )
+    std_view = view_on_std(data, {current_marginal: rd_np.std()}, sign_type=["equal"])
+
+    return [quant_view[0], mean_view[0], std_view[0]]

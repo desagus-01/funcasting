@@ -1,9 +1,7 @@
 > [!TODO] Higher Priority
 > - [ ] Finish setting up effective_ranks (helps us know whether our views are fine to use by determining rank of matrix)
 > - [ ] Constraints:
-    > - [ ] Add view on quantile 
-    > - [ ] Add view on marginal distribution
-        > - [ ] Figure out most efficient way to construt boolean/indicator matrix 
+    > - [ ] Add view on marginal 
     > - [ ] Add view on joint distribution 
     > - [ ] Add view on copula/marginal 
     > - [ ] Re-factor the whole thing!! 
@@ -19,5 +17,8 @@
 
 
 ## Completed
+        > - [X] Figure out most efficient way to construt boolean/indicator matrix 
+    > - [X] Add view on quantile 
+    > - [X] Add view on marginal distribution
     > - [X] Add view on correlation
         > - [X] Add weighted std formula to output as an array (parralelised)

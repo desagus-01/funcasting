@@ -1,10 +1,5 @@
 from get_data import get_example_assets
-from maths.constraints import view_on_quantile
-from maths.core import (
-    simple_entropy_pooling,
-)
 from maths.prob_vectors import state_smooth_probs, uniform_probs
-from maths.visuals import plt_prob_eval
 
 # set-up
 tickers = ["AAPL", "MSFT", "GOOG"]
@@ -32,8 +27,8 @@ prior_2 = state_smooth_probs(
 )
 
 
-quant_view = [view_on_quantile(increms_df.select("AAPL"), 0.5, 0.01)]
-
-test_eq = simple_entropy_pooling(prior, quant_view, include_diags=True)
-
-plt_prob_eval(test_eq, data_long)
+# marginal_view =
+#
+# test_eq = simple_entropy_pooling(prior, quant_view, include_diags=True)
+#
+# plt_prob_eval(test_eq, data_long)

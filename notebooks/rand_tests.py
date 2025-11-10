@@ -1,7 +1,10 @@
+import numpy as np
 import polars as pl
 
-from maths.constraints import view_on_quantile
+from maths.constraints import view_on_marginal, view_on_quantile
+from maths.core import simple_entropy_pooling
 from maths.prob_vectors import uniform_probs
+from maths.visuals import plt_prob_eval
 from template import test_template
 
 info = test_template()
@@ -15,6 +18,16 @@ test = view_on_quantile(aapl_df, 0.25, 0.02)
 
 prior = uniform_probs(aapl_df.height)
 
+example_rd = np.random.normal(
+    aapl_df.to_numpy().mean(), aapl_df.to_numpy().std(), aapl_df.height
+)
 
-a = test.data[1] @ prior
-print(a)
+
+test_df = aapl_df.with_columns(rd=example_rd)
+
+
+marg_view = view_on_marginal(test_df, "AAPL", "rd")
+
+test_eq = simple_entropy_pooling(prior, marg_view)
+
+plt_prob_eval(test_eq, info["increms_df_long"])
