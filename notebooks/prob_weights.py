@@ -1,14 +1,9 @@
-import cvxpy as cp
-from polars.meta import build
-
 from get_data import get_example_assets
-from maths.constraints import view_on_mean, view_on_ranking
+from maths.constraints import view_on_quantile
 from maths.core import (
-    assign_constraint_equation,
-    build_constraints,
     simple_entropy_pooling,
 )
-from maths.prob_vectors import entropy_pooling_probs, state_smooth_probs, uniform_probs
+from maths.prob_vectors import state_smooth_probs, uniform_probs
 from maths.visuals import plt_prob_eval
 
 # set-up
@@ -36,16 +31,9 @@ prior_2 = state_smooth_probs(
     reference=0.015,
 )
 
-posterior = cp.Variable(prior.shape[0])
 
-rankings_view = view_on_ranking(increms_df, ["MSFT", "GOOG", "AAPL"])
+quant_view = [view_on_quantile(increms_df.select("AAPL"), 0.5, -0.1, "equal_less")]
 
-u_vs = dict(zip(tickers, u))
-
-mean_ineq = view_on_mean(increms_df, u_vs, ["inequality"] * 3, ["equal_less"] * 3)
-
-all_views = rankings_view + mean_ineq
-
-test_eq = simple_entropy_pooling(prior, all_views, include_diags=True)
+test_eq = simple_entropy_pooling(prior, quant_view, include_diags=False)
 
 plt_prob_eval(test_eq, data_long)

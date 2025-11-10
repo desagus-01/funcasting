@@ -1,8 +1,7 @@
-import numpy as np
 import polars as pl
-from scipy.stats import ecdf
 
-from maths.operations import emp_cdf, indicator_quantile_marginal, prior_cdf
+from maths.constraints import view_on_quantile
+from maths.prob_vectors import uniform_probs
 from template import test_template
 
 info = test_template()
@@ -12,12 +11,10 @@ aapl_df = info["increms_df"].select(pl.col.AAPL)
 msft_np = info["increms_df"].select(pl.col.MSFT).to_numpy().flatten()
 
 
-prior_cdf = prior_cdf(aapl_df, info["uniform_prior"])
-emp_cdf = emp_cdf(msft_np)
+test = view_on_quantile(aapl_df, 0.25, 0.02)
+
+prior = uniform_probs(aapl_df.height)
 
 
-cdfs_df = prior_cdf.with_columns(target_quantiles=emp_cdf.quantiles).with_columns(
-    prior_less_target=pl.col.AAPL <= pl.col.target_quantiles
-)
-
-print(indicator_quantile_marginal(aapl_df, 1))
+a = test.data[0] * test.data[1] @ prior
+print(a)

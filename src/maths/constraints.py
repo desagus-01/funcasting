@@ -6,14 +6,17 @@ from data_types.vectors import (
     CorrInfo,
     View,
 )
+from maths.operations import indicator_quantile_marginal
 
 
-def view_on_quantile(data: DataFrame, quantile_target: float) -> View:
+def view_on_quantile(data: DataFrame, quant: float, quant_prob: float) -> View:
+    quant_ind = indicator_quantile_marginal(data, quant)
+
     return View(
         type="quantile",
         risk_driver=data.columns[0],
-        data=data.to_numpy().T,
-        views_target=np.array(quantile_target),
+        data=quant_ind.to_numpy().T,
+        views_target=np.array(quant_prob),
         sign_type="equal_less",
     )
 

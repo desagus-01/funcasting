@@ -3,7 +3,7 @@ import numpy as np
 from cvxpy.constraints.constraint import Constraint as CvxConstraint
 from numpy.typing import NDArray
 
-from data_types.vectors import ConstraintSigns, ProbVector, View
+from data_types.vectors import ProbVector, View
 from helpers import select_operator, weighted_moments
 
 
@@ -56,6 +56,9 @@ def effective_rank(views_target):
 def assign_constraint_equation(views: View, posterior: cp.Variable, prior: ProbVector):
     operator_used = select_operator(views)
     match views.type:
+        case "quantile":
+            constraint = operator_used(views.data @ posterior, views.views_target)
+
         case "sorting":
             constraint = operator_used(
                 views.data[0] @ posterior, views.data[1] @ posterior
