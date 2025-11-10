@@ -1,7 +1,7 @@
 import numpy as np
 import polars as pl
 
-from maths.constraints import view_on_marginal, view_on_quantile
+from maths.constraints import view_on_marginal, view_on_quantile, view_on_std
 from maths.core import simple_entropy_pooling
 from maths.prob_vectors import uniform_probs
 from maths.visuals import plt_prob_eval
@@ -28,7 +28,8 @@ test_df = aapl_df.with_columns(rd=example_rd)
 
 marg_view = view_on_marginal(test_df, "AAPL", "rd")
 
+std_view = view_on_std(test_df, {"AAPL": aapl_df.to_numpy().std() * 1.5}, ["equal"])
 
-test_eq = simple_entropy_pooling(prior, marg_view)
+test_eq = simple_entropy_pooling(prior, std_view)
 
 plt_prob_eval(test_eq, info["increms_df_long"])
