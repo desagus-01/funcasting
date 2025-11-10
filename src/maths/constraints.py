@@ -74,6 +74,7 @@ def view_on_std(
     data: DataFrame,
     target_std: dict[str, float],
     sign_type: list[ConstraintSignLike],
+    mean_ref: float | None = None,
 ) -> list[View]:
     # Checks we have equal amounts of data, constraints, and targets
     if not (len(target_std.keys()) == len(sign_type)):
@@ -86,6 +87,7 @@ def view_on_std(
             data=data[key].to_numpy().T,
             views_target=np.array(target_std[key]),
             sign_type=sign_type[i],
+            mean_ref=None if mean_ref is None else np.array(mean_ref),
         )
         for i, key in enumerate(target_std.keys())
     ]
@@ -120,10 +122,14 @@ def view_on_marginal(
 ) -> list[View]:
     rd_np = data.select(target_marginal).to_numpy()
 
-    quant_view = view_on_quantile(data.select(target_marginal), 0.25, 0.25)
     mean_view = view_on_mean(
         data, {current_marginal: rd_np.mean()}, sign_type=["equal"]
     )
-    std_view = view_on_std(data, {current_marginal: rd_np.std()}, sign_type=["equal"])
+    std_view = view_on_std(
+        data,
+        {current_marginal: rd_np.std()},
+        sign_type=["equal"],
+        mean_ref=rd_np.mean(),
+    )
 
-    return [quant_view[0], mean_view[0], std_view[0]]
+    return mean_view + std_view

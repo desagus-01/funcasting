@@ -28,6 +28,7 @@ test_df = aapl_df.with_columns(rd=example_rd)
 
 marg_view = view_on_marginal(test_df, "AAPL", "rd")
 
+
 test_eq = simple_entropy_pooling(prior, marg_view)
 
 plt_prob_eval(test_eq, info["increms_df_long"])

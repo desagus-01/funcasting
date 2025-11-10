@@ -31,7 +31,6 @@ ConstraintSignLike: TypeAlias = (
 )
 
 
-# TODO: This is working for both types of constraints, think of making it abstract
 class View(BaseModel):
     """
     Allows to create a view on a single scenario
@@ -43,6 +42,7 @@ class View(BaseModel):
     data: NDArray[np.floating]
     views_target: NDArray[np.floating] | None
     sign_type: ConstraintSignLike
+    mean_ref: NDArray[np.floating] | None = None
 
 
 class CorrInfo(BaseModel):

@@ -65,7 +65,7 @@ def assign_constraint_equation(views: View, posterior: cp.Variable, prior: ProbV
             )
 
         case "std":
-            mu_ref = views.data @ prior  # anchored on prior avg
+            mu_ref = views.data @ prior if views.mean_ref is None else views.mean_ref
             constraint = operator_used(
                 views.data**2 @ posterior, views.views_target**2 + mu_ref**2
             )
