@@ -57,7 +57,7 @@ def assign_constraint_equation(views: View, posterior: cp.Variable, prior: ProbV
     operator_used = select_operator(views)
     match views.type:
         case "quantile":
-            constraint = operator_used(views.data @ posterior, views.views_target)
+            constraint = operator_used(views.data[1] @ posterior, views.views_target)
 
         case "sorting":
             constraint = operator_used(
