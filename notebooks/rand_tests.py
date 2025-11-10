@@ -19,7 +19,7 @@ test = view_on_quantile(aapl_df, 0.25, 0.02)
 prior = uniform_probs(aapl_df.height)
 
 example_rd = np.random.normal(
-    aapl_df.to_numpy().mean(), aapl_df.to_numpy().std(), aapl_df.height
+    aapl_df.to_numpy().mean() + 0.02, aapl_df.to_numpy().std() * 1.1, aapl_df.height
 )
 
 
