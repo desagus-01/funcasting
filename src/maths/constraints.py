@@ -10,6 +10,11 @@ from maths.operations import indicator_quantile_marginal
 
 
 def view_on_quantile(data: DataFrame, quant: float, quant_prob: float) -> View:
+    if quant_prob > quant:
+        raise ValueError(
+            f"Your target prob of {quant_prob}, must be smaller or equal to your current quant of {quant}!"
+        )
+
     quant_ind = indicator_quantile_marginal(data, quant)
 
     return View(

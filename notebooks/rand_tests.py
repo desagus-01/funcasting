@@ -16,5 +16,5 @@ test = view_on_quantile(aapl_df, 0.25, 0.02)
 prior = uniform_probs(aapl_df.height)
 
 
-a = test.data[0] * test.data[1] @ prior
+a = test.data[1] @ prior
 print(a)
