@@ -1,10 +1,11 @@
 import numpy as np
 import polars as pl
 import polars.selectors as cs
+from numpy.typing import NDArray
 from polars._typing import RankMethod
 from scipy.stats import ecdf
 
-from helpers import NDArray, ProbVector
+from data_types.vectors import ProbVector
 
 
 def prior_cdf(
@@ -39,9 +40,3 @@ def indicator_quantile_marginal(
     threshold = np.quantile(data, target_quantile)
 
     return data.with_columns(quant_ind=(cs.numeric() <= threshold).cast(pl.Int8))
-
-
-# def pseudo_observations(
-#     data: pl.DataFrame | NDArray[np.floating], method: str = "average"
-# ) -> pl.DataFrame | NDArray[np.floating]:
-#     return rank_data(data, method) / (len(data) + 1)

@@ -7,7 +7,7 @@ from data_types.vectors import (
     CorrInfo,
     View,
 )
-from maths.operations import indicator_quantile_marginal
+from flex_probs.operations import indicator_quantile_marginal
 
 
 def view_on_quantile(data: DataFrame, quant: float, quant_prob: float) -> list[View]:

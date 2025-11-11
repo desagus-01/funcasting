@@ -1,5 +1,5 @@
+from flex_probs.prob_vectors import uniform_probs
 from get_data import get_example_assets
-from maths.prob_vectors import uniform_probs
 
 
 def test_template():

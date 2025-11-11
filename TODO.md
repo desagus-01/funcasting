@@ -1,5 +1,6 @@
 > [!TODO] Higher Priority
 > - [ ] Implement CMA (copula marginal algorithm) 
+    > - [ ] Transfer separation algorith first -> start by looking into structure etc... 
 > - [ ] Constraints:
     > - [ ] Add view on copula/marginal 
     > - [ ] Re-factor the whole thing!! 
