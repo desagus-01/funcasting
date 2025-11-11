@@ -31,9 +31,9 @@ def cma_separation(data: pl.DataFrame, prob: ProbVector) -> CMASeparation:
         name = col.name
         temp = _compute_cdf_and_pobs(data, name, prob)
 
-        cdf_cols[f"{name}_cdf"] = temp["cdf"]
-        copula_cols[f"{name}_pobs"] = temp["pobs"]
-        sorted_marginals[f"{name}_sorted"] = temp[name]
+        cdf_cols[name] = temp["cdf"]  #
+        copula_cols[name] = temp["pobs"]
+        sorted_marginals[name] = temp[name]
 
     return CMASeparation(
         pl.DataFrame(sorted_marginals),
