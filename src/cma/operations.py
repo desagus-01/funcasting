@@ -1,6 +1,6 @@
 import polars as pl
 
-from data_types.vectors import ProbVector
+from data_types.vectors import CMASeparation, ProbVector
 
 
 def _compute_cdf_and_pobs(
@@ -22,17 +22,21 @@ def _compute_cdf_and_pobs(
     )
 
 
-def cma_separation(data: pl.DataFrame, prob: ProbVector):
+def cma_separation(data: pl.DataFrame, prob: ProbVector) -> CMASeparation:
     cdf_cols = {}
     copula_cols = {}
+    sorted_marginals = {}
 
     for col in data.iter_columns():
         name = col.name
         temp = _compute_cdf_and_pobs(data, name, prob)
+
         cdf_cols[f"{name}_cdf"] = temp["cdf"]
         copula_cols[f"{name}_pobs"] = temp["pobs"]
+        sorted_marginals[f"{name}_sorted"] = temp[name]
 
-    cdf = pl.DataFrame(cdf_cols)
-    copula = pl.DataFrame(copula_cols)
-
-    return data, cdf, copula
+    return CMASeparation(
+        pl.DataFrame(sorted_marginals),
+        pl.DataFrame(cdf_cols),
+        pl.DataFrame(copula_cols),
+    )

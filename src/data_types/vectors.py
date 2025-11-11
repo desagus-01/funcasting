@@ -1,9 +1,18 @@
+from dataclasses import dataclass
 from enum import Enum
 from typing import Annotated, Literal, TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
+from polars import DataFrame
 from pydantic import AfterValidator, BaseModel, ConfigDict
+
+
+@dataclass
+class CMASeparation:
+    marginals: DataFrame
+    cdfs: DataFrame
+    copula: DataFrame
 
 
 def _as_prob_vector(a: NDArray[np.float64]) -> NDArray[np.float64]:

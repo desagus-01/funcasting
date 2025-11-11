@@ -27,4 +27,6 @@ test = (
 
 multi_df = info["increms_df"]
 
-print(cma_separation(multi_df, prob))
+test = cma_separation(multi_df, prob)
+
+print(test)
