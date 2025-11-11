@@ -23,4 +23,6 @@ test = (
     )
 )
 
-print(test)
+
+multi_df = info["increms_df"]
+print(multi_df)
