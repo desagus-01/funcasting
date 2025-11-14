@@ -13,7 +13,7 @@ class CMASeparation:
     marginals: DataFrame
     cdfs: DataFrame
     copula: DataFrame
-    posterio: Series
+    posterior: Series
 
 
 def _as_prob_vector(a: NDArray[np.float64]) -> NDArray[np.float64]:
