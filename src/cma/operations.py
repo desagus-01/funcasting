@@ -1,4 +1,5 @@
 import polars as pl
+from numpy import interp
 
 from data_types.vectors import CMASeparation, ProbVector
 
@@ -36,7 +37,19 @@ def cma_separation(data: pl.DataFrame, prob: ProbVector) -> CMASeparation:
         sorted_marginals[name] = temp[name]
 
     return CMASeparation(
-        pl.DataFrame(sorted_marginals),
-        pl.DataFrame(cdf_cols),
-        pl.DataFrame(copula_cols),
+        marginals=pl.DataFrame(sorted_marginals),
+        cdfs=pl.DataFrame(cdf_cols),
+        copula=pl.DataFrame(copula_cols),
     )
+
+
+def cma_combination(cma_separation: CMASeparation) -> pl.DataFrame:
+    interp_res = {}
+    for asset in cma_separation.marginals.columns:
+        interp_res[asset] = interp(
+            x=cma_separation.copula.select(asset).to_numpy().ravel(),
+            xp=cma_separation.cdfs.select(asset).to_numpy().ravel(),
+            fp=cma_separation.marginals.select(asset).to_numpy().ravel(),
+        )
+
+    return pl.DataFrame(interp_res)
