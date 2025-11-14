@@ -4,7 +4,7 @@ from typing import Annotated, Literal, TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
-from polars import DataFrame
+from polars import DataFrame, Series
 from pydantic import AfterValidator, BaseModel, ConfigDict
 
 
@@ -13,6 +13,7 @@ class CMASeparation:
     marginals: DataFrame
     cdfs: DataFrame
     copula: DataFrame
+    posterio: Series
 
 
 def _as_prob_vector(a: NDArray[np.float64]) -> NDArray[np.float64]:

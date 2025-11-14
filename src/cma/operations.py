@@ -40,6 +40,7 @@ def cma_separation(data: pl.DataFrame, prob: ProbVector) -> CMASeparation:
         marginals=pl.DataFrame(sorted_marginals),
         cdfs=pl.DataFrame(cdf_cols),
         copula=pl.DataFrame(copula_cols),
+        posterior=prob,
     )
 
 
