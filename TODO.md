@@ -14,10 +14,9 @@
 > - [ ] Change less_than plot to colour above/below 
 > - [ ] Organize files in a more logical manner
 > - [ ] Write classes?  OOP vs DOP? NOT SURE!
+> - [ ] Write own 'estimation' for distributions? 
 
 
 
 
 ## Completed
-    > - [X] Add combination step 
-    > - [X] Transfer separation algorith first -> start by looking into structure etc... 

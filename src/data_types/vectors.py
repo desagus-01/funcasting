@@ -4,16 +4,8 @@ from typing import Annotated, Literal, TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
-from polars import DataFrame, Series
+from polars import DataFrame
 from pydantic import AfterValidator, BaseModel, ConfigDict
-
-
-@dataclass
-class CMASeparation:
-    marginals: DataFrame
-    cdfs: DataFrame
-    copula: DataFrame
-    posterior: Series
 
 
 def _as_prob_vector(a: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -61,4 +53,14 @@ class CorrInfo(BaseModel):
 
 
 ProbVector = Annotated[NDArray[np.float64], AfterValidator(_as_prob_vector)]
+
+
+@dataclass
+class CMASeparation:
+    marginals: DataFrame
+    cdfs: DataFrame
+    copula: DataFrame
+    posterior: ProbVector
+
+
 model_cfg = ConfigDict(arbitrary_types_allowed=True)
