@@ -5,22 +5,27 @@ from data_types.vectors import CMASeparation, ProbVector
 
 
 def _compute_cdf_and_pobs(
-    data: pl.DataFrame, marginal_name: str, prob: ProbVector
+    data: pl.DataFrame,
+    marginal_name: str,
+    prob: ProbVector,
+    compute_pobs: bool = True,
 ) -> pl.DataFrame:
-    norm_const = data.height / (data.height + 1)
-
-    return (
+    df = (
         data.select(pl.col(marginal_name))
         .with_row_index()
         .with_columns(prob=prob)
         .sort(marginal_name)
         .with_columns(
-            cdf=pl.cum_sum("prob") * norm_const,
-        )
-        .with_columns(
-            pobs=pl.col("cdf").gather(pl.col("index").arg_sort()),
+            cdf=pl.cum_sum("prob") * data.height / (data.height + 1),
         )
     )
+
+    if compute_pobs:
+        df = df.with_columns(
+            pobs=pl.col("cdf").gather(pl.col("index").arg_sort()),
+        )
+
+    return df
 
 
 def cma_separation(data: pl.DataFrame, prob: ProbVector) -> CMASeparation:
@@ -32,7 +37,7 @@ def cma_separation(data: pl.DataFrame, prob: ProbVector) -> CMASeparation:
         name = col.name
         temp = _compute_cdf_and_pobs(data, name, prob)
 
-        cdf_cols[name] = temp["cdf"]  #
+        cdf_cols[name] = temp["cdf"]
         copula_cols[name] = temp["pobs"]
         sorted_marginals[name] = temp[name]
 
