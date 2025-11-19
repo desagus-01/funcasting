@@ -1,6 +1,7 @@
 > [!TODO] Higher Priority
 > - [ ] Implement CMA (copula marginal algorithm) 
-    > - [ ] Add fitting of copulas and marginals 
+    > - [ ] Add view on copula (just ones that have on scipy for now) 
+    > - [ ] Class for cma in order to not keep creating new objects 
 > - [ ] Constraints:
     > - [ ] Add view on copula/marginal 
     > - [ ] Re-factor the whole thing!! 
@@ -20,3 +21,4 @@
 
 
 ## Completed
+    > - [X] Add fitting marginals - norm  t for now

@@ -4,7 +4,7 @@ from numpy import interp
 from data_types.vectors import CMASeparation, ProbVector
 
 
-def _compute_cdf_and_pobs(
+def compute_cdf_and_pobs(
     data: pl.DataFrame,
     marginal_name: str,
     prob: ProbVector,
@@ -35,7 +35,7 @@ def cma_separation(data: pl.DataFrame, prob: ProbVector) -> CMASeparation:
 
     for col in data.iter_columns():
         name = col.name
-        temp = _compute_cdf_and_pobs(data, name, prob)
+        temp = compute_cdf_and_pobs(data, name, prob)
 
         cdf_cols[name] = temp["cdf"]
         copula_cols[name] = temp["pobs"]
