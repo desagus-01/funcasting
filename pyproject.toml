@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "copulas>=0.12.3",
     "cvxpy>=1.7.3",
     "databento>=0.63.0",
     "dotenv>=0.9.9",
@@ -18,7 +19,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["maths"]
+packages = ["cma", "data_types", "flex_probs"]
 package-dir = {"" = "src"}
 
 

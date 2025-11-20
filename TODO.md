@@ -1,5 +1,6 @@
 > [!TODO] Higher Priority
 > - [ ] Implement CMA (copula marginal algorithm) 
+    > - [ ] Added copulae package for now, want to remove and make own 
     > - [ ] Add view on copula (just ones that have on scipy for now) 
     > - [ ] Class for cma in order to not keep creating new objects 
 > - [ ] Constraints:
