@@ -1,6 +1,6 @@
 import polars as pl
-from copulas.multivariate import GaussianMultivariate
 
+from cma.distributions import update_cma_copula
 from cma.operations import cma_separation
 from flex_probs.prob_vectors import uniform_probs
 from template import test_template
@@ -17,4 +17,6 @@ seps = cma_separation(multi_df, prob)
 
 cop_np = seps.copula.to_numpy()
 
-g_cop = GaussianMultivariate()
+updated_cma = update_cma_copula(seps, "t")
+
+print(updated_cma.copula, seps.copula)

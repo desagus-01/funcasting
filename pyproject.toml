@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "copulas>=0.12.3",
+    "copulae>=0.8.0",
     "cvxpy>=1.7.3",
     "databento>=0.63.0",
     "dotenv>=0.9.9",
