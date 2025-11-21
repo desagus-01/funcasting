@@ -22,8 +22,7 @@ def sample_marginal(
     else:
         raise ValueError(f"Unknown distribution kind: {kind}")
 
-    samples = frozen.rvs(size=data.height)
-    return pl.DataFrame({marginals: samples})
+    return pl.DataFrame({marginals: frozen.rvs(size=data.height)})
 
 
 def update_cma_marginal(
@@ -55,8 +54,6 @@ def sample_copula(
         cop = StudentCopula(values.shape[1])
     elif parametric_copula == "norm":
         cop = NormalCopula(values.shape[1])
-    else:
-        raise ValueError(f"Unknown distribution parametric_copula: {parametric_copula}")
 
     _ = cop.fit(values, to_pobs=False)
     samples = cop.random(n=copula.height)

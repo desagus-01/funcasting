@@ -56,6 +56,13 @@ ProbVector = Annotated[NDArray[np.float64], AfterValidator(_as_prob_vector)]
 
 
 @dataclass
+class ScenarioProb:
+    type: str
+    scenarios: DataFrame
+    prob: ProbVector
+
+
+@dataclass
 class CMASeparation:
     marginals: DataFrame
     cdfs: DataFrame

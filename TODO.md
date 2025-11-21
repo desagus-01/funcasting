@@ -1,7 +1,6 @@
 > [!TODO] Higher Priority
 > - [ ] Implement CMA (copula marginal algorithm) 
-    > - [ ] Find appropriate copula package
-    > - [ ] Class for cma in order to not keep creating new objects 
+    > - [ ] Class for cma 
 > - [ ] Constraints:
     > - [ ] Add view on copula/marginal 
     > - [ ] Re-factor the whole thing!! 
@@ -21,4 +20,5 @@
 
 
 ## Completed
+    > - [X] Find appropriate copula package
     > - [X] Add fitting marginals - norm  t for now

@@ -1,7 +1,7 @@
 import polars as pl
 
 from cma.distributions import update_cma_copula
-from cma.operations import cma_separation
+from cma.operations import cma_combination, cma_separation
 from flex_probs.prob_vectors import uniform_probs
 from template import test_template
 
@@ -19,4 +19,4 @@ cop_np = seps.copula.to_numpy()
 
 updated_cma = update_cma_copula(seps, "t")
 
-print(updated_cma.copula, seps.copula)
+x = cma_combination(updated_cma)

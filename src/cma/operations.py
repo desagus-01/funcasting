@@ -1,7 +1,7 @@
 import polars as pl
 from numpy import interp
 
-from data_types.vectors import CMASeparation, ProbVector
+from data_types.vectors import CMASeparation, ProbVector, ScenarioProb
 
 
 def compute_cdf_and_pobs(
@@ -49,7 +49,7 @@ def cma_separation(data: pl.DataFrame, prob: ProbVector) -> CMASeparation:
     )
 
 
-def cma_combination(cma_separation: CMASeparation) -> pl.DataFrame:
+def cma_combination(cma_separation: CMASeparation) -> ScenarioProb:
     interp_res = {}
     for asset in cma_separation.marginals.columns:
         interp_res[asset] = interp(
@@ -58,4 +58,8 @@ def cma_combination(cma_separation: CMASeparation) -> pl.DataFrame:
             fp=cma_separation.marginals.select(asset).to_numpy().ravel(),
         )
 
-    return pl.DataFrame(interp_res)
+    return ScenarioProb(
+        type="parametric",
+        scenarios=pl.DataFrame(interp_res),
+        prob=cma_separation.posterior,
+    )
