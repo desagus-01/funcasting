@@ -1,7 +1,7 @@
 import polars as pl
 
+from cma._utils import cma_combination, cma_separation
 from cma.distributions import update_cma_copula
-from cma.operations import cma_combination, cma_separation
 from flex_probs.prob_vectors import uniform_probs
 from template import test_template
 

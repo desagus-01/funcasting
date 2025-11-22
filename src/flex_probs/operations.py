@@ -5,7 +5,7 @@ from numpy.typing import NDArray
 from polars._typing import RankMethod
 from scipy.stats import ecdf
 
-from data_types.vectors import ProbVector
+from data_types.scenarios import ProbVector
 
 
 def prior_cdf(

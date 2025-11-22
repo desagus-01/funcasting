@@ -62,12 +62,4 @@ class ScenarioProb:
     prob: ProbVector
 
 
-@dataclass
-class CMASeparation:
-    marginals: DataFrame
-    cdfs: DataFrame
-    copula: DataFrame
-    posterior: ProbVector
-
-
 model_cfg = ConfigDict(arbitrary_types_allowed=True)

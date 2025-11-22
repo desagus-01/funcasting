@@ -2,7 +2,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import validate_call
 
-from data_types.vectors import ProbVector, View, model_cfg
+from data_types.scenarios import ProbVector, View, model_cfg
 
 from .core import kernel_smoothing, simple_entropy_pooling
 

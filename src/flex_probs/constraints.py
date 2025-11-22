@@ -2,7 +2,7 @@ import numpy as np
 import polars as pl
 from polars import DataFrame
 
-from data_types.vectors import (
+from data_types.scenarios import (
     ConstraintSignLike,
     CorrInfo,
     View,
