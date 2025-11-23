@@ -17,7 +17,7 @@ class CMASeparation:
     copula: DataFrame
     prob: ProbVector
 
-    def combination(self) -> ScenarioProb:
+    def to_scenario_prob(self) -> ScenarioProb:
         interp_res = {}
         for asset in self.marginals.columns:
             interp_res[asset] = interp(

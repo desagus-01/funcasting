@@ -7,10 +7,13 @@ info = test_template()
 prob = uniform_probs(info.increms_df.height)
 
 scenario_ex = ScenarioProb("x", scenarios=info.increms_df, prob=prob)
-cma = cma_separation(scenario_ex)
 
-new_joint = cma.update_marginals({"AAPL": "norm"}).update_cma_copula("t").combination()
+new_scenario = (
+    cma_separation(scenario_ex)
+    .update_marginals({"AAPL": "norm"})
+    .update_cma_copula("t")
+    .combination()
+)
+
 
 print(scenario_ex)
-
-print(new_joint)
