@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["cma", "data_types", "flex_probs"]
+packages = ["stats", "models", "flex_probs"]
 package-dir = {"" = "src"}
 
 

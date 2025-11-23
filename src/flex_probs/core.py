@@ -3,8 +3,9 @@ import numpy as np
 from cvxpy.constraints.constraint import Constraint as CvxConstraint
 from numpy.typing import NDArray
 
-from data_types.scenarios import ProbVector, View
 from helpers import select_operator, weighted_moments
+from models.scenarios import ProbVector
+from models.views import View
 
 
 # TODO: Change to it works on multi arrays

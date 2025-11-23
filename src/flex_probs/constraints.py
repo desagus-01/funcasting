@@ -2,12 +2,12 @@ import numpy as np
 import polars as pl
 from polars import DataFrame
 
-from data_types.scenarios import (
+from flex_probs.operations import indicator_quantile_marginal
+from models.views import (
     ConstraintSignLike,
     CorrInfo,
     View,
 )
-from flex_probs.operations import indicator_quantile_marginal
 
 
 def view_on_quantile(data: DataFrame, quant: float, quant_prob: float) -> list[View]:

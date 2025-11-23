@@ -1,6 +1,6 @@
 import operator as _op
 
-from data_types.scenarios import ConstraintSigns
+from models.views import ConstraintSigns
 
 sign_operations = {
     (ConstraintSigns.equal): _op.eq,

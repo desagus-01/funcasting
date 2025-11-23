@@ -1,6 +1,5 @@
-from cma.core import cma_separation
-from data_types.scenarios import ScenarioProb
 from flex_probs.prob_vectors import uniform_probs
+from models.scenarios import ScenarioProb
 from template import test_template
 
 info = test_template()
@@ -8,12 +7,6 @@ prob = uniform_probs(info.increms_df.height)
 
 scenario_ex = ScenarioProb("x", scenarios=info.increms_df, prob=prob)
 
-new_scenario = (
-    cma_separation(scenario_ex)
-    .update_marginals({"AAPL": "norm"})
-    .update_cma_copula("t")
-    .combination()
-)
+a = scenario_ex.to_copula_marginal()
 
-
-print(scenario_ex)
+scenario_ex.with_cma(target_marginals={"AAPL": "t"}, target_copula="norm")
