@@ -3,7 +3,7 @@ import polars as pl
 from numpy.typing import NDArray
 
 from globals import sign_operations
-from models.scenarios import ProbVector
+from models.prob import ProbVector
 from models.views import CorrInfo, View
 
 

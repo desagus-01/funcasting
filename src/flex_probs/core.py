@@ -4,7 +4,7 @@ from cvxpy.constraints.constraint import Constraint as CvxConstraint
 from numpy.typing import NDArray
 
 from helpers import select_operator, weighted_moments
-from models.scenarios import ProbVector
+from models.prob import ProbVector
 from models.views import View
 
 

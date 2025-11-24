@@ -2,7 +2,8 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import validate_call
 
-from models.scenarios import ProbVector, model_cfg
+from globals import model_cfg
+from models.prob import ProbVector
 from models.views import View
 
 from .core import kernel_smoothing, simple_entropy_pooling

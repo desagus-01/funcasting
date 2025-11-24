@@ -1,5 +1,7 @@
 import operator as _op
 
+from pydantic import ConfigDict
+
 from models.views import ConstraintSigns
 
 sign_operations = {
@@ -10,3 +12,6 @@ sign_operations = {
     (ConstraintSigns.equal_less): _op.le,
     "equal_less": _op.le,
 }
+
+
+model_cfg = ConfigDict(arbitrary_types_allowed=True)

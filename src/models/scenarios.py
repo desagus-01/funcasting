@@ -1,40 +1,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated, Literal, Self
+from typing import Literal, Self
 
-import numpy as np
 import polars as pl
 from numpy import interp
-from numpy.typing import NDArray
 from polars import DataFrame
-from pydantic import AfterValidator, ConfigDict
 
+from flex_probs.prob_vectors import uniform_probs
 from stats.distributions import sample_copula, sample_marginal
 
-
-def _as_prob_vector(a: NDArray[np.float64]) -> NDArray[np.float64]:
-    if a.ndim != 1:
-        raise ValueError("Array must be 1D.")
-    if np.any(np.isnan(a)) or np.any(np.isinf(a)):
-        raise ValueError("Array must not contain NaN or infinite values.")
-    if np.any(a < 0):
-        raise ValueError("All probabilities must be non-negative.")
-    if not np.isclose(a.sum(dtype=np.float64), 1.0, rtol=0, atol=1e-5):
-        raise ValueError(
-            f"Probabilities must sum to 1. Currently this is {a.sum(dtype=np.float64)}"
-        )
-    return a
-
-
-ProbVector = Annotated[NDArray[np.float64], AfterValidator(_as_prob_vector)]
+from .prob import ProbVector
 
 
 @dataclass
 class ScenarioProb:
     type: str
     scenarios: DataFrame
-    prob: ProbVector
+    prob: ProbVector | None = None  # defaults to uniform if None
+
+    def __post_init__(self) -> None:
+        if self.prob is None:
+            self.prob = uniform_probs(self.scenarios.height)
 
     def to_copula_marginal(self) -> CopulaMarginalModel:
         cdf_cols = {}
@@ -138,6 +125,3 @@ def compute_cdf_and_pobs(
         )
 
     return df
-
-
-model_cfg = ConfigDict(arbitrary_types_allowed=True)
