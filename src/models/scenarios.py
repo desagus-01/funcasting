@@ -1,27 +1,50 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, Self
 
 import polars as pl
 from numpy import interp
 from polars import DataFrame
 
-from flex_probs.prob_vectors import uniform_probs
+from flex_probs.prob_vectors import entropy_pooling_probs, uniform_probs
+from models.prob import ProbVector
+from models.views import View, ViewBuilder
 from stats.distributions import sample_copula, sample_marginal
-
-from .prob import ProbVector
 
 
 @dataclass
 class ScenarioProb:
-    type: str
     scenarios: DataFrame
+    views: list[View] = field(default_factory=list)
     prob: ProbVector | None = None  # defaults to uniform if None
 
     def __post_init__(self) -> None:
         if self.prob is None:
             self.prob = uniform_probs(self.scenarios.height)
+
+    def build_views(self) -> ViewBuilder:
+        return ViewBuilder(self.scenarios, self.views)
+
+    #
+    # def add_views(self: list[View]) -> Self:
+    #     self.views.extend(new_views)
+    #     return self
+    #
+    def apply_views(
+        self, *, confidence: float = 1.0, include_diags: bool = False
+    ) -> ScenarioProb:
+        if not self.views or not self.prob:
+            raise ValueError("Must first have views to apply them")
+
+        ep_res = entropy_pooling_probs(
+            prior=self.prob,
+            views=self.views,
+            confidence=confidence,
+            include_diags=include_diags,
+        )
+
+        return ScenarioProb(scenarios=self.scenarios, views=self.views, prob=ep_res)
 
     def to_copula_marginal(self) -> CopulaMarginalModel:
         cdf_cols = {}
@@ -41,6 +64,7 @@ class ScenarioProb:
             cdfs=DataFrame(cdf_cols),
             copula=DataFrame(copula_cols),
             prob=self.prob,
+            views=self.views,
         )
 
     def with_cma(
@@ -52,7 +76,6 @@ class ScenarioProb:
 
         if target_marginals:
             cma = cma.update_marginals(target_marginals)
-
         if target_copula:
             cma = cma.update_copula(target_copula)
 
@@ -64,7 +87,8 @@ class CopulaMarginalModel:
     marginals: DataFrame
     cdfs: DataFrame
     copula: DataFrame
-    prob: ProbVector
+    prob: ProbVector | None  # uniform if None
+    views: list[View]
 
     def to_scenario_prob(self) -> ScenarioProb:
         interp_res = {}
@@ -76,8 +100,8 @@ class CopulaMarginalModel:
             )
 
         return ScenarioProb(
-            type="cma_parametric",
             scenarios=DataFrame(interp_res),
+            views=self.views,
             prob=self.prob,
         )
 
@@ -106,9 +130,12 @@ class CopulaMarginalModel:
 def compute_cdf_and_pobs(
     data: DataFrame,
     marginal_name: str,
-    prob: ProbVector,
+    prob: ProbVector | None = None,  # uniform if none
     compute_pobs: bool = True,
 ) -> DataFrame:
+    if not prob:
+        prob = uniform_probs(data.height)
+
     df = (
         data.select(pl.col(marginal_name))
         .with_row_index()
