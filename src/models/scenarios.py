@@ -1,154 +1,122 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, Self
+from typing import Literal
 
-import polars as pl
-from numpy import interp
 from polars import DataFrame
 
-from flex_probs.prob_vectors import entropy_pooling_probs, uniform_probs
+from flex_probs.ep_engine import EntropyPooling
+from flex_probs.prob_vectors import uniform_probs
+from models.cma import CopulaMarginalModel
 from models.prob import ProbVector
-from models.views import View, ViewBuilder
-from stats.distributions import sample_copula, sample_marginal
+from models.views import View
+
+
+@dataclass(frozen=True)
+class ScenarioDistribution:
+    """
+    Core representation of a discrete scenario distribution.
+
+    All complex processes (EP, CMA) take a ScenarioDistribution in
+    and return a new ScenarioDistribution out.
+    """
+
+    scenarios: DataFrame
+    prob: ProbVector
+
+    @classmethod
+    def default_instance(
+        cls, scenarios: DataFrame, prob: ProbVector | None = None
+    ) -> ScenarioDistribution:
+        """
+        Defaults prob vector to uniform if None
+        """
+        if not prob:
+            prob = uniform_probs(scenarios.height)
+        return cls(scenarios=scenarios, prob=prob)
 
 
 @dataclass
 class ScenarioProb:
-    scenarios: DataFrame
+    """
+    Orchestrator for ScenarioDistribution
+
+    Owns:
+    1. Current ScenarioDistribution
+    2. List of Views
+
+    Delegates CMA to CopulaMarginalModel and entropy pooling to EntropyPooling
+    """
+
+    _dist: ScenarioDistribution
     views: list[View] = field(default_factory=list)
-    prob: ProbVector | None = None  # defaults to uniform if None
 
-    def __post_init__(self) -> None:
-        if self.prob is None:
-            self.prob = uniform_probs(self.scenarios.height)
+    @classmethod
+    def from_scenarios(
+        cls, scenarios: DataFrame, prob: ProbVector | None = None
+    ) -> ScenarioProb:
+        dist = ScenarioDistribution.default_instance(scenarios=scenarios, prob=prob)
+        return cls(_dist=dist)
 
-    def build_views(self) -> ViewBuilder:
-        return ViewBuilder(self.scenarios, self.views)
+    @property
+    def scenarios(self) -> DataFrame:
+        return self._dist.scenarios
 
-    #
-    # def add_views(self: list[View]) -> Self:
-    #     self.views.extend(new_views)
-    #     return self
-    #
+    @property
+    def prob(self) -> ProbVector:
+        return self._dist.prob
+
+    def with_views(self, new_views: list[View]) -> ScenarioProb:
+        """
+        Updates ScenarioProb with additional views
+        """
+
+        return ScenarioProb(
+            _dist=self._dist,
+            views=[*self.views, *new_views],
+        )
+
+    def clear_views(self) -> ScenarioProb:
+        """
+        Removes all Views.
+        """
+        return ScenarioProb(
+            _dist=self._dist,
+            views=[],
+        )
+
     def apply_views(
         self, *, confidence: float = 1.0, include_diags: bool = False
     ) -> ScenarioProb:
-        if not self.views or not self.prob:
-            raise ValueError("Must first have views to apply them")
+        """
+        Applies Entropy Pooling to current object using views.
+        Returns a new ScenarioProb with updated probabilities.
+        """
 
-        ep_res = entropy_pooling_probs(
-            prior=self.prob,
-            views=self.views,
-            confidence=confidence,
-            include_diags=include_diags,
+        ep = EntropyPooling()
+        new_dist = ep.update_prob(
+            self._dist, self.views, confidence=confidence, include_diags=include_diags
         )
 
-        return ScenarioProb(scenarios=self.scenarios, views=self.views, prob=ep_res)
+        return ScenarioProb(_dist=new_dist, views=self.views)
 
-    def to_copula_marginal(self) -> CopulaMarginalModel:
-        cdf_cols = {}
-        copula_cols = {}
-        sorted_marginals = {}
-
-        for col in self.scenarios.iter_columns():
-            name = col.name
-            temp = compute_cdf_and_pobs(self.scenarios, name, self.prob)
-
-            cdf_cols[name] = temp["cdf"]
-            copula_cols[name] = temp["pobs"]
-            sorted_marginals[name] = temp[name]
-
-        return CopulaMarginalModel(
-            marginals=DataFrame(sorted_marginals),
-            cdfs=DataFrame(cdf_cols),
-            copula=DataFrame(copula_cols),
-            prob=self.prob,
-            views=self.views,
-        )
-
-    def with_cma(
+    def apply_cma(
         self,
+        *,
         target_marginals: dict[str, Literal["t", "norm"]] | None = None,
         target_copula: Literal["t", "norm"] | None = None,
     ) -> ScenarioProb:
-        cma = self.to_copula_marginal()
-
-        if target_marginals:
-            cma = cma.update_marginals(target_marginals)
-        if target_copula:
-            cma = cma.update_copula(target_copula)
-
-        return cma.to_scenario_prob()
-
-
-@dataclass
-class CopulaMarginalModel:
-    marginals: DataFrame
-    cdfs: DataFrame
-    copula: DataFrame
-    prob: ProbVector | None  # uniform if None
-    views: list[View]
-
-    def to_scenario_prob(self) -> ScenarioProb:
-        interp_res = {}
-        for asset in self.marginals.columns:
-            interp_res[asset] = interp(
-                x=self.copula.select(asset).to_numpy().ravel(),
-                xp=self.cdfs.select(asset).to_numpy().ravel(),
-                fp=self.marginals.select(asset).to_numpy().ravel(),
-            )
+        """
+        Applies CMA to current scenario distribution using current probs and scenarios.
+        Returns a new ScenarioProb with updated scenarios.
+        """
+        new_dist = CopulaMarginalModel.from_scenario_dist(
+            self._dist
+        ).update_distribution(
+            self._dist, target_marginals=target_marginals, target_copula=target_copula
+        )
 
         return ScenarioProb(
-            scenarios=DataFrame(interp_res),
+            _dist=new_dist,
             views=self.views,
-            prob=self.prob,
         )
-
-    def update_marginals(self, target_dists: dict[str, Literal["t", "norm"]]) -> Self:
-        for marginal, target_dist in target_dists.items():
-            new_sample = sample_marginal(
-                self.marginals, marginals=marginal, kind=target_dist
-            )
-
-            cdf = compute_cdf_and_pobs(
-                new_sample, marginal, self.prob, compute_pobs=False
-            )
-
-            self.marginals = self.marginals.with_columns(
-                new_sample[marginal].alias(marginal)
-            )
-            self.cdfs = self.cdfs.with_columns(cdf["cdf"].alias(marginal))
-
-        return self
-
-    def update_copula(self, target_copula: Literal["t", "norm"] = "t") -> Self:
-        self.copula = sample_copula(self.copula, parametric_copula=target_copula)
-        return self
-
-
-def compute_cdf_and_pobs(
-    data: DataFrame,
-    marginal_name: str,
-    prob: ProbVector | None = None,  # uniform if none
-    compute_pobs: bool = True,
-) -> DataFrame:
-    if not prob:
-        prob = uniform_probs(data.height)
-
-    df = (
-        data.select(pl.col(marginal_name))
-        .with_row_index()
-        .with_columns(prob=prob)
-        .sort(marginal_name)
-        .with_columns(
-            cdf=pl.cum_sum("prob") * data.height / (data.height + 1),
-        )
-    )
-
-    if compute_pobs:
-        df = df.with_columns(
-            pobs=pl.col("cdf").gather(pl.col("index").arg_sort()),
-        )
-
-    return df
