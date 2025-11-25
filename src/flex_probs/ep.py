@@ -1,36 +1,12 @@
 import cvxpy as cp
 import numpy as np
 from cvxpy.constraints.constraint import Constraint as CvxConstraint
-from numpy.typing import NDArray
+from pydantic import validate_call
 
+from globals import model_cfg
 from helpers import select_operator, weighted_moments
 from models.prob import ProbVector
 from models.views import View
-
-
-# TODO: Change to it works on multi arrays
-def kernel_smoothing(
-    data_array: NDArray[np.floating],
-    half_life: float,
-    kernel_type: int,
-    reference: float | None,
-    time_based: bool = False,
-) -> NDArray[np.float64]:
-    """
-    General function for kernel smoothing, allows for exponential, gaussian among other through the kernel_type parameter.
-    """
-    if kernel_type < 0:
-        raise ValueError("Kernel type must be positive integer")
-
-    if time_based:
-        data_n = len(data_array)
-        data_array = np.arange(data_n)
-        dist_to_ref = data_n - 1 - data_array  # uses last data point as ref
-    elif not time_based and reference is not None:
-        dist_to_ref = np.abs(reference - data_array)
-
-    bandwidth: float = half_life / (np.log(2.0) ** (1.0 / kernel_type))
-    return np.exp(-((dist_to_ref / bandwidth) ** kernel_type))
 
 
 def ens(prob_vector: ProbVector) -> int:
@@ -54,8 +30,12 @@ def effective_rank(views_target):
     pass
 
 
-def assign_constraint_equation(views: View, posterior: cp.Variable, prior: ProbVector):
+def _assign_constraint_equation(views: View, posterior: cp.Variable, prior: ProbVector):
+    """
+    Assigns appropriate linear constraint equation based on view type
+    """
     operator_used = select_operator(views)
+
     match views.type:
         case "quantile":
             constraint = operator_used(views.data @ posterior, views.views_target)
@@ -90,15 +70,18 @@ def assign_constraint_equation(views: View, posterior: cp.Variable, prior: ProbV
     return constraint
 
 
-def build_constraints(
+def _build_constraints(
     views: list[View],
     posterior: cp.Variable,
     prior: ProbVector,
 ) -> list[CvxConstraint]:
+    """
+    Compiles constraint equations to list of constraints used in EP.
+    """
     base: list[CvxConstraint] = [cp.sum(posterior) == 1]  # ensures we get probabilities
     constraints: list[CvxConstraint] = []
     for view in views:
-        constraints.append(assign_constraint_equation(view, posterior, prior))
+        constraints.append(_assign_constraint_equation(view, posterior, prior))
 
     return constraints + base
 
@@ -151,15 +134,21 @@ def get_constraints_diags(
     return info
 
 
-def simple_entropy_pooling(
+def entropy_pooling(
     prior: ProbVector,
     views: list[View],
     solver: str = "SCS",
     include_diags: bool = False,
     **solver_kwargs: str,
 ) -> ProbVector:
+    """
+    Applied Entropy Pooling (EP) to current probability vector (prior)
+    based on list of views.
+
+    Outputs a new ProbVector.
+    """
     posterior = cp.Variable(prior.shape[0])
-    constraints = build_constraints(views=views, posterior=posterior, prior=prior)
+    constraints = _build_constraints(views=views, posterior=posterior, prior=prior)
     obj = cp.Minimize(cp.sum(cp.kl_div(posterior, prior)))
     prob = cp.Problem(obj, constraints)
     _ = prob.solve(solver, **solver_kwargs)
@@ -171,3 +160,18 @@ def simple_entropy_pooling(
         print(get_constraints_diags(views, constraints, posterior.value))
 
     return np.asarray(posterior.value, dtype=float)
+
+
+@validate_call(config=model_cfg, validate_return=True)
+def entropy_pooling_probs(
+    prior: ProbVector,
+    views: list[View],
+    confidence: float = 1.0,
+    include_diags: bool = False,
+) -> ProbVector:
+    """
+    Implements entropy pooling optimization using KL divergence as the objective function, then adds confidence value linearly to the resulting posterior.
+    """
+    entropy_pooling_res = entropy_pooling(prior, views, include_diags=include_diags)
+
+    return confidence * entropy_pooling_res + (1 - confidence) * prior

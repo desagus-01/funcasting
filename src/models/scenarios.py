@@ -5,8 +5,7 @@ from typing import Literal
 
 from polars import DataFrame
 
-from flex_probs.ep_engine import EntropyPooling
-from flex_probs.prob_vectors import uniform_probs
+from flex_probs.prob_vectors import entropy_pooling_probs, uniform_probs
 from models.cma import CopulaMarginalModel
 from models.prob import ProbVector
 from models.views import View
@@ -93,10 +92,14 @@ class ScenarioProb:
         Returns a new ScenarioProb with updated probabilities.
         """
 
-        ep = EntropyPooling()
-        new_dist = ep.update_prob(
-            self._dist, self.views, confidence=confidence, include_diags=include_diags
+        new_prob = entropy_pooling_probs(
+            prior=self.prob,
+            views=self.views,
+            confidence=confidence,
+            include_diags=include_diags,
         )
+
+        new_dist = ScenarioDistribution(scenarios=self._dist.scenarios, prob=new_prob)
 
         return ScenarioProb(_dist=new_dist, views=self.views)
 
