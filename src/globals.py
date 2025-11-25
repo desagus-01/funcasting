@@ -2,7 +2,7 @@ import operator as _op
 
 from pydantic import ConfigDict
 
-from models.views import ConstraintSigns
+from models.types import ConstraintSigns
 
 sign_operations = {
     (ConstraintSigns.equal): _op.eq,

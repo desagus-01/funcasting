@@ -8,7 +8,7 @@ from pydantic import validate_call
 from scipy.stats import norm, t
 
 from globals import model_cfg
-from models.prob import ProbVector
+from models.types import ProbVector
 
 
 def sample_marginal(
