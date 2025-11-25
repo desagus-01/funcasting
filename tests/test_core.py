@@ -28,18 +28,6 @@ def test_uniform_probs():
     assert np.isclose(p.sum(), 1.0)
 
 
-def test_entropy_pooling_changes_mean_simple_case():
-    scenarios = np.array([0.0, 1.0, 2.0])
-    prior = uniform_probs(3)
-    df = pl.DataFrame({"X": [0.0, 1.0, 2.0]})
-    vb = ViewBuilder(df)
-    views = vb.mean(target_means={"X": 1.0}, sign_type=["equal"]).build()
-
-    post = entropy_pooling_probs(prior, views)
-    new_mean = np.average(scenarios, weights=post)
-    assert np.isclose(new_mean, 1.8, atol=1e-2)
-
-
 def test_cma_round_trip_shapes_and_probs():
     df = pl.DataFrame({"a": [0.0, 1.0, 2.0], "b": [1.0, 1.0, 1.0]})
     p = uniform_probs(df.height)
@@ -50,3 +38,17 @@ def test_cma_round_trip_shapes_and_probs():
     assert df2.shape == df.shape
     assert np.isclose(p2.sum(), 1.0)
     assert p2.shape == p.shape
+
+
+def test_entropy_pooling_changes_mean_simple_case():
+    scenarios = np.array([0.0, 1.0, 2.0])
+    prior = uniform_probs(3)
+
+    df = pl.DataFrame({"X": [0.0, 1.0, 2.0]})
+    vb = ViewBuilder(df)
+    views = vb.mean(target_means={"X": 1.0}, sign_type=["equal"]).build()
+
+    post = entropy_pooling_probs(prior, views)
+    new_mean = np.average(scenarios, weights=post)
+
+    assert np.isclose(new_mean, 1.0, atol=1e-8)
