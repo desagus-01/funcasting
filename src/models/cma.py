@@ -7,9 +7,7 @@ import polars as pl
 from numpy import interp
 from polars import DataFrame
 
-from flex_probs.prob_vectors import uniform_probs
 from models.prob import ProbVector
-from models.scenarios import ScenarioDistribution
 from stats.distributions import sample_copula, sample_marginal
 
 
@@ -21,7 +19,9 @@ class CopulaMarginalModel:
     prob: ProbVector
 
     @classmethod
-    def from_scenario_dist(cls, dist: ScenarioDistribution) -> CopulaMarginalModel:
+    def from_scenario_dist(
+        cls, scenarios: DataFrame, prob: ProbVector
+    ) -> CopulaMarginalModel:
         """
         Build CMA model from a ScenarioDistribution and convert back.
         """
@@ -29,9 +29,9 @@ class CopulaMarginalModel:
         copula_cols = {}
         sorted_marginals = {}
 
-        for col in dist.scenarios.iter_columns():
+        for col in scenarios.iter_columns():
             name = col.name
-            temp = compute_cdf_and_pobs(dist.scenarios, name, dist.prob)
+            temp = compute_cdf_and_pobs(scenarios, name, prob)
 
             cdf_cols[name] = temp["cdf"]
             copula_cols[name] = temp["pobs"]
@@ -41,10 +41,10 @@ class CopulaMarginalModel:
             marginals=DataFrame(sorted_marginals),
             cdfs=DataFrame(cdf_cols),
             copula=DataFrame(copula_cols),
-            prob=dist.prob,
+            prob=prob,
         )
 
-    def to_scenario_dist(self) -> ScenarioDistribution:
+    def to_scenario_dist(self) -> tuple[DataFrame, ProbVector]:
         """
         Converts back to ScenarioDistribution by interpolating marginals.
         """
@@ -56,10 +56,7 @@ class CopulaMarginalModel:
                 fp=self.marginals.select(asset).to_numpy().ravel(),
             )
 
-        return ScenarioDistribution(
-            scenarios=DataFrame(interp_res),
-            prob=self.prob,
-        )
+        return DataFrame(interp_res), self.prob
 
     def update_marginals(self, target_dists: dict[str, Literal["t", "norm"]]) -> Self:
         for marginal, target_dist in target_dists.items():
@@ -84,17 +81,13 @@ class CopulaMarginalModel:
 
     def update_distribution(
         self,
-        dist: ScenarioDistribution,
-        *,
         target_marginals: dict[str, Literal["t", "norm"]] | None = None,
         target_copula: Literal["t", "norm"] | None = None,
-    ) -> ScenarioDistribution:
-        cma = CopulaMarginalModel.from_scenario_dist(dist)
-
+    ) -> tuple[DataFrame, ProbVector]:
         if target_marginals:
-            cma = cma.update_marginals(target_marginals)
+            cma = self.update_marginals(target_marginals)
         if target_copula:
-            cma = cma.update_copula(target_copula)
+            cma = self.update_copula(target_copula)
 
         return cma.to_scenario_dist()
 
@@ -102,12 +95,9 @@ class CopulaMarginalModel:
 def compute_cdf_and_pobs(
     data: DataFrame,
     marginal_name: str,
-    prob: ProbVector | None = None,  # uniform if none
+    prob: ProbVector,
     compute_pobs: bool = True,
 ) -> DataFrame:
-    if not prob:
-        prob = uniform_probs(data.height)
-
     df = (
         data.select(pl.col(marginal_name))
         .with_row_index()

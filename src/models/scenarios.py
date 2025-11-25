@@ -5,10 +5,11 @@ from typing import Literal
 
 from polars import DataFrame
 
-from flex_probs.prob_vectors import entropy_pooling_probs, uniform_probs
+from flex_probs.ep import entropy_pooling_probs
 from models.cma import CopulaMarginalModel
 from models.prob import ProbVector
 from models.views import View
+from stats.distributions import uniform_probs
 
 
 @dataclass(frozen=True)
@@ -65,7 +66,7 @@ class ScenarioProb:
     def prob(self) -> ProbVector:
         return self._dist.prob
 
-    def with_views(self, new_views: list[View]) -> ScenarioProb:
+    def add_views(self, new_views: list[View]) -> ScenarioProb:
         """
         Updates ScenarioProb with additional views
         """
@@ -85,7 +86,7 @@ class ScenarioProb:
         )
 
     def apply_views(
-        self, *, confidence: float = 1.0, include_diags: bool = False
+        self, confidence: float = 1.0, include_diags: bool = False
     ) -> ScenarioProb:
         """
         Applies Entropy Pooling to current object using views.
@@ -105,7 +106,6 @@ class ScenarioProb:
 
     def apply_cma(
         self,
-        *,
         target_marginals: dict[str, Literal["t", "norm"]] | None = None,
         target_copula: Literal["t", "norm"] | None = None,
     ) -> ScenarioProb:
@@ -113,11 +113,13 @@ class ScenarioProb:
         Applies CMA to current scenario distribution using current probs and scenarios.
         Returns a new ScenarioProb with updated scenarios.
         """
-        new_dist = CopulaMarginalModel.from_scenario_dist(
-            self._dist
+        scenarios, prob = CopulaMarginalModel.from_scenario_dist(
+            self.scenarios, self.prob
         ).update_distribution(
-            self._dist, target_marginals=target_marginals, target_copula=target_copula
+            target_marginals=target_marginals, target_copula=target_copula
         )
+
+        new_dist = ScenarioDistribution(scenarios=scenarios, prob=prob)
 
         return ScenarioProb(
             _dist=new_dist,

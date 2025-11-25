@@ -1,12 +1,22 @@
+from flex_probs.views_builder import ViewBuilder
 from models.scenarios import ScenarioProb
 from template import test_template
 
-info = test_template()
+info = test_template().increms_df
 
-scenario_ex = ScenarioProb(scenarios=info.increms_df)
 
-views = scenario_ex.build_views().mean(target_means={"AAPL": 0.01}, sign_type=["equal"])
+x = ScenarioProb.from_scenarios(info)
 
-print(type(views.views))
+views = (
+    ViewBuilder(x.scenarios)
+    .mean({"AAPL": 0.01}, sign_type=["equal"])
+    .std({"MSFT": 0.1}, sign_type=["equal_less"])
+    .build()
+)
 
-# scenario_ex.add_views(views.views)
+z = x.add_views(views).apply_views()
+
+final = z.apply_cma(target_copula="norm")
+
+print(x)
+print(final)

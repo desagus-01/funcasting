@@ -3,8 +3,8 @@ from dataclasses import dataclass
 import numpy as np
 from polars import DataFrame
 
-from flex_probs.prob_vectors import uniform_probs
 from get_data import get_example_assets
+from stats.distributions import uniform_probs
 
 
 @dataclass
