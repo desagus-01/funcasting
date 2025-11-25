@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["stats", "models", "flex_probs"]
+packages = ["utils", "models", "methods"]
 package-dir = {"" = "src"}
 
 

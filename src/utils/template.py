@@ -1,14 +1,16 @@
 import datetime
 import os
+from dataclasses import dataclass
 
 import databento as db
+import numpy as np
 import polars as pl
 import polars.selectors as cs
 from dotenv import load_dotenv
+from polars import DataFrame
 from pydantic import BaseModel, ConfigDict
 
-# NOTE: Only for Equity for now.
-# TODO: Consider getting credit data here later
+from utils.distributions import uniform_probs
 
 
 class Assets(BaseModel):
@@ -63,3 +65,34 @@ def get_rd_inc(raw_df: pl.DataFrame) -> Assets:
 def get_example_assets(tickers: list[str]) -> Assets:
     raw_data = get_db_sample(tickers)
     return get_rd_inc(simp_df(raw_data))
+
+
+@dataclass
+class TestTemplateResult:
+    tickers: list[str]
+    increms_df_long: DataFrame
+    increms_df: DataFrame
+    increms_np: np.ndarray
+    increms_n: int
+    uniform_prior: np.ndarray
+
+
+def test_template():
+    tickers = ["AAPL", "MSFT", "GOOG"]
+    assets = get_example_assets(tickers)
+    increms_df = assets.increments.drop("date")
+    increms_df_long = assets.increments.unpivot(
+        on=tickers, value_name="return", variable_name="ticker", index="date"
+    )
+    increms_np = increms_df.to_numpy()
+    increms_n = increms_df.height
+    uniform_prior = uniform_probs(increms_n)
+
+    return TestTemplateResult(
+        tickers=tickers,
+        increms_df_long=increms_df_long,
+        increms_df=increms_df,
+        increms_np=increms_np,
+        increms_n=increms_n,
+        uniform_prior=uniform_prior,
+    )

@@ -5,10 +5,10 @@ from typing import Literal
 
 from polars import DataFrame
 
-from flex_probs.ep import entropy_pooling_probs
-from models.cma import CopulaMarginalModel
+from methods.cma import CopulaMarginalModel
+from methods.ep import entropy_pooling_probs
 from models.types import ProbVector, View
-from stats.distributions import uniform_probs
+from utils.distributions import uniform_probs
 
 
 @dataclass(frozen=True)

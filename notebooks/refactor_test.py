@@ -1,6 +1,6 @@
 from models.scenarios import ScenarioProb
 from models.views_builder import ViewBuilder
-from template import test_template
+from utils.template import test_template
 
 info = test_template().increms_df
 

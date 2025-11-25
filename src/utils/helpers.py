@@ -1,5 +1,6 @@
 import numpy as np
 import polars as pl
+import polars.selectors as cs
 from numpy.typing import NDArray
 
 from globals import sign_operations
@@ -39,3 +40,11 @@ def get_corr_info(data: pl.DataFrame) -> list[CorrInfo]:
         CorrInfo(asset_pair=(corrs["index"], corrs["variable"]), corr=corrs["value"])
         for corrs in corr_df.rows(named=True)
     ]
+
+
+def indicator_quantile_marginal(
+    data: pl.DataFrame, target_quantile: float
+) -> pl.DataFrame:
+    threshold = np.quantile(data, target_quantile)
+
+    return data.with_columns(quant_ind=(cs.numeric() <= threshold).cast(pl.Int8))

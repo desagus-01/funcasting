@@ -5,12 +5,12 @@ import numpy as np
 import polars as pl
 from polars import DataFrame
 
-from flex_probs.operations import indicator_quantile_marginal
 from models.types import (
     ConstraintSignLike,
     CorrInfo,
     View,
 )
+from utils.helpers import indicator_quantile_marginal
 
 
 @dataclass

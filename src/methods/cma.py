@@ -8,7 +8,7 @@ from numpy import interp
 from polars import DataFrame
 
 from models.types import ProbVector
-from stats.distributions import sample_copula, sample_marginal
+from utils.distributions import sample_copula, sample_marginal
 
 
 @dataclass

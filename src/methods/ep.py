@@ -4,8 +4,8 @@ from cvxpy.constraints.constraint import Constraint as CvxConstraint
 from pydantic import validate_call
 
 from globals import model_cfg
-from helpers import select_operator, weighted_moments
 from models.types import ProbVector, View
+from utils.helpers import select_operator, weighted_moments
 
 
 def ens(prob_vector: ProbVector) -> int:
