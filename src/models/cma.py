@@ -7,7 +7,7 @@ import polars as pl
 from numpy import interp
 from polars import DataFrame
 
-from models.prob import ProbVector
+from models.types import ProbVector
 from stats.distributions import sample_copula, sample_marginal
 
 

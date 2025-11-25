@@ -3,8 +3,7 @@ import polars as pl
 from numpy.typing import NDArray
 
 from globals import sign_operations
-from models.prob import ProbVector
-from models.views import CorrInfo, View
+from models.types import CorrInfo, ProbVector, View
 
 
 def weighted_moments(

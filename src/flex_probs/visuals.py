@@ -7,7 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 from polars import DataFrame
 
-from models.prob import ProbVector
+from models.types import ProbVector
 
 
 def choose_hist_bin(data: NDArray[np.floating] | ProbVector) -> int:

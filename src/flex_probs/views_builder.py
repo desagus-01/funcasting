@@ -6,7 +6,7 @@ import polars as pl
 from polars import DataFrame
 
 from flex_probs.operations import indicator_quantile_marginal
-from models.views import (
+from models.types import (
     ConstraintSignLike,
     CorrInfo,
     View,

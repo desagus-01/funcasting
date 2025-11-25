@@ -5,8 +5,7 @@ from pydantic import validate_call
 
 from globals import model_cfg
 from helpers import select_operator, weighted_moments
-from models.prob import ProbVector
-from models.views import View
+from models.types import ProbVector, View
 
 
 def ens(prob_vector: ProbVector) -> int:

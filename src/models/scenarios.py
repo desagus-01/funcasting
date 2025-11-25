@@ -7,8 +7,7 @@ from polars import DataFrame
 
 from flex_probs.ep import entropy_pooling_probs
 from models.cma import CopulaMarginalModel
-from models.prob import ProbVector
-from models.views import View
+from models.types import ProbVector, View
 from stats.distributions import uniform_probs
 
 
