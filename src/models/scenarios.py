@@ -51,7 +51,7 @@ class ScenarioProb:
     views: list[View] = field(default_factory=list)
 
     @classmethod
-    def from_scenarios(
+    def default_inst(
         cls, scenarios: DataFrame, prob: ProbVector | None = None
     ) -> ScenarioProb:
         dist = ScenarioDistribution.default_instance(scenarios=scenarios, prob=prob)

@@ -2,6 +2,7 @@
 > - [ ] Learn about stochastic processes and implement 
 
 > [!TODO] Lower Priority
+> - [ ] Create pretty print for ScenarioProb object 
 > - [ ] Finish setting up effective_ranks (helps us know whether our views are fine to use by determining rank of matrix)
 > - [ ] Enforce mean_ref when views of mean and std are together 
 > - [ ] Change assigned prob plot to always start at 0 

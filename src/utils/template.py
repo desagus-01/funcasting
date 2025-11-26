@@ -70,6 +70,7 @@ def get_example_assets(tickers: list[str]) -> Assets:
 @dataclass
 class TestTemplateResult:
     tickers: list[str]
+    raw_data: DataFrame
     increms_df_long: DataFrame
     increms_df: DataFrame
     increms_np: np.ndarray
@@ -77,10 +78,10 @@ class TestTemplateResult:
     uniform_prior: np.ndarray
 
 
-def test_template():
+def get_template():
     tickers = ["AAPL", "MSFT", "GOOG"]
     assets = get_example_assets(tickers)
-    increms_df = assets.increments.drop("date")
+    increms_df = assets.increments
     increms_df_long = assets.increments.unpivot(
         on=tickers, value_name="return", variable_name="ticker", index="date"
     )
@@ -90,6 +91,7 @@ def test_template():
 
     return TestTemplateResult(
         tickers=tickers,
+        raw_data=assets.raw_data,
         increms_df_long=increms_df_long,
         increms_df=increms_df,
         increms_np=increms_np,
