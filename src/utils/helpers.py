@@ -48,3 +48,27 @@ def indicator_quantile_marginal(
     threshold = np.quantile(data, target_quantile)
 
     return data.with_columns(quant_ind=(cs.numeric() <= threshold).cast(pl.Int8))
+
+
+def compute_cdf_and_pobs(
+    data: pl.DataFrame,
+    marginal_name: str,
+    prob: ProbVector,
+    compute_pobs: bool = True,
+) -> pl.DataFrame:
+    df = (
+        data.select(pl.col(marginal_name))
+        .with_row_index()
+        .with_columns(prob=prob)
+        .sort(marginal_name)
+        .with_columns(
+            cdf=pl.cum_sum("prob") * data.height / (data.height + 1),
+        )
+    )
+
+    if compute_pobs:
+        df = df.with_columns(
+            pobs=pl.col("cdf").gather(pl.col("index").arg_sort()),
+        )
+
+    return df

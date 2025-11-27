@@ -48,7 +48,7 @@ class ScenarioDistribution:
         """
         Defaults prob vector to uniform if None
         """
-        if not prob:
+        if prob is None:
             prob = uniform_probs(scenarios.height)
         return cls(scenarios=scenarios, prob=prob)
 

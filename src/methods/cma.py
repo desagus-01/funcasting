@@ -3,12 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Self
 
-import polars as pl
 from numpy import interp
 from polars import DataFrame
 
 from models.types import ProbVector
 from utils.distributions import sample_copula, sample_marginal
+from utils.helpers import compute_cdf_and_pobs
 
 
 @dataclass
@@ -90,27 +90,3 @@ class CopulaMarginalModel:
             cma = self.update_copula(target_copula)
 
         return cma.to_scenario_dist()
-
-
-def compute_cdf_and_pobs(
-    data: DataFrame,
-    marginal_name: str,
-    prob: ProbVector,
-    compute_pobs: bool = True,
-) -> DataFrame:
-    df = (
-        data.select(pl.col(marginal_name))
-        .with_row_index()
-        .with_columns(prob=prob)
-        .sort(marginal_name)
-        .with_columns(
-            cdf=pl.cum_sum("prob") * data.height / (data.height + 1),
-        )
-    )
-
-    if compute_pobs:
-        df = df.with_columns(
-            pobs=pl.col("cdf").gather(pl.col("index").arg_sort()),
-        )
-
-    return df
