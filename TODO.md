@@ -1,5 +1,6 @@
 > [!TODO] Higher Priority
 > - [ ] Learn about stochastic processes and implement 
+> - [ ] Add tests for invariance (iid) 
 
 > [!TODO] Lower Priority
 > - [ ] Create pretty print for ScenarioProb object 

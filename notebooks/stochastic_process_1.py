@@ -47,16 +47,11 @@ samples = sampler.choice(
     size=(n_paths, n_steps),
     p=flex_probs,
 )
-
-# 2) Cumulative sum along time axis (axis=1)
 increments = np.cumsum(samples, axis=1)  # shape (n_paths, n_steps)
-
-# 3) Add initial value to every path
 paths = latest_value + increments
 
 paths_T = paths.T
 
-# --- 4) Plot the paths ---
 t = np.arange(1, n_steps + 1)
 
 plt.figure(figsize=(8, 5))

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+import polars as pl
 from polars import DataFrame
 
 from methods.cma import CopulaMarginalModel
@@ -22,6 +23,23 @@ class ScenarioDistribution:
 
     scenarios: DataFrame
     prob: ProbVector
+    dates: DataFrame | None = None
+
+    def __post_init__(self):
+        # Extract date column if present
+        if "date" in self.scenarios.columns:
+            date_df = self.scenarios.select(pl.col("date"))
+            scenarios_exdate = self.scenarios.drop(pl.col("date"))
+            object.__setattr__(self, "scenarios", scenarios_exdate)
+            object.__setattr__(self, "dates", date_df)
+
+        # Always check prob length
+        if self.scenarios.height != self.prob.shape[0]:
+            raise ValueError("prob vector length does not match number of scenarios")
+
+        # Only check dates if they exist
+        if self.dates is not None and self.scenarios.height != self.dates.height:
+            raise ValueError("dates do not have the same number of rows as scenarios")
 
     @classmethod
     def default_instance(
@@ -65,6 +83,10 @@ class ScenarioProb:
     def prob(self) -> ProbVector:
         return self._dist.prob
 
+    @property
+    def dates(self) -> ProbVector:
+        return self._dist.dates
+
     def add_views(self, new_views: list[View]) -> ScenarioProb:
         """
         Updates ScenarioProb with additional views
@@ -99,7 +121,9 @@ class ScenarioProb:
             include_diags=include_diags,
         )
 
-        new_dist = ScenarioDistribution(scenarios=self._dist.scenarios, prob=new_prob)
+        new_dist = ScenarioDistribution(
+            scenarios=self.scenarios, prob=new_prob, dates=self.dates
+        )
 
         return ScenarioProb(_dist=new_dist, views=self.views)
 
@@ -112,13 +136,18 @@ class ScenarioProb:
         Applies CMA to current scenario distribution using current probs and scenarios.
         Returns a new ScenarioProb with updated scenarios.
         """
+        if target_copula is None and target_marginals is None:
+            raise ValueError("You must choose a target marginal or copula")
+
         scenarios, prob = CopulaMarginalModel.from_scenario_dist(
             self.scenarios, self.prob
         ).update_distribution(
             target_marginals=target_marginals, target_copula=target_copula
         )
 
-        new_dist = ScenarioDistribution(scenarios=scenarios, prob=prob)
+        new_dist = ScenarioDistribution(
+            scenarios=scenarios, prob=prob, dates=self.dates
+        )
 
         return ScenarioProb(
             _dist=new_dist,
