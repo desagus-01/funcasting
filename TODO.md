@@ -1,6 +1,7 @@
 > [!TODO] Higher Priority
 > - [ ] Learn about stochastic processes and implement 
 > - [ ] Add tests for invariance (iid) 
+> - [ ] Add SW measure using monte carlo integration 
 
 > [!TODO] Lower Priority
 > - [ ] Create pretty print for ScenarioProb object 

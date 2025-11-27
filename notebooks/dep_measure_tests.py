@@ -1,7 +1,7 @@
 import numpy as np
-from scipy.stats import uniform
 
 from models.scenarios import CopulaMarginalModel, ScenarioProb
+from models.types import ProbVector
 from models.views_builder import ViewBuilder
 from utils.template import get_template
 
@@ -19,26 +19,35 @@ scenarios = scenarios.add_views(views).apply_views()
 
 cma = CopulaMarginalModel.from_scenario_dist(scenarios.scenarios, scenarios.prob)
 
-copula = cma.copula
+ex_aapl = cma.copula.drop("AAPL").to_numpy()
 
 
-a, b = 0, np.pi
+def eval_cop(pobs: np.ndarray, p: ProbVector, point: np.ndarray):
+    less_eq_coord = pobs <= point
+    inside_lower_orthant = np.all(less_eq_coord, axis=1)
 
-n = 1000
-
-
-def func(x):
-    return np.sin(x)
+    return p @ inside_lower_orthant
 
 
-integral = 0.0
+def sw_int(pobs: np.ndarray, p: ProbVector, point: np.ndarray):
+    est_cop = eval_cop(pobs, p, point)
+    ind_cop = float(np.prod(point))
+    return abs(est_cop - ind_cop)
 
-uni_samp: list[int] = uniform.rvs(loc=a, scale=b, size=n)
+
+def sw_mc(pobs: np.ndarray, p: ProbVector, iter: int = 10_000):
+    rng = np.random.default_rng()
+    uni_draws = rng.uniform(0.0, 1.0, size=(iter, pobs.shape[1]))
+
+    res = np.empty(iter, dtype=float)
+    for i in range(iter):
+        res[i] = sw_int(pobs, p, uni_draws[i])
+    return 12 * res.mean()
 
 
-for i in range(n):
-    integral += func(uni_samp[i])
+test = np.empty(50)
+for i in range(50):
+    print(f"Iteration {i}")
+    test[i] = sw_mc(ex_aapl, cma.prob)
 
-answer = (b - a) / n * integral
-
-print(answer)
+print(test, test.mean())
