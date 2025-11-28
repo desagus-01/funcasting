@@ -33,4 +33,4 @@ def sw_mc_u(pobs: np.ndarray, p: ProbVector, iter: int = 50) -> dict[np.ndarray,
     for i in range(iter):
         sc_u_vec[i] = sw_mc_vec(pobs, p)
 
-    return {"mean_res": sc_u_vec, "mean": sc_u_vec.mean()}
+    return {"mean_res": np.round(sc_u_vec, 4), "mean": np.round(sc_u_vec.mean(), 4)}

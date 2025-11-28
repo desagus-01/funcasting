@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 import polars as pl
+from numpy.typing import NDArray
 from polars import DataFrame
 
 from methods.cma import CopulaMarginalModel
@@ -65,6 +66,7 @@ class ScenarioProb:
     Delegates CMA to CopulaMarginalModel and entropy pooling to EntropyPooling
     """
 
+    _base_dist: ScenarioDistribution
     _dist: ScenarioDistribution
     views: list[View] = field(default_factory=list)
 
@@ -73,7 +75,7 @@ class ScenarioProb:
         cls, scenarios: DataFrame, prob: ProbVector | None = None
     ) -> ScenarioProb:
         dist = ScenarioDistribution.default_instance(scenarios=scenarios, prob=prob)
-        return cls(_dist=dist)
+        return cls(_dist=dist, _base_dist=dist)
 
     @property
     def scenarios(self) -> DataFrame:
@@ -93,6 +95,7 @@ class ScenarioProb:
         """
 
         return ScenarioProb(
+            _base_dist=self._base_dist,
             _dist=self._dist,
             views=[*self.views, *new_views],
         )
@@ -102,6 +105,7 @@ class ScenarioProb:
         Removes all Views.
         """
         return ScenarioProb(
+            _base_dist=self._base_dist,
             _dist=self._dist,
             views=[],
         )
@@ -125,7 +129,9 @@ class ScenarioProb:
             scenarios=self.scenarios, prob=new_prob, dates=self.dates
         )
 
-        return ScenarioProb(_dist=new_dist, views=self.views)
+        return ScenarioProb(
+            _base_dist=self._base_dist, _dist=new_dist, views=self.views
+        )
 
     def apply_cma(
         self,
@@ -150,6 +156,13 @@ class ScenarioProb:
         )
 
         return ScenarioProb(
+            _base_dist=self._base_dist,
             _dist=new_dist,
             views=self.views,
         )
+
+    def schweizer_wolff(self, iter: int = 10_000) -> dict[NDArray, NDArray]:
+        cma = CopulaMarginalModel.from_scenario_dist(
+            self._base_dist.scenarios, self._base_dist.prob
+        )
+        return cma.sw_dependence()
