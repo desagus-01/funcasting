@@ -1,8 +1,9 @@
-import numpy as np
+import polars as pl
 
-from models.scenarios import CopulaMarginalModel, ScenarioProb
-from models.types import ProbVector
+from methods.cma import CopulaMarginalModel
+from models.scenarios import ScenarioProb
 from models.views_builder import ViewBuilder
+from utils.stat_tests import sw_mc_u
 from utils.template import get_template
 
 info_all = get_template()
@@ -19,35 +20,11 @@ scenarios = scenarios.add_views(views).apply_views()
 
 cma = CopulaMarginalModel.from_scenario_dist(scenarios.scenarios, scenarios.prob)
 
-ex_aapl = cma.copula.drop("AAPL").to_numpy()
+# ex_aapl = cma.copula.drop("GOOG").to_numpy()
+
+ex_aapl = (
+    cma.copula.select(pl.col("AAPL")).with_columns(aapl_2=pl.col("AAPL")).to_numpy()
+)
 
 
-def eval_cop(pobs: np.ndarray, p: ProbVector, point: np.ndarray):
-    less_eq_coord = pobs <= point
-    inside_lower_orthant = np.all(less_eq_coord, axis=1)
-
-    return p @ inside_lower_orthant
-
-
-def sw_int(pobs: np.ndarray, p: ProbVector, point: np.ndarray):
-    est_cop = eval_cop(pobs, p, point)
-    ind_cop = float(np.prod(point))
-    return abs(est_cop - ind_cop)
-
-
-def sw_mc(pobs: np.ndarray, p: ProbVector, iter: int = 10_000):
-    rng = np.random.default_rng()
-    uni_draws = rng.uniform(0.0, 1.0, size=(iter, pobs.shape[1]))
-
-    res = np.empty(iter, dtype=float)
-    for i in range(iter):
-        res[i] = sw_int(pobs, p, uni_draws[i])
-    return 12 * res.mean()
-
-
-test = np.empty(50)
-for i in range(50):
-    print(f"Iteration {i}")
-    test[i] = sw_mc(ex_aapl, cma.prob)
-
-print(test, test.mean())
+print(sw_mc_u(ex_aapl, cma.prob))
