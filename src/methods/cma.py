@@ -93,5 +93,8 @@ class CopulaMarginalModel:
 
         return cma.to_scenario_dist()
 
-    def sw_dependence(self, iter: int = 50) -> dict[NDArray, NDArray]:
-        return sw_mc_u(self.copula.to_numpy(), self.prob, iter)
+    def sw_dependence(
+        self, assets: tuple[str, str], iter: int = 50
+    ) -> dict[NDArray, NDArray]:
+        copula_assets = self.copula.select(assets).to_numpy()
+        return sw_mc_u(copula_assets, self.prob, iter)

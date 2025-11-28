@@ -2,6 +2,8 @@
 > - [ ] Learn about stochastic processes and implement 
 > - [ ] Add tests for invariance (iid) 
     > - [ ] Add SW measure using monte carlo integration 
+    > - [ ] Change to be pairwise and/or individual 
+    > - [ ] Add Kolmogrov-Smirnov test 
 
 > [!TODO] Lower Priority
 > - [ ] Create pretty print for ScenarioProb object 

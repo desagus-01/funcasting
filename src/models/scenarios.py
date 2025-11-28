@@ -60,10 +60,11 @@ class ScenarioProb:
     Orchestrator for ScenarioDistribution
 
     Owns:
-    1. Current ScenarioDistribution
-    2. List of Views
+    1. Original ScenarioDistribution
+    2. Updated Scenario Distribution
+    3. List of Views
 
-    Delegates CMA to CopulaMarginalModel and entropy pooling to EntropyPooling
+    Delegates CMA to CopulaMarginalModel and entropy pooling to entry_pooling_probs
     """
 
     _base_dist: ScenarioDistribution
@@ -76,6 +77,10 @@ class ScenarioProb:
     ) -> ScenarioProb:
         dist = ScenarioDistribution.default_instance(scenarios=scenarios, prob=prob)
         return cls(_dist=dist, _base_dist=dist)
+
+    @property
+    def assets(self) -> list[str]:
+        return self.scenarios.columns
 
     @property
     def scenarios(self) -> DataFrame:
@@ -161,8 +166,17 @@ class ScenarioProb:
             views=self.views,
         )
 
-    def schweizer_wolff(self, iter: int = 10_000) -> dict[NDArray, NDArray]:
+    def schweizer_wolff(
+        self, assets: tuple[str, str], iter: int = 10_000
+    ) -> dict[NDArray, NDArray]:
+        if len(assets) != 2:
+            raise ValueError(f"You must pick two assets from {self.assets}")
+
+        if any(asset not in self.assets for asset in assets):
+            raise ValueError(
+                f"Your two chosen assets {assets} must be in your scenarios; these are {self.assets}"
+            )
         cma = CopulaMarginalModel.from_scenario_dist(
             self._base_dist.scenarios, self._base_dist.prob
         )
-        return cma.sw_dependence()
+        return cma.sw_dependence(assets)
