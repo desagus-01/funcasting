@@ -4,13 +4,13 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 import polars as pl
-from numpy.typing import NDArray
 from polars import DataFrame
 
 from methods.cma import CopulaMarginalModel
 from methods.ep import entropy_pooling_probs
 from models.types import ProbVector, View
 from utils.distributions import uniform_probs
+from utils.stat_tests import SWRes, sw_mc_summary
 
 
 @dataclass(frozen=True)
@@ -30,7 +30,7 @@ class ScenarioDistribution:
         # Extract date column if present
         if "date" in self.scenarios.columns:
             date_df = self.scenarios.select(pl.col("date"))
-            scenarios_exdate = self.scenarios.drop(pl.col("date"))
+            scenarios_exdate = self.scenarios.drop("date")
             object.__setattr__(self, "scenarios", scenarios_exdate)
             object.__setattr__(self, "dates", date_df)
 
@@ -91,8 +91,11 @@ class ScenarioProb:
         return self._dist.prob
 
     @property
-    def dates(self) -> ProbVector:
-        return self._dist.dates
+    def dates(self) -> DataFrame | None:
+        if self._dist.dates is not None:
+            return self._dist.dates
+        else:
+            pass
 
     def add_views(self, new_views: list[View]) -> ScenarioProb:
         """
@@ -167,16 +170,60 @@ class ScenarioProb:
         )
 
     def schweizer_wolff(
-        self, assets: tuple[str, str], iter: int = 10_000
-    ) -> dict[NDArray, NDArray]:
-        if len(assets) != 2:
-            raise ValueError(f"You must pick two assets from {self.assets}")
+        self, assets: tuple[str, str], iter: int = 50, original_dist: bool = True
+    ) -> SWRes:
+        """
+        Compute the Schweizer–Wolff dependence measure between two assets using
+        Monte Carlo integration of their copula.
+
+        The Schweizer–Wolff measure is a non-parametric dependence metric that
+        quantifies how far the copula of two variables deviates from
+        what would be expected under independence. It is defined as:
+
+            SW = 12 ∫₀¹ ∫₀¹ | C(u₁, u₂) − C_indep(u₁, u₂) | du₁ du₂,
+
+        where:
+            - C(u₁, u₂) is the empirical copula of the two assets,
+            - C_indep(u₁, u₂) = u₁ * u₂ is the independence copula.
+
+        Because this double integral has no
+        closed form for empirical copulas, it is approximated via Monte Carlo
+        sampling over the unit square.
+
+        Parameters
+        ----------
+        assets : tuple[str, str]
+            The pair of assets for which to compute the dependence measure.
+            Both assets must exist in the underlying scenario set.
+
+        iter : int, default=50
+            Number of Monte Carlo replications. Increasing this improves stability
+            of the estimate but increases computation time.
+
+        original_dist : bool, default=True
+            If True, use the original scenario distribution prior to any views and/or cma.
+            If False, use the current distribution after applying views or CMA
+            adjustments.
+
+        Returns
+        -------
+        SWRes
+            A dictionary containing:
+            - ``iter_res``: The Schweizer–Wolff estimate from each Monte Carlo run.
+            - ``iter_avg``: The averaged dependence estimate across runs.
+        """
 
         if any(asset not in self.assets for asset in assets):
             raise ValueError(
                 f"Your two chosen assets {assets} must be in your scenarios; these are {self.assets}"
             )
-        cma = CopulaMarginalModel.from_scenario_dist(
-            self._base_dist.scenarios, self._base_dist.prob
-        )
-        return cma.sw_dependence(assets)
+
+        if original_dist:
+            dist = self._base_dist
+        else:
+            dist = self._dist
+
+        cma = CopulaMarginalModel.from_scenario_dist(dist.scenarios, dist.prob)
+
+        cop_assets = cma.copula.select(assets).to_numpy()
+        return sw_mc_summary(cop_assets, cma.prob, iter)

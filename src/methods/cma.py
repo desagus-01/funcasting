@@ -4,13 +4,11 @@ from dataclasses import dataclass
 from typing import Literal, Self
 
 from numpy import interp
-from numpy.typing import NDArray
 from polars import DataFrame
 
 from models.types import ProbVector
 from utils.distributions import sample_copula, sample_marginal
 from utils.helpers import compute_cdf_and_pobs
-from utils.stat_tests import sw_mc_u
 
 
 @dataclass
@@ -25,7 +23,7 @@ class CopulaMarginalModel:
         cls, scenarios: DataFrame, prob: ProbVector
     ) -> CopulaMarginalModel:
         """
-        Build CMA model from a ScenarioDistribution and convert back.
+        Build CMA model from scenarios and prob distributions
         """
         cdf_cols = {}
         copula_cols = {}
@@ -86,15 +84,15 @@ class CopulaMarginalModel:
         target_marginals: dict[str, Literal["t", "norm"]] | None = None,
         target_copula: Literal["t", "norm"] | None = None,
     ) -> tuple[DataFrame, ProbVector]:
-        if target_marginals:
+        cma: CopulaMarginalModel | None = None
+
+        if target_marginals is not None:
             cma = self.update_marginals(target_marginals)
-        if target_copula:
+
+        if target_copula is not None:
             cma = self.update_copula(target_copula)
 
-        return cma.to_scenario_dist()
+        if cma is None:
+            raise ValueError("You must choose a target marginal or target copula!")
 
-    def sw_dependence(
-        self, assets: tuple[str, str], iter: int = 50
-    ) -> dict[NDArray, NDArray]:
-        copula_assets = self.copula.select(assets).to_numpy()
-        return sw_mc_u(copula_assets, self.prob, iter)
+        return cma.to_scenario_dist()

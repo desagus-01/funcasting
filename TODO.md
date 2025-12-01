@@ -1,11 +1,11 @@
 > [!TODO] Higher Priority
 > - [ ] Learn about stochastic processes and implement 
 > - [ ] Add tests for invariance (iid) 
-    > - [ ] Add SW measure using monte carlo integration 
-    > - [ ] Change to be pairwise and/or individual 
+    > - [ ] Add code to calculate time lag invariances 
     > - [ ] Add Kolmogrov-Smirnov test 
 
 > [!TODO] Lower Priority
+> - [ ] Pairwise SC measure? Not super needed but would be fun 
 > - [ ] Create pretty print for ScenarioProb object 
 > - [ ] Finish setting up effective_ranks (helps us know whether our views are fine to use by determining rank of matrix)
 > - [ ] Enforce mean_ref when views of mean and std are together 
@@ -18,6 +18,7 @@
 
 
 ## Completed
+    > - [X] Add SW measure using monte carlo integration 
 > - [X] Write classes?  OOP vs DOP? NOT SURE!
 > - [X] Organize files in a more logical manner
 > - [X] Add data validation/type for Scenario Distributions 

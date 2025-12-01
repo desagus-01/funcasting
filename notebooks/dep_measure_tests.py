@@ -14,4 +14,4 @@ views = (
 
 scenarios_2 = scenarios.add_views(views).apply_views()
 
-print(scenarios.schweizer_wolff(("AAPL", "GOOG")))
+print(scenarios.schweizer_wolff(("MSFT", "GOOG"), iter=5))
