@@ -6,6 +6,13 @@ import polars as pl
 from globals import DEFAULT_ROUNDING
 from models.types import ProbVector
 
+StatFunc = Callable[[np.ndarray, ProbVector | None], float]
+
+
+class PermTestRes(TypedDict):
+    stat: float
+    p_val: float
+
 
 def _copula_eval(pobs: np.ndarray, p: ProbVector, points: np.ndarray) -> np.ndarray:
     """Evaluate empirical copula at given points."""
@@ -24,8 +31,8 @@ def _sw_stat(pobs: np.ndarray, p: ProbVector, u_points: np.ndarray) -> float:
 def sw_mc(
     pobs: np.ndarray,
     p: ProbVector,
-    rng: np.random.Generator | None = None,
     iters: int = 50_000,
+    rng: np.random.Generator | None = None,
 ) -> float:
     """Single Monte Carlo estimate of the SW statistic."""
     if rng is None:
@@ -34,39 +41,41 @@ def sw_mc(
     return _sw_stat(pobs, p, u)
 
 
-StatFunc = Callable[[np.ndarray, ProbVector, np.random.Generator | None], float]
-
-
-class PermTestRes(TypedDict):
-    stat: float
-    p_val: float
-
-
 def perm_test(
     pobs: pl.DataFrame,
     p: ProbVector,
     stat_fun: StatFunc,
     assets: tuple[str, str],
-    iter: int = 10,
+    iter: int,
+    mc_iters: int = 50_000,
     rng: np.random.Generator | None = None,
 ) -> PermTestRes:
     if rng is None:
         rng = np.random.default_rng()
 
     assets_np = pobs.select(assets).to_numpy()
-    perm_asset = assets_np[:, 0]
+    n, d = assets_np.shape
 
-    stat = stat_fun(assets_np, p, rng)
+    # Precompute uniforms ONCE
+    u = rng.uniform(0.0, 1.0, size=(mc_iters, d))
+
+    # Observed statistic
+    stat = _sw_stat(assets_np, p, u)
 
     null_dist = np.empty(iter, dtype=float)
 
+    # Prepare arrays for in-loop reuse
+    perm_col = assets_np[:, 0].copy()
+    fixed_col = assets_np[:, 1].copy()
+    permuted = np.empty_like(assets_np)
+
     for i in range(iter):
-        new_order = rng.permutation(assets_np.shape[0])
-        new_p_asset = perm_asset[new_order]
+        print(f"{i}")
+        rng.shuffle(perm_col)
+        permuted[:, 0] = perm_col
+        permuted[:, 1] = fixed_col
 
-        temp_df = pobs.select(assets).with_columns(pl.lit(new_p_asset).alias(assets[0]))
-
-        null_dist[i] = stat_fun(temp_df.to_numpy(), p, rng)
+        null_dist[i] = _sw_stat(permuted, p, u)
 
     p_val = (1.0 + (null_dist >= stat).sum()) / (iter + 1.0)
 

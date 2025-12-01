@@ -175,49 +175,77 @@ class ScenarioProb:
         assets: tuple[str, str],
         h_test: bool,
         mc_iter: int = 50_000,
-        tests_iter: int = 10,
+        tests_iter: int = 100,
         original_dist: bool = True,
         rng: np.random.Generator | None = None,
     ) -> float | PermTestRes:
         """
-        Compute the Schweizer–Wolff dependence measure between two assets using
-        Monte Carlo integration of their copula.
+        Compute the Schweizer–Wolff dependence measure between two assets, or
+        optionally perform a permutation-based hypothesis test of independence.
 
-        The Schweizer–Wolff measure is a non-parametric dependence metric that
-        quantifies how far the copula of two variables deviates from
-        what would be expected under independence. It is defined as:
+        The Schweizer–Wolff (SW) dependence measure quantifies how far the
+        empirical copula of two variables deviates from the independence copula.
+        Formally,
 
-            SW = 12 ∫₀¹ ∫₀¹ | C(u₁, u₂) − C_indep(u₁, u₂) | du₁ du₂,
+            σ = 12 ∫ |C(u₁, u₂) − u₁ u₂| du,
 
-        where:
-            - C(u₁, u₂) is the empirical copula of the two assets,
-            - C_indep(u₁, u₂) = u₁ * u₂ is the independence copula.
+        where C is the empirical copula and u₁u₂ is the independence copula.
 
-        Because this double integral has no
-        closed form for empirical copulas, it is approximated via Monte Carlo
-        sampling over the unit square.
+        A value σ = 0 corresponds to perfect independence. Larger values indicate
+        stronger dependence, including nonlinear and non-monotonic forms.
+
+        **Two Modes**
+        -------------
+
+        (1) Point Estimate Mode (h_test = False)
+            Returns a Monte Carlo estimate σ̂ of the Schweizer–Wolff statistic using
+            ``mc_iter`` integration points.
+
+        (2) Hypothesis Testing Mode (h_test = True)
+            Performs a non-parametric permutation test of independence by
+            repeatedly permuting one pseudo-observation margin and recomputing
+            σ̂.
+
+            **Hypotheses:**
+
+            H0 (Null):
+                The two assets are independent;
+                the joint copula equals the independence copula C(u₁, u₂) = u₁u₂.
+                Under H0, σ̂ from the original data should be statistically similar
+                to σ̂ computed on permuted data.
+
+            H1 (Alternative):
+                The two assets exhibit dependence;
+                their copula differs from u₁u₂.
+                Under H1, the observed σ̂ is expected to be larger (greater
+                absolute deviation from independence) than the permuted values.
+
+            The p-value is the fraction of permuted statistics ≥ the observed σ̂.
 
         Parameters
         ----------
         assets : tuple[str, str]
-            The pair of assets for which to compute the dependence measure.
-            Both assets must exist in the underlying scenario set.
-
-        iter : int, default=50_000
-            Number of Monte Carlo replications. Increasing this improves stability
-            of the estimate but increases computation time.
-
+            Names of the two assets being evaluated.
+        h_test : bool
+            Whether to return only σ̂ (False) or perform the full permutation test (True).
+        mc_iter : int, default=50_000
+            Number of Monte Carlo integration points.
+        tests_iter : int, default=10
+            Number of permutations used in the hypothesis test.
         original_dist : bool, default=True
-            If True, use the original scenario distribution prior to any views and/or cma.
-            If False, use the current distribution after applying views or CMA
-            adjustments.
+            Whether to compute dependence based on the original scenario distribution
+            or a post-view/CMA-adjusted one.
+        rng : np.random.Generator, optional
+            Random number generator.
 
         Returns
         -------
-        SWRes
-            A dictionary containing:
-            - ``iter_res``: The Schweizer–Wolff estimate from each Monte Carlo run.
-            - ``iter_avg``: The averaged dependence estimate across runs.
+        float
+            If h_test=False, the Monte Carlo estimate σ̂.
+        PermTestRes
+            If h_test=True, a dictionary with:
+            - ``stat`` : the observed σ̂ statistic,
+            - ``p_val`` : the permutation-test p-value.
         """
 
         if any(asset not in self.assets for asset in assets):
