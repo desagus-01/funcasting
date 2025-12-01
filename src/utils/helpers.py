@@ -72,3 +72,11 @@ def compute_cdf_and_pobs(
         )
 
     return df
+
+
+def lag_df(data: pl.DataFrame, asset: str, lags: int) -> pl.DataFrame:
+    return data.select(
+        "date",
+        asset,
+        *[pl.col(asset).shift(i).alias(f"{asset}_lag_{i}") for i in range(1, lags + 1)],
+    )

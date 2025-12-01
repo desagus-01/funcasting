@@ -2,7 +2,8 @@
 > - [ ] Learn about stochastic processes and implement 
 > - [ ] Add tests for invariance (iid) 
     > - [ ] Add code to calculate time lag invariances 
-    > - [ ] Add Kolmogrov-Smirnov test 
+    > - [ ] Need to calculate p-test using bootstrap methods 
+
 
 > [!TODO] Lower Priority
 > - [ ] Pairwise SC measure? Not super needed but would be fun 

@@ -10,7 +10,7 @@ from methods.cma import CopulaMarginalModel
 from methods.ep import entropy_pooling_probs
 from models.types import ProbVector, View
 from utils.distributions import uniform_probs
-from utils.stat_tests import SWRes, sw_mc_summary
+from utils.stat_tests import sw_mc
 
 
 @dataclass(frozen=True)
@@ -170,8 +170,8 @@ class ScenarioProb:
         )
 
     def schweizer_wolff(
-        self, assets: tuple[str, str], iter: int = 50, original_dist: bool = True
-    ) -> SWRes:
+        self, assets: tuple[str, str], iter: int = 50_000, original_dist: bool = True
+    ) -> float:
         """
         Compute the Schweizer–Wolff dependence measure between two assets using
         Monte Carlo integration of their copula.
@@ -196,7 +196,7 @@ class ScenarioProb:
             The pair of assets for which to compute the dependence measure.
             Both assets must exist in the underlying scenario set.
 
-        iter : int, default=50
+        iter : int, default=50_000
             Number of Monte Carlo replications. Increasing this improves stability
             of the estimate but increases computation time.
 
@@ -226,4 +226,4 @@ class ScenarioProb:
         cma = CopulaMarginalModel.from_scenario_dist(dist.scenarios, dist.prob)
 
         cop_assets = cma.copula.select(assets).to_numpy()
-        return sw_mc_summary(cop_assets, cma.prob, iter)
+        return sw_mc(cop_assets, cma.prob, iter)
