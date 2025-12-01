@@ -2,7 +2,6 @@
 > - [ ] Learn about stochastic processes and implement 
 > - [ ] Add tests for invariance (iid) 
     > - [ ] Add code to calculate time lag invariances 
-    > - [ ] Need to calculate p-test using bootstrap methods 
 
 
 > [!TODO] Lower Priority
@@ -19,6 +18,7 @@
 
 
 ## Completed
+    > - [X] Need to calculate ptest using bootstrap methods 
     > - [X] Add SW measure using monte carlo integration 
 > - [X] Write classes?  OOP vs DOP? NOT SURE!
 > - [X] Organize files in a more logical manner

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+import numpy as np
 import polars as pl
 from polars import DataFrame
 
@@ -10,7 +11,7 @@ from methods.cma import CopulaMarginalModel
 from methods.ep import entropy_pooling_probs
 from models.types import ProbVector, View
 from utils.distributions import uniform_probs
-from utils.stat_tests import sw_mc
+from utils.stat_tests import PermTestRes, perm_test, sw_mc
 
 
 @dataclass(frozen=True)
@@ -170,8 +171,14 @@ class ScenarioProb:
         )
 
     def schweizer_wolff(
-        self, assets: tuple[str, str], iter: int = 50_000, original_dist: bool = True
-    ) -> float:
+        self,
+        assets: tuple[str, str],
+        h_test: bool,
+        mc_iter: int = 50_000,
+        tests_iter: int = 10,
+        original_dist: bool = True,
+        rng: np.random.Generator | None = None,
+    ) -> float | PermTestRes:
         """
         Compute the Schweizer–Wolff dependence measure between two assets using
         Monte Carlo integration of their copula.
@@ -217,6 +224,8 @@ class ScenarioProb:
             raise ValueError(
                 f"Your two chosen assets {assets} must be in your scenarios; these are {self.assets}"
             )
+        if rng is None:
+            rng = np.random.default_rng()
 
         if original_dist:
             dist = self._base_dist
@@ -226,4 +235,14 @@ class ScenarioProb:
         cma = CopulaMarginalModel.from_scenario_dist(dist.scenarios, dist.prob)
 
         cop_assets = cma.copula.select(assets).to_numpy()
-        return sw_mc(cop_assets, cma.prob, iter)
+        if not h_test:
+            return sw_mc(cop_assets, cma.prob, rng=rng, iters=mc_iter)
+        else:
+            return perm_test(
+                pobs=cma.copula,
+                p=cma.prob,
+                stat_fun=sw_mc,
+                assets=assets,
+                iter=tests_iter,
+                rng=rng,
+            )
