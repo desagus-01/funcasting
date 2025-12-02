@@ -1,3 +1,5 @@
+from pprint import pprint as print
+
 from methods.cma import CopulaMarginalModel
 from models.scenarios import ScenarioProb
 from utils.stat_tests import lag_ind_test

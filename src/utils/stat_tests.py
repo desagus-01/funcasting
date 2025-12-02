@@ -1,4 +1,4 @@
-from typing import Any, Callable, TypedDict
+from typing import Callable, TypedDict
 
 import numpy as np
 import polars as pl
@@ -17,6 +17,14 @@ class PermTestRes(TypedDict):
     null: str
     reject_null: bool
     desc: str
+
+
+class PerAssetLagResult(TypedDict):
+    per_lag: dict[str, PermTestRes]
+    rejected_lags: list[str]
+
+
+LagIndTestResult = dict[str, PerAssetLagResult]
 
 
 def _copula_eval(pobs: np.ndarray, p: ProbVector, points: np.ndarray) -> np.ndarray:
@@ -87,39 +95,42 @@ def ind_perm_test(
     }
 
 
-# TODO: Write return type/correct other errors
 def lag_ind_test(
     pobs: pl.DataFrame,
     prob: ProbVector,
     lags: int,
     assets: list[str] | None = None,
-):
+) -> LagIndTestResult:
     """
-    Runs SW independene permutation test for chosen n lags for assets in the dataframe.
+    Runs SW independence permutation test for chosen n lags for assets in the dataframe.
 
-    If not assets are chosen, runs for every asset.
+    If no assets are chosen, runs for every asset.
     """
     if assets is None:
         sel_assets = [col for col in pobs.columns if col != "date"]
     else:
         sel_assets = pobs.select(assets).columns
 
-    sw_lag_res: dict[str, dict[str, Any]] = {}
+    sw_lag_res: LagIndTestResult = {}
+
     for asset in sel_assets:
         df_lagged = build_lag_df(pobs, asset, lags)
         lag_prob = compensate_prob(prob=prob, n_remove=lags)
         lag_cols = df_lagged.columns
         lag_pairs = list(zip(lag_cols, lag_cols[1:]))
 
-        sw_res: dict[str, PermTestRes | float] = {
+        per_lag: dict[str, PermTestRes] = {
             f"lag_{i + 1}": ind_perm_test(df_lagged, lag_prob, sw_mc, lag_t)
             for i, lag_t in enumerate(lag_pairs)
         }
 
         rejected_lags = [
-            lag_label for lag_label, res in sw_res.items() if res["reject_null"]
+            lag_label for lag_label, res in per_lag.items() if res["reject_null"]
         ]
 
-        sw_lag_res[asset] = {**sw_res, "rejected_lags": rejected_lags}
+        sw_lag_res[asset] = {
+            "per_lag": per_lag,
+            "rejected_lags": rejected_lags,
+        }
 
     return sw_lag_res

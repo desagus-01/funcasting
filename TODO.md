@@ -1,7 +1,10 @@
 > [!TODO] Higher Priority
 > - [ ] Learn about stochastic processes and implement 
 > - [ ] Add tests for invariance (iid) 
-    > - [ ] Find best implementation of time lag invariances 
+    > - [ ] Look at other tests of iid 
+
+
+
 
 > [!TODO] Lower Priority
 > - [ ] Pairwise SC measure? Not super needed but would be fun 
@@ -17,6 +20,7 @@
 
 
 ## Completed
+    > - [X] Find best implementation of time lag invariances 
     > - [X] Add code to calculate time lag invariances 
     > - [X] Need to calculate ptest using bootstrap methods 
     > - [X] Add SW measure using monte carlo integration 
