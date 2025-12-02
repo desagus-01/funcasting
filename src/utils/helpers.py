@@ -82,10 +82,16 @@ def lag_df(data: pl.DataFrame, asset: str, lags: int) -> pl.DataFrame:
     ).drop_nulls()
 
 
-def hyp_test_conc(p_val: float, null_hyp: str) -> str:
+def hyp_test_conc(p_val: float, null_hyp: str) -> dict[str, str]:
     if p_val >= SIGN_LVL:
-        return (
-            f"Fail to reject null hypothesis of {null_hyp} at {SIGN_LVL} significance."
-        )
+        return {
+            "reject_null": False,
+            "desc": (
+                f"Fail to reject null hypothesis of {null_hyp} at {SIGN_LVL} significance."
+            ),
+        }
     else:
-        return f"Reject null hypothesis of {null_hyp} at {SIGN_LVL} significance."
+        return {
+            "reject_null": True,
+            "desc": f"Reject null hypothesis of {null_hyp} at {SIGN_LVL} significance.",
+        }

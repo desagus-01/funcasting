@@ -3,7 +3,7 @@ from typing import Callable, TypedDict
 import numpy as np
 import polars as pl
 
-from globals import DEFAULT_ROUNDING, ITERS
+from globals import DEFAULT_ROUNDING, ITERS, SIGN_LVL
 from models.types import ProbVector
 from utils.helpers import hyp_test_conc
 
@@ -13,7 +13,10 @@ StatFunc = Callable[[np.ndarray, ProbVector, np.random.Generator | None], float]
 class PermTestRes(TypedDict):
     stat: float
     p_val: float
-    h_test: str
+    sign_lvl = SIGN_LVL
+    null: str
+    reject_null: bool
+    desc: str
 
 
 def _copula_eval(pobs: np.ndarray, p: ProbVector, points: np.ndarray) -> np.ndarray:
@@ -73,8 +76,12 @@ def ind_perm_test(
 
     p_val = (1.0 + (null_dist >= stat).sum()) / (iter + 1.0)
 
+    hyp_conc = hyp_test_conc(p_val, null_hyp="Independence")
     return {
         "stat": round(float(stat), DEFAULT_ROUNDING),
         "p_val": round(float(p_val), DEFAULT_ROUNDING),
-        "h_test": hyp_test_conc(p_val, null_hyp="Independence"),
+        "sign_lvl": SIGN_LVL,
+        "null": "Independence",
+        "reject_null": hyp_conc["reject_null"],
+        "desc": hyp_conc["desc"],
     }
