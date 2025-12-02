@@ -21,7 +21,7 @@ for asset in assets:
     lag_pairs = list(zip(cols, cols[1:]))
 
     # lag_1, lag_2, ...
-    results: dict[str, PermTestRes] = {
+    results: dict[str, PermTestRes | float] = {
         f"lag_{i + 1}": scenario.schweizer_wolff(assets=lag_t, h_test=True)
         for i, lag_t in enumerate(lag_pairs)
     }

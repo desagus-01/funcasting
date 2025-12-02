@@ -156,7 +156,7 @@ class ScenarioProb:
             raise ValueError("You must choose a target marginal or copula")
 
         scenarios, prob = CopulaMarginalModel.from_scenario_dist(
-            self.scenarios, self.prob
+            self.scenarios, self.prob, self.dates
         ).update_distribution(
             target_marginals=target_marginals, target_copula=target_copula
         )
@@ -261,7 +261,9 @@ class ScenarioProb:
         else:
             dist = self._dist
 
-        cma = CopulaMarginalModel.from_scenario_dist(dist.scenarios, dist.prob)
+        cma = CopulaMarginalModel.from_scenario_dist(
+            dist.scenarios, dist.prob, dates=self.dates
+        )
 
         cop_assets = cma.copula.select(assets).to_numpy()
         if not h_test:

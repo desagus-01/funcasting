@@ -17,10 +17,11 @@ class CopulaMarginalModel:
     cdfs: DataFrame
     copula: DataFrame
     prob: ProbVector
+    dates: DataFrame | None
 
     @classmethod
     def from_scenario_dist(
-        cls, scenarios: DataFrame, prob: ProbVector
+        cls, scenarios: DataFrame, prob: ProbVector, dates: DataFrame | None
     ) -> CopulaMarginalModel:
         """
         Build CMA model from scenarios and prob distributions
@@ -42,6 +43,7 @@ class CopulaMarginalModel:
             cdfs=DataFrame(cdf_cols),
             copula=DataFrame(copula_cols),
             prob=prob,
+            dates=dates,
         )
 
     def to_scenario_dist(self) -> tuple[DataFrame, ProbVector]:

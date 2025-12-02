@@ -1,9 +1,12 @@
+from typing import TypedDict
+
 import numpy as np
 import polars as pl
 import polars.selectors as cs
 from numpy.typing import NDArray
+from pydantic import validate_call
 
-from globals import SIGN_LVL, sign_operations
+from globals import SIGN_LVL, model_cfg, sign_operations
 from models.types import CorrInfo, ProbVector, View
 
 
@@ -74,15 +77,30 @@ def compute_cdf_and_pobs(
     return df
 
 
-def lag_df(data: pl.DataFrame, asset: str, lags: int) -> pl.DataFrame:
+def build_lag_df(data: pl.DataFrame, asset: str, lags: int) -> pl.DataFrame:
     return data.select(
-        "date",
         asset,
         *[pl.col(asset).shift(i).alias(f"{asset}_lag_{i}") for i in range(1, lags + 1)],
     ).drop_nulls()
 
 
-def hyp_test_conc(p_val: float, null_hyp: str) -> dict[str, str]:
+@validate_call(config=model_cfg, validate_return=True)
+def compensate_prob(prob: ProbVector, n_remove: int) -> ProbVector:
+    """
+    Removes obs top-down from probability vectors and equally adds to others to remain a valid prob vector.
+    """
+    removed_probs = prob[0:n_remove]
+    diff_fac = removed_probs.sum() / (len(prob) - len(removed_probs))
+
+    return prob[n_remove:] + diff_fac
+
+
+class HypTestRes(TypedDict):
+    reject_null: bool
+    desc: str
+
+
+def hyp_test_conc(p_val: float, null_hyp: str) -> HypTestRes:
     if p_val >= SIGN_LVL:
         return {
             "reject_null": False,

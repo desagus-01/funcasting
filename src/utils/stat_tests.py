@@ -1,11 +1,11 @@
-from typing import Callable, TypedDict
+from typing import Any, Callable, TypedDict
 
 import numpy as np
 import polars as pl
 
 from globals import DEFAULT_ROUNDING, ITERS, SIGN_LVL
 from models.types import ProbVector
-from utils.helpers import hyp_test_conc
+from utils.helpers import build_lag_df, compensate_prob, hyp_test_conc
 
 StatFunc = Callable[[np.ndarray, ProbVector, np.random.Generator | None], float]
 
@@ -13,7 +13,7 @@ StatFunc = Callable[[np.ndarray, ProbVector, np.random.Generator | None], float]
 class PermTestRes(TypedDict):
     stat: float
     p_val: float
-    sign_lvl = SIGN_LVL
+    sign_lvl: float
     null: str
     reject_null: bool
     desc: str
@@ -59,7 +59,7 @@ def ind_perm_test(
     if rng is None:
         rng = np.random.default_rng()
 
-    assets_np = pobs.select(assets).to_numpy()
+    assets_np = pobs.select(assets).drop_nulls().to_numpy()
     perm_asset = assets_np[:, 0].copy()
 
     stat = stat_fun(assets_np, p, rng)
@@ -85,3 +85,41 @@ def ind_perm_test(
         "reject_null": hyp_conc["reject_null"],
         "desc": hyp_conc["desc"],
     }
+
+
+# TODO: Write return type/correct other errors
+def lag_ind_test(
+    pobs: pl.DataFrame,
+    prob: ProbVector,
+    lags: int,
+    assets: list[str] | None = None,
+):
+    """
+    Runs SW independene permutation test for chosen n lags for assets in the dataframe.
+
+    If not assets are chosen, runs for every asset.
+    """
+    if assets is None:
+        sel_assets = [col for col in pobs.columns if col != "date"]
+    else:
+        sel_assets = pobs.select(assets).columns
+
+    sw_lag_res: dict[str, dict[str, Any]] = {}
+    for asset in sel_assets:
+        df_lagged = build_lag_df(pobs, asset, lags)
+        lag_prob = compensate_prob(prob=prob, n_remove=lags)
+        lag_cols = df_lagged.columns
+        lag_pairs = list(zip(lag_cols, lag_cols[1:]))
+
+        sw_res: dict[str, PermTestRes | float] = {
+            f"lag_{i + 1}": ind_perm_test(df_lagged, lag_prob, sw_mc, lag_t)
+            for i, lag_t in enumerate(lag_pairs)
+        }
+
+        rejected_lags = [
+            lag_label for lag_label, res in sw_res.items() if res["reject_null"]
+        ]
+
+        sw_lag_res[asset] = {**sw_res, "rejected_lags": rejected_lags}
+
+    return sw_lag_res
