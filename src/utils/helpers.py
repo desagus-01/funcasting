@@ -3,7 +3,7 @@ import polars as pl
 import polars.selectors as cs
 from numpy.typing import NDArray
 
-from globals import sign_operations
+from globals import SIGN_LVL, sign_operations
 from models.types import CorrInfo, ProbVector, View
 
 
@@ -79,4 +79,13 @@ def lag_df(data: pl.DataFrame, asset: str, lags: int) -> pl.DataFrame:
         "date",
         asset,
         *[pl.col(asset).shift(i).alias(f"{asset}_lag_{i}") for i in range(1, lags + 1)],
-    )
+    ).drop_nulls()
+
+
+def hyp_test_conc(p_val: float, null_hyp: str) -> str:
+    if p_val >= SIGN_LVL:
+        return (
+            f"Fail to reject null hypothesis of {null_hyp} at {SIGN_LVL} significance."
+        )
+    else:
+        return f"Reject null hypothesis of {null_hyp} at {SIGN_LVL} significance."

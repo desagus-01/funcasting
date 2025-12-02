@@ -5,6 +5,7 @@ import polars as pl
 
 from globals import DEFAULT_ROUNDING, ITERS
 from models.types import ProbVector
+from utils.helpers import hyp_test_conc
 
 StatFunc = Callable[[np.ndarray, ProbVector, np.random.Generator | None], float]
 
@@ -12,6 +13,7 @@ StatFunc = Callable[[np.ndarray, ProbVector, np.random.Generator | None], float]
 class PermTestRes(TypedDict):
     stat: float
     p_val: float
+    h_test: str
 
 
 def _copula_eval(pobs: np.ndarray, p: ProbVector, points: np.ndarray) -> np.ndarray:
@@ -43,7 +45,7 @@ def sw_mc(
 
 # INFO: BELOW IS HEAVILY INSPIRED BY THE HYPPO PACKAGE
 # TODO: MUST MAKE THE BELOW MORE EFFICENT/FASTER
-def perm_test(
+def ind_perm_test(
     pobs: pl.DataFrame,
     p: ProbVector,
     stat_fun: StatFunc,
@@ -74,4 +76,5 @@ def perm_test(
     return {
         "stat": round(float(stat), DEFAULT_ROUNDING),
         "p_val": round(float(p_val), DEFAULT_ROUNDING),
+        "h_test": hyp_test_conc(p_val, null_hyp="Independence"),
     }

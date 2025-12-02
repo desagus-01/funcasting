@@ -1,36 +1,42 @@
-import time
-
-import numpy as np
-
 from models.scenarios import ScenarioProb
 from utils.helpers import lag_df
 from utils.template import get_template
 
-
-def add_units(value, unit):
-    return f"{value:.6f} {unit}" if value < 1 else f"{value:.3f} {unit}s"
-
-
-rng = np.random.default_rng(42)
 info_all = get_template()
+increms = info_all.increms_df
 
-increms_lag = lag_df(info_all.raw_data, "AAPL", 1)
-scenarios = ScenarioProb.default_inst(increms_lag)
+lag_scenarios: dict[str, ScenarioProb] = {}
+for asset in increms.columns:
+    if asset == "date":
+        continue
+    df = lag_df(increms, asset, 5)
+    lag_scenarios[asset] = ScenarioProb.default_inst(scenarios=df)
 
-# Warm-up
-_ = scenarios.schweizer_wolff(("AAPL", "AAPL_lag_1"), h_test=True, rng=rng)
 
-# Run N times
-N = 10
-times = []
+lag_tuples: dict[str, list[tuple[str, str]]] = {}
 
-for _ in range(N):
-    t0 = time.perf_counter()
-    _ = scenarios.schweizer_wolff(("AAPL", "AAPL_lag_1"), h_test=True, rng=rng)
-    t1 = time.perf_counter()
-    times.append(t1 - t0)
+for asset in lag_scenarios.keys():
+    tuples: list[tuple[str, str]] = []
 
-print("Average:", add_units(np.mean(times), "second"))
-print("Std dev:", add_units(np.std(times), "second"))
-print("Min:", add_units(np.min(times), "second"))
-print("Max:", add_units(np.max(times), "second"))
+    cols = lag_scenarios[asset].scenarios.columns
+    for i in range(len(cols) - 1):
+        tuples.append((cols[i], cols[i + 1]))
+
+    lag_tuples[asset] = tuples
+
+
+# lag_scenarios["MSFT"].schweizer_wolff(lag_tuples["MSFT"][0], h_test=True)
+
+sw_lag_res: dict[str, list[object]] = {}
+
+for asset, scenario in lag_scenarios.items():
+    lags_to_run = lag_tuples[asset]
+    results = []
+
+    for lag_t in lags_to_run:
+        print(f"Running {asset} {lag_t}")
+        results.append(scenario.schweizer_wolff(assets=lag_t, h_test=True))
+
+    sw_lag_res[asset] = results
+
+print(sw_lag_res)

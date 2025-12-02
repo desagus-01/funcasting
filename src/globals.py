@@ -15,7 +15,8 @@ sign_operations = {
 
 DEFAULT_ROUNDING = 4
 
-ITERS = {"PERM_TEST": 200, "MC": 10_000}
+ITERS = {"PERM_TEST": 50, "MC": 10_000}
 
+SIGN_LVL = 0.05
 
 model_cfg = ConfigDict(arbitrary_types_allowed=True)
