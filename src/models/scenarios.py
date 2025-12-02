@@ -7,6 +7,7 @@ import numpy as np
 import polars as pl
 from polars import DataFrame
 
+from globals import ITERS
 from methods.cma import CopulaMarginalModel
 from methods.ep import entropy_pooling_probs
 from models.types import ProbVector, View
@@ -174,8 +175,8 @@ class ScenarioProb:
         self,
         assets: tuple[str, str],
         h_test: bool,
-        mc_iter: int = 50_000,
-        tests_iter: int = 100,
+        mc_iter: int = ITERS["MC"],
+        tests_iter: int = ITERS["PERM_TEST"],
         original_dist: bool = True,
         rng: np.random.Generator | None = None,
     ) -> float | PermTestRes:
@@ -264,7 +265,7 @@ class ScenarioProb:
 
         cop_assets = cma.copula.select(assets).to_numpy()
         if not h_test:
-            return sw_mc(cop_assets, cma.prob, rng=rng, iters=mc_iter)
+            return sw_mc(cop_assets, cma.prob, rng=rng, mc_iters=mc_iter)
         else:
             return perm_test(
                 pobs=cma.copula,
