@@ -2,11 +2,17 @@
 > - [ ] Learn about stochastic processes and implement 
 > - [ ] Add tests for invariance (iid) 
     > - [ ] Look at other tests of iid 
+> - [ ] Log-likelihood + FFP based log-likelihood implementation for estimating parameters 
+> - [ ] FFT Algorithm to calculate increment distribution? (see 45.5.1) 
 
 
-
+**Break Down of Stochastic Process**
+1. Validation (Tests)
+2. Estimation
+3. Foreacasting
 
 > [!TODO] Lower Priority
+> - [ ] Create a 'prior' object to be used on ScenarioDist 
 > - [ ] Pairwise SC measure? Not super needed but would be fun 
 > - [ ] Create pretty print for ScenarioProb object 
 > - [ ] Finish setting up effective_ranks (helps us know whether our views are fine to use by determining rank of matrix)
@@ -19,18 +25,5 @@
 
 
 
+
 ## Completed
-    > - [X] Find best implementation of time lag invariances 
-    > - [X] Add code to calculate time lag invariances 
-    > - [X] Need to calculate ptest using bootstrap methods 
-    > - [X] Add SW measure using monte carlo integration 
-> - [X] Write classes?  OOP vs DOP? NOT SURE!
-> - [X] Organize files in a more logical manner
-> - [X] Add data validation/type for Scenario Distributions 
-    > - [X] Re-factor the whole thing!! 
-    > - [X] Add view on copula/marginal 
-> - [X] Constraints:
-    > - [X] Class for cma 
-> - [X] Implement CMA (copula marginal algorithm) 
-    > - [X] Find appropriate copula package
-    > - [X] Add fitting marginals - norm  t for now
