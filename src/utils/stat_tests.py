@@ -95,6 +95,7 @@ def independence_permutation_test(
     }
 
 
+# TODO: Add rng, and iterations
 def lag_independence_test(
     pobs: pl.DataFrame,
     prob: ProbVector,
@@ -112,7 +113,6 @@ def lag_independence_test(
         sel_assets = pobs.select(assets).columns
 
     sw_lag_res: LagIndTestResult = {}
-    n_orig = pobs.height
 
     for asset in sel_assets:
         df_lagged = build_lag_df(pobs, asset, lags)
@@ -121,11 +121,11 @@ def lag_independence_test(
 
         for lag in range(1, lags + 1):
             col_lag = f"{asset}_lag_{lag}"
-            # need to drop nulls created from lags
+            # need to drop nulls created from lags and compensate probs
             pair_df = df_lagged.select([asset, col_lag]).drop_nulls()
-            n_remove = n_orig - pair_df.height
-
-            lag_prob = compensate_prob(prob=prob, n_remove=n_remove)
+            lag_prob = compensate_prob(
+                prob=prob, n_remove=df_lagged.height - pair_df.height
+            )
 
             res = independence_permutation_test(
                 pair_df,
@@ -134,13 +134,6 @@ def lag_independence_test(
                 (asset, col_lag),
             )
             per_lag[f"lag_{lag}"] = res
-            print(f"""
-            Lag: {lag}
-
-            pair_df: {pair_df}
-
-            to remove: {n_remove}
-            """)
 
         rejected_lags = [
             lag_label for lag_label, res in per_lag.items() if res["reject_null"]
