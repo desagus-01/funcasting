@@ -77,11 +77,12 @@ def compute_cdf_and_pobs(
     return df
 
 
+# TODO: Create various DFs instead of one to avoid NUlls being dropped
 def build_lag_df(data: pl.DataFrame, asset: str, lags: int) -> pl.DataFrame:
     return data.select(
         asset,
         *[pl.col(asset).shift(i).alias(f"{asset}_lag_{i}") for i in range(1, lags + 1)],
-    ).drop_nulls()
+    )
 
 
 @validate_call(config=model_cfg, validate_return=True)

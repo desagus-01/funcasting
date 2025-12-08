@@ -2,14 +2,19 @@
 > - [ ] Learn about stochastic processes and implement 
 > - [ ] Add tests for invariance (iid) 
     > - [ ] Look at other tests of iid 
-> - [ ] Log-likelihood + FFP based log-likelihood implementation for estimating parameters 
-> - [ ] FFT Algorithm to calculate increment distribution? (see 45.5.1) 
 
 
 **Break Down of Stochastic Process**
 1. Validation (Tests)
-2. Estimation
-3. Foreacasting
+    > - [ ] Add elippsoid tests? 
+    > - [ ] Add tests for stationarity (currently only on iid) 
+    > - [ ] De-trending and de-seasoning? 
+1. Estimation
+    > - [ ] Log-likelihood + FFP based log-likelihood implementation for estimating parameters 
+1. Foreacasting
+    > - [ ] FFT Algorithm to calculate increment distribution? (see 45.5.1) 
+    > - [ ] Bootstrapping methods with FFP (see 47.1.3)
+    > - [ ] Hybrid Monte Carlo-historical (47.6.6)
 
 > [!TODO] Lower Priority
 > - [ ] Create a 'prior' object to be used on ScenarioDist 

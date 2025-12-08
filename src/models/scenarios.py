@@ -12,7 +12,7 @@ from methods.cma import CopulaMarginalModel
 from methods.ep import entropy_pooling_probs
 from models.types import ProbVector, View
 from utils.distributions import uniform_probs
-from utils.stat_tests import PermTestRes, ind_perm_test, sw_mc
+from utils.stat_tests import PermTestRes, independence_permutation_test, sw_mc
 
 
 @dataclass(frozen=True)
@@ -269,7 +269,7 @@ class ScenarioProb:
         if not h_test:
             return sw_mc(cop_assets, cma.prob, rng=rng, mc_iters=mc_iter)
         else:
-            return ind_perm_test(
+            return independence_permutation_test(
                 pobs=cma.copula,
                 p=cma.prob,
                 stat_fun=sw_mc,

@@ -56,7 +56,7 @@ def sw_mc(
 
 # INFO: BELOW IS HEAVILY INSPIRED BY THE HYPPO PACKAGE
 # TODO: MUST MAKE THE BELOW MORE EFFICENT/FASTER
-def ind_perm_test(
+def independence_permutation_test(
     pobs: pl.DataFrame,
     p: ProbVector,
     stat_fun: StatFunc,
@@ -67,7 +67,7 @@ def ind_perm_test(
     if rng is None:
         rng = np.random.default_rng()
 
-    assets_np = pobs.select(assets).drop_nulls().to_numpy()
+    assets_np = pobs.select(assets).to_numpy()
     perm_asset = assets_np[:, 0].copy()
 
     stat = stat_fun(assets_np, p, rng)
@@ -95,7 +95,7 @@ def ind_perm_test(
     }
 
 
-def lag_ind_test(
+def lag_independence_test(
     pobs: pl.DataFrame,
     prob: ProbVector,
     lags: int,
@@ -112,17 +112,35 @@ def lag_ind_test(
         sel_assets = pobs.select(assets).columns
 
     sw_lag_res: LagIndTestResult = {}
+    n_orig = pobs.height
 
     for asset in sel_assets:
         df_lagged = build_lag_df(pobs, asset, lags)
-        lag_prob = compensate_prob(prob=prob, n_remove=lags)
-        lag_cols = df_lagged.columns
-        lag_pairs = list(zip(lag_cols, lag_cols[1:]))
 
-        per_lag: dict[str, PermTestRes] = {
-            f"lag_{i + 1}": ind_perm_test(df_lagged, lag_prob, sw_mc, lag_t)
-            for i, lag_t in enumerate(lag_pairs)
-        }
+        per_lag: dict[str, PermTestRes] = {}
+
+        for lag in range(1, lags + 1):
+            col_lag = f"{asset}_lag_{lag}"
+            # need to drop nulls created from lags
+            pair_df = df_lagged.select([asset, col_lag]).drop_nulls()
+            n_remove = n_orig - pair_df.height
+
+            lag_prob = compensate_prob(prob=prob, n_remove=n_remove)
+
+            res = independence_permutation_test(
+                pair_df,
+                lag_prob,
+                sw_mc,
+                (asset, col_lag),
+            )
+            per_lag[f"lag_{lag}"] = res
+            print(f"""
+            Lag: {lag}
+
+            pair_df: {pair_df}
+
+            to remove: {n_remove}
+            """)
 
         rejected_lags = [
             lag_label for lag_label, res in per_lag.items() if res["reject_null"]
