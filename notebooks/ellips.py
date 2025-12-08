@@ -1,3 +1,4 @@
+from pprint import pprint as print
 from typing import TypedDict
 
 import numpy as np
@@ -69,11 +70,6 @@ def get_autocorrelations(
     lags: int,
     prob: ProbVector,
 ) -> dict[str, AutoCorrRes]:
-    """
-    Compute weighted autocorrelations for (asset, asset_lag_k) for k=1..lags.
-
-    """
-
     corrs: dict[str, AutoCorrRes] = {}
 
     for lag in range(1, lags + 1):
@@ -101,7 +97,7 @@ def ellipsoid_test(
 
     results: dict[str, dict[str, AutoCorrRes]] = {}
 
-    # get auto corrs
+    # get auto corrs & p-vals
     for asset in sel_assets:
         df_lagged = build_lag_df(data, asset, lags)
         results[asset] = get_autocorrelations(df_lagged, asset, lags, prob)
@@ -109,6 +105,10 @@ def ellipsoid_test(
     return results
 
 
-a = ellipsoid_test(increms, 2, probs, assets=["AAPL"])
+a = ellipsoid_test(
+    increms,
+    10,
+    probs,
+)
 
 print(a)
