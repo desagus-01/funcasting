@@ -7,5 +7,4 @@ increms = info_all.increms_df.drop("date")
 probs = uniform_probs(increms.height)
 
 x = ellipsoid_test(increms, lags=2, prob=probs, assets=["AAPL"])
-
 print(x)
