@@ -15,8 +15,8 @@ test = ScenarioProb.default_inst(increms)
 
 cma = CopulaMarginalModel.from_scenario_dist(test.scenarios, test.prob, test.dates)
 
-assets = ["AAPL"]
-lag = 2
+assets = None
+lag = 5
 
 # ---- Test copula_lag_independence_test ----
 start = time.perf_counter()

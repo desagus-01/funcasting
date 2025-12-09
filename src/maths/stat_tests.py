@@ -86,12 +86,10 @@ def run_lagged_tests(
             res = test_fn(
                 pair_df,
                 lag_prob,
-                assets=[asset, col_lag],
+                assets=[asset, col_lag],  # must pass original and lag
                 **test_kwargs,
             )
             per_lag[f"lag_{lag}"] = res
-
-            # per_lag[f"lag_{lag}"] = test_fn(pair_df, lag_prob, **test_kwargs)
 
         rejected_lags = [k for k, res in per_lag.items() if res["reject_null"]]
 
