@@ -1,5 +1,5 @@
+from maths.distributions import uniform_probs
 from maths.stat_tests import ellipsoid_test
-from utils.distributions import uniform_probs
 from utils.template import get_template
 
 info_all = get_template()

@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from polars import DataFrame
 from pydantic import BaseModel, ConfigDict
 
-from utils.distributions import uniform_probs
+from maths.distributions import uniform_probs
 
 
 class Assets(BaseModel):

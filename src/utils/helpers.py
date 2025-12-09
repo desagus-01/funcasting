@@ -77,7 +77,6 @@ def compute_cdf_and_pobs(
     return df
 
 
-# TODO: Create various DFs instead of one to avoid NUlls being dropped
 def build_lag_df(data: pl.DataFrame, asset: str, lags: int) -> pl.DataFrame:
     return data.select(
         asset,

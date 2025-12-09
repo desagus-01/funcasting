@@ -6,8 +6,8 @@ from typing import Literal, Self
 from numpy import interp
 from polars import DataFrame
 
+from maths.sampling import sample_copula, sample_marginal
 from models.types import ProbVector
-from utils.distributions import sample_copula, sample_marginal
 from utils.helpers import compute_cdf_and_pobs
 
 

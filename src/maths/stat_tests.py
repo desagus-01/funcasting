@@ -35,7 +35,7 @@ PairTest = Callable[..., HypTestRes]
 StatFunc = Callable[[np.ndarray, ProbVector, np.random.Generator | None], float]
 
 
-def format_hyp_test_result(
+def _format_hyp_test_result(
     stat: float, p_val: float, null: str = "Independence"
 ) -> HypTestRes:
     p_val = float(p_val)
@@ -101,7 +101,7 @@ def run_lagged_tests(
     return results
 
 
-def sample_meancov(
+def _sample_meancov(
     data: pl.DataFrame, prob: ProbVector, assets: list[str]
 ) -> MeanCovRes:
     data_np = data.select(assets).to_numpy()
@@ -119,7 +119,7 @@ def autocorrelation_pair_test(
     Pairwise autocorrelation test on a 2-column DataFrame:
     column 0 = X_t, column 1 = X_{t-k}.
     """
-    mc = sample_meancov(pair_df, prob, assets)
+    mc = _sample_meancov(pair_df, prob, assets)
     cov = mc["cov"]
     var_t = cov[0, 0]
     var_lag = cov[1, 1]
@@ -129,7 +129,7 @@ def autocorrelation_pair_test(
     Z = abs(corr) * np.sqrt(pair_df.height)
     p_val = float(2 * (1 - st.norm.cdf(Z)))
 
-    return format_hyp_test_result(stat=corr, p_val=p_val, null="Independence")
+    return _format_hyp_test_result(stat=corr, p_val=p_val, null="Independence")
 
 
 def ellipsoid_test(
@@ -191,6 +191,8 @@ def sw_mc(
     return _sw_stat(pobs, p, u)
 
 
+# TODO: Look at speeding this up with vectorization + multithreading
+# INFO: Heavily inspired by the hyppo package in python
 def independence_permutation_test(
     pair_df: pl.DataFrame,
     prob: ProbVector,
@@ -220,17 +222,17 @@ def independence_permutation_test(
 
     p_val = (1.0 + (null_dist >= stat).sum()) / (iter + 1.0)
 
-    return format_hyp_test_result(stat=stat, p_val=p_val, null="Independence")
+    return _format_hyp_test_result(stat=stat, p_val=p_val, null="Independence")
 
 
 def copula_lag_independence_test(
-    data: pl.DataFrame,
+    copula: pl.DataFrame,
     prob: ProbVector,
     lags: int,
     assets: list[str] | None = None,
 ) -> LagTestResult:
     return run_lagged_tests(
-        data=data,
+        data=copula,
         prob=prob,
         lags=lags,
         assets=assets,

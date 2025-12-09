@@ -8,11 +8,11 @@ import polars as pl
 from polars import DataFrame
 
 from globals import ITERS
+from maths.distributions import uniform_probs
+from maths.stat_tests import HypTestRes, independence_permutation_test, sw_mc
 from methods.cma import CopulaMarginalModel
 from methods.ep import entropy_pooling_probs
 from models.types import ProbVector, View
-from utils.distributions import uniform_probs
-from utils.stat_tests import PermTestRes, independence_permutation_test, sw_mc
 
 
 @dataclass(frozen=True)
@@ -179,7 +179,7 @@ class ScenarioProb:
         tests_iter: int = ITERS["PERM_TEST"],
         original_dist: bool = True,
         rng: np.random.Generator | None = None,
-    ) -> float | PermTestRes:
+    ) -> float | HypTestRes:
         """
         Compute the Schweizer–Wolff dependence measure between two assets, or
         optionally perform a permutation-based hypothesis test of independence.
@@ -270,8 +270,8 @@ class ScenarioProb:
             return sw_mc(cop_assets, cma.prob, rng=rng, mc_iters=mc_iter)
         else:
             return independence_permutation_test(
-                pobs=cma.copula,
-                p=cma.prob,
+                pair_df=cma.copula,
+                prob=cma.prob,
                 stat_fun=sw_mc,
                 assets=assets,
                 iter=tests_iter,
