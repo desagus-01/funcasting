@@ -117,6 +117,7 @@ def _sample_meancov(
     return {"assets": assets, "means": weighted_mean, "cov": weighted_cov}
 
 
+# TODO: Check on the correctness of p-val, currently assumes normal although we weight...
 def autocorrelation_pair_test(
     pair_df: pl.DataFrame, prob: ProbVector, assets: list[str]
 ) -> HypTestRes:
