@@ -1,11 +1,11 @@
-from typing import Any, Callable, TypedDict
+from typing import Any, Callable, NamedTuple, TypedDict
 
 import numpy as np
 import polars as pl
 import scipy.stats as st
 from numpy.typing import NDArray
 
-from globals import DEFAULT_ROUNDING, ITERS, SIGN_LVL
+from globals import DEFAULT_ROUNDING, ITERS, LAGS, SIGN_LVL
 from models.types import ProbVector
 from utils.helpers import build_lag_df, compensate_prob, hyp_test_conc
 
@@ -33,6 +33,11 @@ class MeanCovRes(TypedDict):
 LagTestResult = dict[str, PerAssetLagResult]
 PairTest = Callable[..., HypTestRes]
 StatFunc = Callable[[np.ndarray, ProbVector, np.random.Generator | None], float]
+
+
+class SplitDF(NamedTuple):
+    first_half: pl.DataFrame
+    second_half: pl.DataFrame
 
 
 def _format_hyp_test_result(
@@ -63,15 +68,15 @@ def _select_assets(df: pl.DataFrame, assets: list[str] | None) -> list[str]:
 def run_lagged_tests(
     data: pl.DataFrame,
     prob: ProbVector,
-    lags: int,
     assets: list[str] | None,
     test_fn: PairTest,
+    lags: int = LAGS["testing"],
     **test_kwargs: Any,
 ) -> LagTestResult:
     sel_assets = _select_assets(data, assets)
     results: LagTestResult = {}
     for asset in sel_assets:
-        df_lagged = build_lag_df(data, asset, lags)
+        df_lagged = build_lag_df(data=data, asset=asset, lags=lags)
         per_lag: dict[str, HypTestRes] = {}
 
         for lag in range(1, lags + 1):
@@ -132,10 +137,10 @@ def autocorrelation_pair_test(
     return _format_hyp_test_result(stat=corr, p_val=p_val, null="Independence")
 
 
-def ellipsoid_test(
+def ellipsoid_lag_test(
     data: pl.DataFrame,
-    lags: int,
     prob: ProbVector,
+    lags: int = LAGS["testing"],
     assets: list[str] | None = None,
 ) -> LagTestResult:
     """
@@ -228,7 +233,7 @@ def independence_permutation_test(
 def copula_lag_independence_test(
     copula: pl.DataFrame,
     prob: ProbVector,
-    lags: int,
+    lags: int = LAGS["testing"],
     assets: list[str] | None = None,
 ) -> LagTestResult:
     return run_lagged_tests(
@@ -238,3 +243,52 @@ def copula_lag_independence_test(
         assets=assets,
         test_fn=independence_permutation_test,
     )
+
+
+def split_df_in_half(data: pl.DataFrame) -> SplitDF:
+    height = data.height
+
+    if height % 2 != 0:
+        height -= 1
+        data = data.slice(0, height)
+
+    mid = height // 2
+    first_half = data.slice(0, mid)
+    second_half = data.slice(mid, mid)
+
+    return SplitDF(first_half, second_half)
+
+
+def kolmogrov_smirnov_2stest(
+    dist_1: NDArray[np.floating],
+    dist_2: NDArray[np.floating],
+) -> HypTestRes:
+    res = st.kstest(
+        dist_1,
+        dist_2,
+        alternative="two-sided",
+    )
+
+    return _format_hyp_test_result(
+        stat=res.statistic, p_val=res.pvalue, null="Identically Distributed"
+    )
+
+
+def univariate_kolmogrov_smirnov_test(
+    data: pl.DataFrame, assets: list[str] | None = None
+) -> dict[str, dict[str, HypTestRes] | list[str]]:
+    sel_assets = _select_assets(data, assets)
+
+    ks_res: dict[str, HypTestRes] = {}
+    for asset in sel_assets:
+        data_asset = data.select(asset)
+        split = split_df_in_half(data_asset)
+        split_1, split_2 = (
+            split.first_half.to_numpy().ravel(),
+            split.second_half.to_numpy().ravel(),
+        )
+        ks_res[asset] = kolmogrov_smirnov_2stest(split_1, split_2)
+
+    rejected = [k for k, res in ks_res.items() if res["reject_null"]]
+
+    return {"results": ks_res, "rejected": rejected}

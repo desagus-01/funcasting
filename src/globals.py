@@ -19,4 +19,6 @@ ITERS = {"PERM_TEST": 50, "MC": 10_000}
 
 SIGN_LVL = 0.05
 
+LAGS = {"testing": 2, "strict": 10}
+
 model_cfg = ConfigDict(arbitrary_types_allowed=True)

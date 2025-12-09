@@ -1,12 +1,9 @@
 > [!TODO] Higher Priority
 > - [ ] Learn about stochastic processes and implement 
-> - [ ] Add tests for invariance (iid) 
-    > - [ ] Look at other tests of iid 
-
+> - [ ] One function to return all invariant tests 
 
 **Break Down of Stochastic Process**
 1. Validation (Tests)
-    > - [ ] Add elippsoid tests? 
     > - [ ] Add tests for stationarity (currently only on iid) 
     > - [ ] De-trending and de-seasoning? 
 1. Estimation
@@ -17,6 +14,7 @@
     > - [ ] Hybrid Monte Carlo-historical (47.6.6)
 
 > [!TODO] Lower Priority
+> - [ ] Visualisations for checks (qualitative) 
 > - [ ] Create a 'prior' object to be used on ScenarioDist 
 > - [ ] Pairwise SC measure? Not super needed but would be fun 
 > - [ ] Create pretty print for ScenarioProb object 
@@ -32,3 +30,6 @@
 
 
 ## Completed
+    > - [X] Add elippsoid tests? 
+> - [X] Add tests for invariance (iid) 
+    > - [X] Look at other tests of iid 
