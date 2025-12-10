@@ -70,7 +70,7 @@ def get_example_assets(tickers: list[str]) -> Assets:
 @dataclass
 class TestTemplateResult:
     tickers: list[str]
-    raw_data: DataFrame
+    asset_info: Assets
     increms_df_long: DataFrame
     increms_df: DataFrame
     increms_np: np.ndarray
@@ -91,7 +91,7 @@ def get_template():
 
     return TestTemplateResult(
         tickers=tickers,
-        raw_data=assets.raw_data,
+        asset_info=assets,
         increms_df_long=increms_df_long,
         increms_df=increms_df,
         increms_np=increms_np,

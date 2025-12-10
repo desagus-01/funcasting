@@ -1,3 +1,5 @@
+# %%
+
 from pprint import pprint as print
 
 from maths.distributions import uniform_probs
@@ -10,6 +12,7 @@ from methods.cma import CopulaMarginalModel
 from models.scenarios import ScenarioProb
 from utils.template import get_template
 
+# %%
 # Load data
 info_all = get_template()
 increms = info_all.increms_df

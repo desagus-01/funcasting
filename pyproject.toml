@@ -9,6 +9,7 @@ dependencies = [
     "cvxpy>=1.7.3",
     "databento>=0.63.0",
     "dotenv>=0.9.9",
+    "ipykernel>=7.1.0",
     "matplotlib>=3.10.6",
     "numpy>=2.3.3",
     "polars>=1.33.1",
@@ -18,10 +19,8 @@ dependencies = [
     "scipy>=1.16.1",
 ]
 
-[tool.setuptools]
-packages = ["utils", "models", "methods"]
-package-dir = {"" = "src"}
-
+[tool.setuptools.packages.find]
+where = ["src"]
 
 
 [tool.basedpyright]

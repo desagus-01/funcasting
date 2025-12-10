@@ -86,6 +86,18 @@ def build_lag_df(
     )
 
 
+def build_diff_df(data: pl.DataFrame, asset: str, diffs: int = 1) -> pl.DataFrame:
+    if diffs <= 0:
+        raise ValueError("Diffs need to be bigger than 0 dummy")
+    return data.select(
+        asset,
+        *[
+            pl.col(asset).diff(i).alias(f"{asset}_diff_{i}")
+            for i in range(1, diffs + 1)
+        ],
+    )
+
+
 @validate_call(config=model_cfg, validate_return=True)
 def compensate_prob(prob: ProbVector, n_remove: int) -> ProbVector:
     """

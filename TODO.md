@@ -1,11 +1,11 @@
-> [!TODO] Higher Priority
-> - [ ] Learn about stochastic processes and implement 
-> - [ ] One function to return all invariant tests 
 
-**Break Down of Stochastic Process**
+> [!TODO] Break Down of Stochastic Process
+1. Pre-Processing
+    > - [ ] Add ADS and KPSS tests [Reference link](https://www.statsmodels.org/dev/examples/notebooks/generated/stationarity_detrending_adf_kpss.html)
+    > - [ ] De-trending  
+    > - [ ] Stochastic de-trending (check how to) 
 1. Validation (Tests)
     > - [ ] Add tests for stationarity (currently only on iid) 
-    > - [ ] De-trending and de-seasoning? 
 1. Estimation
     > - [ ] Log-likelihood + FFP based log-likelihood implementation for estimating parameters 
 1. Foreacasting
@@ -30,6 +30,7 @@
 
 
 ## Completed
+        > - [X] Deterministic de-trend (copy from statsmodels) 
     > - [X] Add elippsoid tests? 
 > - [X] Add tests for invariance (iid) 
     > - [X] Look at other tests of iid 
