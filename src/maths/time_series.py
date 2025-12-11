@@ -4,14 +4,17 @@ from numpy.typing import NDArray
 # INFO: Most of the code/idea below is taken from statsmodels but modified for this use case
 
 
-def _adf_max_lag(n_obs: int, n_reg: int) -> int:
+def adf_max_lag(n_obs: int, n_reg: int | None) -> int:
     """
     Calculates max lag for augmented dickey fuller test.
 
     from Greene referencing Schwert 1989
     """
-    max_lag = np.ceil(12.0 * np.power(n_obs / 100.0, 1 / 4.0))
-    return min(n_obs // 2 - n_reg - 1, max_lag)
+    if n_reg is None:
+        return 0
+    else:
+        max_lag = np.ceil(12.0 * np.power(n_obs / 100.0, 1 / 4.0))
+        return int(min(n_obs // 2 - n_reg - 1, max_lag))
 
 
 def deterministic_detrend(
