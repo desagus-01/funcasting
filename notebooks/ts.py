@@ -1,9 +1,7 @@
 # %% imports
-import polars as pl
-from scipy.linalg import lstsq
+import numpy as np
 
-from maths.time_series import adf_max_lag
-from utils.helpers import build_diff_df, build_lag_df
+from maths.time_series import adf_max_lag, build_adf_equation
 from utils.template import get_template
 
 # %%
@@ -28,20 +26,7 @@ trenddict: dict[str, int | None] = {
 
 max_lags = adf_max_lag(risk_drivers.height, trenddict["c"])
 
-# Step 2 - build diff df and lag diffs
-diff_df = build_diff_df(risk_drivers, "AAPL")
-
-lag_diff_df = build_lag_df(diff_df, "AAPL_diff_1", lags=max_lags)
-
-lag_1 = build_lag_df(risk_drivers, "AAPL", 1)
-
-# Step 3 Clean to regressors and ind var
-regressors = lag_diff_df.with_columns(
-    AAPL_diff_1=pl.Series(lag_1["AAPL_lag_1"])
-).drop_nulls()  # drop nulls to make sure size is same
-
-ind_var = regressors.select(pl.col("AAPL_diff_1"))
-regressors = regressors.drop("AAPL_diff_1")
+adf_eq = build_adf_equation(risk_drivers, "AAPL", max_lags)
 
 
 # %% Steps 4 and beyond
@@ -51,4 +36,20 @@ regressors = regressors.drop("AAPL_diff_1")
 used_lag = max_lags
 
 # Step 4 Fit OLS and retrieve necessary info
-ols_res, residuals, rank, a = lstsq(regressors.to_numpy(), ind_var.to_numpy())
+res = np.linalg.lstsq(adf_eq.dep_vars, adf_eq.ind_var)
+ols_res = res[0]
+sum_of_squared_residuals = res[1]
+if sum_of_squared_residuals.size == 0:
+    ind_var_estimate = adf_eq.dep_vars @ ols_res
+    residuals = adf_eq.ind_var - ind_var_estimate
+    sum_of_squared_residuals = residuals @ residuals
+
+n_obs, k = adf_eq.dep_vars.shape
+
+cov_scaler = sum_of_squared_residuals / (n_obs - k)
+
+cov_inv = np.linalg.inv(adf_eq.dep_vars.T @ adf_eq.dep_vars)
+scaled_cov_inv = cov_scaler * cov_inv
+standard_errors = np.sqrt(np.diag(scaled_cov_inv))
+
+standard_errors

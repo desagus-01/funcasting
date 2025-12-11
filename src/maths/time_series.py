@@ -1,7 +1,15 @@
+from typing import NamedTuple
+
 import numpy as np
+import polars as pl
 from numpy.typing import NDArray
 
 # INFO: Most of the code/idea below is taken from statsmodels but modified for this use case
+
+
+class ADFEquation(NamedTuple):
+    ind_var: NDArray[np.floating]
+    dep_vars: NDArray[np.floating]
 
 
 def adf_max_lag(n_obs: int, n_reg: int | None) -> int:
@@ -40,3 +48,22 @@ def deterministic_detrend(
         resid = resid.T
 
     return resid
+
+
+def build_adf_equation(data: pl.DataFrame, asset: str, lags: int) -> ADFEquation:
+    df = (
+        data.select(asset)
+        .with_columns(
+            pl.col(asset).diff().alias(f"{asset}_diff_1"),
+            pl.col(asset).shift(1).alias(f"{asset}_lag_1"),
+            *[
+                pl.col("AAPL").diff().shift(i).alias(f"AAPL_diff_1_lag_{i}")
+                for i in range(1, lags + 1)
+            ],
+        )
+        .drop_nulls()
+    )
+
+    ind_var = df.select("AAPL_diff_1")
+    dep_vars = df.drop(["AAPL_diff_1", "AAPL"])
+    return ADFEquation(ind_var.to_numpy().ravel(), dep_vars.to_numpy())
