@@ -1,7 +1,6 @@
 # %% imports
-import numpy as np
 
-from maths.time_series import adf_max_lag, build_adf_equation
+from maths.time_series import adf_max_lag, build_adf_equation, ols
 from utils.template import get_template
 
 # %%
@@ -35,21 +34,7 @@ adf_eq = build_adf_equation(risk_drivers, "AAPL", max_lags)
 
 used_lag = max_lags
 
-# Step 4 Fit OLS and retrieve necessary info
-res = np.linalg.lstsq(adf_eq.dep_vars, adf_eq.ind_var)
-ols_res = res[0]
-sum_of_squared_residuals = res[1]
-if sum_of_squared_residuals.size == 0:
-    ind_var_estimate = adf_eq.dep_vars @ ols_res
-    residuals = adf_eq.ind_var - ind_var_estimate
-    sum_of_squared_residuals = residuals @ residuals
 
-n_obs, k = adf_eq.dep_vars.shape
+res = ols(adf_eq.dep_vars, adf_eq.ind_var)
 
-cov_scaler = sum_of_squared_residuals / (n_obs - k)
-
-cov_inv = np.linalg.inv(adf_eq.dep_vars.T @ adf_eq.dep_vars)
-scaled_cov_inv = cov_scaler * cov_inv
-standard_errors = np.sqrt(np.diag(scaled_cov_inv))
-
-standard_errors
+res[2].shape

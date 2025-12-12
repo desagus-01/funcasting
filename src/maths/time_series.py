@@ -57,13 +57,37 @@ def build_adf_equation(data: pl.DataFrame, asset: str, lags: int) -> ADFEquation
             pl.col(asset).diff().alias(f"{asset}_diff_1"),
             pl.col(asset).shift(1).alias(f"{asset}_lag_1"),
             *[
-                pl.col("AAPL").diff().shift(i).alias(f"AAPL_diff_1_lag_{i}")
+                pl.col(asset).diff().shift(i).alias(f"{asset}_diff_1_lag_{i}")
                 for i in range(1, lags + 1)
             ],
         )
         .drop_nulls()
     )
 
-    ind_var = df.select("AAPL_diff_1")
-    dep_vars = df.drop(["AAPL_diff_1", "AAPL"])
-    return ADFEquation(ind_var.to_numpy().ravel(), dep_vars.to_numpy())
+    y = df.select(f"{asset}_diff_1").to_numpy()
+    x = df.drop([asset, f"{asset}_diff_1"]).to_numpy()
+
+    return ADFEquation(ind_var=x, dep_vars=y)
+
+
+def ols(dependent_var: NDArray[np.floating], independent_vars: NDArray[np.floating]):
+    res = np.linalg.lstsq(a=independent_vars, b=dependent_var, rcond=None)
+    ols_res = res[0]
+    sum_of_squared_residuals = res[1]
+    if sum_of_squared_residuals.size == 0:
+        dependent_est = independent_vars @ ols_res
+        residuals = dependent_var - dependent_est
+        sum_of_squared_residuals = float(residuals.T @ residuals)
+    else:
+        sum_of_squared_residuals = float(res[1].item())
+
+    n_obs = dependent_var.shape[0]
+    k = independent_vars.shape[1]
+    cov_scaler = sum_of_squared_residuals / (n_obs - k)
+
+    cov_inv = np.linalg.inv(independent_vars.T @ independent_vars)
+    scaled_cov_inv = cov_scaler * cov_inv
+    standard_errors = np.sqrt(np.diag(scaled_cov_inv)).reshape(-1, 1)
+    t_stats = ols_res / standard_errors
+
+    return ols_res, standard_errors, t_stats
