@@ -9,9 +9,7 @@ info_all = get_template()
 risk_drivers = info_all.asset_info.risk_drivers
 
 risk_drivers
-# %%
-
 
 # %% ADF
 
-augmented_dickey_fuller(risk_drivers, "MSFT")
+augmented_dickey_fuller(risk_drivers, "GOOG", "c")

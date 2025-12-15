@@ -37,6 +37,12 @@ class OLSResults:
             """)
 
 
+class ADFResults(NamedTuple):
+    test_stat: float
+    std_error: float
+    p_val: float
+
+
 def _adf_max_lag(n_obs: int, n_reg: int | None) -> int:
     """
     Calculates max lag for augmented dickey fuller test.
@@ -75,7 +81,31 @@ def deterministic_detrend(
     return resid
 
 
-def _build_adf_equation(data: pl.DataFrame, asset: str, lags: int) -> ADFEquation:
+def _add_deterministics_to_eq(
+    independent_vars: NDArray[np.floating], eq_type: EquationTypes
+):
+    n_obs = independent_vars.shape[0]
+
+    time_index = np.arange(1, n_obs + 1, dtype=float).reshape(-1, 1)
+    cols = [np.ones((n_obs, 1), dtype=float)]
+
+    if eq_type in ("nc"):
+        return independent_vars
+    if eq_type in ("ct", "ctt"):
+        cols.append(time_index)
+    if eq_type == "ctt":
+        cols.append(time_index**2)
+
+    deterministics = np.hstack(cols)
+    return np.hstack([deterministics, independent_vars])
+
+
+def _build_adf_equation(
+    data: pl.DataFrame,
+    asset: str,
+    lags: int,
+    eq_type: EquationTypes,
+) -> ADFEquation:
     df = (
         data.select(asset)
         .with_columns(
@@ -89,10 +119,16 @@ def _build_adf_equation(data: pl.DataFrame, asset: str, lags: int) -> ADFEquatio
         .drop_nulls()
     )
 
-    y = df.select(f"{asset}_diff_1").to_numpy()
-    x = df.drop([asset, f"{asset}_diff_1"]).to_numpy()
+    x_col_order = [f"{asset}_lag_1"] + [
+        f"{asset}_diff_1_lag_{i}" for i in range(1, lags + 1)
+    ]
 
-    return ADFEquation(ind_var=x, dep_vars=y)
+    y = df.select(f"{asset}_diff_1").to_numpy()
+    x = df.select(x_col_order).to_numpy()
+    print(x.shape)
+    x_with_determs = _add_deterministics_to_eq(independent_vars=x, eq_type=eq_type)
+    print(x_with_determs.shape)
+    return ADFEquation(ind_var=x_with_determs, dep_vars=y)
 
 
 def ols(
@@ -121,8 +157,8 @@ def ols(
 
 
 def p_val_approx(
-    test_stat: NDArray[np.floating],
-    regression: EquationTypes = "c",
+    test_stat: float,
+    regression: EquationTypes = "nc",
     n_integrated: int = 1,
 ) -> float:
     min_cutoff = MACKIN_TAU_CUTOFFS[f"min_{regression}"]
@@ -143,15 +179,24 @@ def p_val_approx(
 
 
 def augmented_dickey_fuller(
-    data: pl.DataFrame, asset: str, eq_type: EquationTypes = "c"
+    data: pl.DataFrame, asset: str, eq_type: EquationTypes = "nc"
 ):
+    added_regressors = DF_EQ_TYPE[eq_type]
+    print(added_regressors)
     max_lags = _adf_max_lag(
         data.height,
-        DF_EQ_TYPE[eq_type],
+        added_regressors,
     )
-    adf_eq = _build_adf_equation(data, asset, lags=max_lags)
+    adf_eq = _build_adf_equation(data=data, asset=asset, lags=max_lags, eq_type=eq_type)
 
     ols_res = ols(dependent_var=adf_eq.dep_vars, independent_vars=adf_eq.ind_var)
-    approx_p_val = p_val_approx(ols_res.res[0], n_integrated=1)
+    adf_stat = float(ols_res.t_stats[added_regressors].item())
+
+    print(adf_stat)
+    approx_p_val = p_val_approx(
+        test_stat=adf_stat,
+        regression=eq_type,
+        n_integrated=1,
+    )
 
     return ols_res, approx_p_val
