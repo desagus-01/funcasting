@@ -37,12 +37,6 @@ class OLSResults:
             """)
 
 
-class ADFResults(NamedTuple):
-    test_stat: float
-    std_error: float
-    p_val: float
-
-
 def _adf_max_lag(n_obs: int, n_reg: int | None) -> int:
     """
     Calculates max lag for augmented dickey fuller test.
@@ -125,9 +119,7 @@ def _build_adf_equation(
 
     y = df.select(f"{asset}_diff_1").to_numpy()
     x = df.select(x_col_order).to_numpy()
-    print(x.shape)
     x_with_determs = _add_deterministics_to_eq(independent_vars=x, eq_type=eq_type)
-    print(x_with_determs.shape)
     return ADFEquation(ind_var=x_with_determs, dep_vars=y)
 
 
@@ -175,12 +167,18 @@ def p_val_approx(
     else:
         tau_coef = MACKIN_TAU_PVALS[f"tau_{regression}_largep"][p_val_ind]
 
-    return norm.cdf(polyval(tau_coef[::-1], test_stat))
+    return float(norm.cdf(polyval(tau_coef[::-1], test_stat)))
+
+
+class ADFResults(NamedTuple):
+    test_stat: float
+    std_error: float
+    p_val: float
 
 
 def augmented_dickey_fuller(
     data: pl.DataFrame, asset: str, eq_type: EquationTypes = "nc"
-):
+) -> ADFResults:
     added_regressors = DF_EQ_TYPE[eq_type]
     print(added_regressors)
     max_lags = _adf_max_lag(
@@ -192,11 +190,14 @@ def augmented_dickey_fuller(
     ols_res = ols(dependent_var=adf_eq.dep_vars, independent_vars=adf_eq.ind_var)
     adf_stat = float(ols_res.t_stats[added_regressors].item())
 
-    print(adf_stat)
     approx_p_val = p_val_approx(
         test_stat=adf_stat,
         regression=eq_type,
         n_integrated=1,
     )
 
-    return ols_res, approx_p_val
+    return ADFResults(
+        test_stat=adf_stat,
+        std_error=float(ols_res.std_errors[added_regressors].item()),
+        p_val=approx_p_val,
+    )

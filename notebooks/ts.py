@@ -1,6 +1,6 @@
 # %% imports
 
-from maths.time_series import augmented_dickey_fuller
+from maths.stat_tests import augmented_dickey_fuller_test
 from utils.template import get_template
 
 # %%
@@ -12,4 +12,4 @@ risk_drivers
 
 # %% ADF
 
-augmented_dickey_fuller(risk_drivers, "GOOG", "c")
+augmented_dickey_fuller_test(risk_drivers, "GOOG", "c")

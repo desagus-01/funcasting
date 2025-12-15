@@ -6,6 +6,7 @@ import scipy.stats as st
 from numpy.typing import NDArray
 
 from globals import DEFAULT_ROUNDING, ITERS, LAGS, SIGN_LVL
+from maths.time_series import EquationTypes, augmented_dickey_fuller
 from models.types import ProbVector
 from utils.helpers import build_lag_df, compensate_prob, hyp_test_conc
 
@@ -293,3 +294,13 @@ def univariate_kolmogrov_smirnov_test(
     rejected = [k for k, res in ks_res.items() if res["reject_null"]]
 
     return {"results": ks_res, "rejected": rejected}
+
+
+def augmented_dickey_fuller_test(
+    data: pl.DataFrame, asset: str, eq_type: EquationTypes = "nc"
+) -> HypTestRes:
+    adf_res = augmented_dickey_fuller(data=data, asset=asset, eq_type=eq_type)
+
+    return _format_hyp_test_result(
+        stat=adf_res.test_stat, p_val=adf_res.p_val, null="Unit Root/Stationarity"
+    )
