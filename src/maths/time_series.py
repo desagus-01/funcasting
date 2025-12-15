@@ -1,8 +1,13 @@
-from typing import NamedTuple
+from dataclasses import dataclass
+from typing import Literal, NamedTuple
 
 import numpy as np
 import polars as pl
+from numpy import polyval
 from numpy.typing import NDArray
+from scipy.stats import norm
+
+from globals import DF_EQ_TYPE, MACKIN_TAU_CUTOFFS, MACKIN_TAU_PVALS
 
 # INFO: Most of the code/idea below is taken from statsmodels but modified for this use case
 
@@ -12,7 +17,27 @@ class ADFEquation(NamedTuple):
     dep_vars: NDArray[np.floating]
 
 
-def adf_max_lag(n_obs: int, n_reg: int | None) -> int:
+EquationTypes = Literal["nc", "c", "ct", "ctt"]
+
+
+@dataclass
+class OLSResults:
+    res: NDArray[np.floating]
+    std_errors: NDArray[np.floating]
+    t_stats: NDArray[np.floating]
+
+    def __post_init__(self) -> None:
+        shape = self.res.shape
+        if self.std_errors.shape != shape or self.t_stats.shape != shape:
+            raise ValueError(f"""
+            OLSResults values must all have the same shape:
+            res : {shape}
+            std_errors: {self.std_errors.shape}
+            t_stats: {self.t_stats}
+            """)
+
+
+def _adf_max_lag(n_obs: int, n_reg: int | None) -> int:
     """
     Calculates max lag for augmented dickey fuller test.
 
@@ -50,7 +75,7 @@ def deterministic_detrend(
     return resid
 
 
-def build_adf_equation(data: pl.DataFrame, asset: str, lags: int) -> ADFEquation:
+def _build_adf_equation(data: pl.DataFrame, asset: str, lags: int) -> ADFEquation:
     df = (
         data.select(asset)
         .with_columns(
@@ -70,7 +95,9 @@ def build_adf_equation(data: pl.DataFrame, asset: str, lags: int) -> ADFEquation
     return ADFEquation(ind_var=x, dep_vars=y)
 
 
-def ols(dependent_var: NDArray[np.floating], independent_vars: NDArray[np.floating]):
+def ols(
+    dependent_var: NDArray[np.floating], independent_vars: NDArray[np.floating]
+) -> OLSResults:
     res = np.linalg.lstsq(a=independent_vars, b=dependent_var, rcond=None)
     ols_res = res[0]
     sum_of_squared_residuals = res[1]
@@ -90,4 +117,41 @@ def ols(dependent_var: NDArray[np.floating], independent_vars: NDArray[np.floati
     standard_errors = np.sqrt(np.diag(scaled_cov_inv)).reshape(-1, 1)
     t_stats = ols_res / standard_errors
 
-    return ols_res, standard_errors, t_stats
+    return OLSResults(res=ols_res, std_errors=standard_errors, t_stats=t_stats)
+
+
+def p_val_approx(
+    test_stat: NDArray[np.floating],
+    regression: EquationTypes = "c",
+    n_integrated: int = 1,
+) -> float:
+    min_cutoff = MACKIN_TAU_CUTOFFS[f"min_{regression}"]
+    max_cutoff = MACKIN_TAU_CUTOFFS[f"max_{regression}"]
+    starstat = MACKIN_TAU_CUTOFFS[f"star_{regression}"]
+    p_val_ind = n_integrated - 1
+
+    if test_stat > max_cutoff[p_val_ind]:
+        return 1.0
+    elif test_stat < min_cutoff[p_val_ind]:
+        return 0.0
+    if test_stat <= starstat[p_val_ind]:
+        tau_coef = MACKIN_TAU_PVALS[f"tau_{regression}_smallp"][p_val_ind]
+    else:
+        tau_coef = MACKIN_TAU_PVALS[f"tau_{regression}_largep"][p_val_ind]
+
+    return norm.cdf(polyval(tau_coef[::-1], test_stat))
+
+
+def augmented_dickey_fuller(
+    data: pl.DataFrame, asset: str, eq_type: EquationTypes = "c"
+):
+    max_lags = _adf_max_lag(
+        data.height,
+        DF_EQ_TYPE[eq_type],
+    )
+    adf_eq = _build_adf_equation(data, asset, lags=max_lags)
+
+    ols_res = ols(dependent_var=adf_eq.dep_vars, independent_vars=adf_eq.ind_var)
+    approx_p_val = p_val_approx(ols_res.res[0], n_integrated=1)
+
+    return ols_res, approx_p_val
