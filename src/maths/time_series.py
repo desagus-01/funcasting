@@ -83,7 +83,7 @@ def _add_deterministics_to_eq(
     time_index = np.arange(1, n_obs + 1, dtype=float).reshape(-1, 1)
     cols = [np.ones((n_obs, 1), dtype=float)]
 
-    if eq_type in ("nc"):
+    if eq_type == "nc":
         return independent_vars
     if eq_type in ("ct", "ctt"):
         cols.append(time_index)
@@ -100,26 +100,33 @@ def _build_adf_equation(
     lags: int,
     eq_type: EquationTypes,
 ) -> ADFEquation:
+    diff_lag_exprs = (
+        [
+            pl.col(asset).diff().shift(i).alias(f"{asset}_diff_1_lag_{i}")
+            for i in range(1, lags + 1)
+        ]
+        if lags > 0
+        else []
+    )
+
     df = (
         data.select(asset)
         .with_columns(
             pl.col(asset).diff().alias(f"{asset}_diff_1"),
             pl.col(asset).shift(1).alias(f"{asset}_lag_1"),
-            *[
-                pl.col(asset).diff().shift(i).alias(f"{asset}_diff_1_lag_{i}")
-                for i in range(1, lags + 1)
-            ],
+            *diff_lag_exprs,
         )
         .drop_nulls()
     )
 
-    x_col_order = [f"{asset}_lag_1"] + [
-        f"{asset}_diff_1_lag_{i}" for i in range(1, lags + 1)
-    ]
+    x_col_order = [f"{asset}_lag_1"] + (
+        [f"{asset}_diff_1_lag_{i}" for i in range(1, lags + 1)] if lags > 0 else []
+    )
 
     y = df.select(f"{asset}_diff_1").to_numpy()
     x = df.select(x_col_order).to_numpy()
     x_with_determs = _add_deterministics_to_eq(independent_vars=x, eq_type=eq_type)
+
     return ADFEquation(ind_var=x_with_determs, dep_vars=y)
 
 
@@ -177,14 +184,19 @@ class ADFResults(NamedTuple):
 
 
 def augmented_dickey_fuller(
-    data: pl.DataFrame, asset: str, eq_type: EquationTypes = "nc"
+    data: pl.DataFrame,
+    asset: str,
+    lags: int | None,
+    eq_type: EquationTypes = "nc",
 ) -> ADFResults:
     added_regressors = DF_EQ_TYPE[eq_type]
-    print(added_regressors)
-    max_lags = _adf_max_lag(
-        data.height,
-        added_regressors,
-    )
+    if lags is None:
+        max_lags = _adf_max_lag(
+            data.height,
+            added_regressors,
+        )
+    else:
+        max_lags = lags
     adf_eq = _build_adf_equation(data=data, asset=asset, lags=max_lags, eq_type=eq_type)
 
     ols_res = ols(dependent_var=adf_eq.dep_vars, independent_vars=adf_eq.ind_var)

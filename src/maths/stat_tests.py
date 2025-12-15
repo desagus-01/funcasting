@@ -297,10 +297,12 @@ def univariate_kolmogrov_smirnov_test(
 
 
 def augmented_dickey_fuller_test(
-    data: pl.DataFrame, asset: str, eq_type: EquationTypes = "nc"
+    data: pl.DataFrame, asset: str, lags: int | None, eq_type: EquationTypes = "nc"
 ) -> HypTestRes:
-    adf_res = augmented_dickey_fuller(data=data, asset=asset, eq_type=eq_type)
+    adf_res = augmented_dickey_fuller(
+        data=data, asset=asset, lags=lags, eq_type=eq_type
+    )
 
     return _format_hyp_test_result(
-        stat=adf_res.test_stat, p_val=adf_res.p_val, null="Unit Root/Stationarity"
+        stat=adf_res.test_stat, p_val=adf_res.p_val, null="Unit Root/Non-Stationarity"
     )
