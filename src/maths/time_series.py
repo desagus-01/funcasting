@@ -257,18 +257,31 @@ def _kpss_autolag(residuals: NDArray[np.floating], n_obs: int) -> int:
     return int(gamma_hat * np.power(n_obs, pwr))
 
 
+# INFO: So is the below
+def _sigma_est_kpss(residuals: NDArray[np.floating], n_obs: int, lags: int) -> float:
+    """
+    Computes equation 10, p. 164 of Kwiatkowski et al. (1992). This is the
+    consistent estimator for the variance.
+    """
+    s_hat = np.sum(residuals**2)
+    for i in range(1, lags + 1):
+        resids_prod = np.dot(residuals[i:], residuals[: n_obs - i])
+        s_hat += 2 * resids_prod * (1.0 - (i / (lags + 1.0)))
+    return float(s_hat / n_obs)
+
+
 def kpss(
     data: pl.DataFrame, asset: str, null_type_stationarity: Literal["trend", "level"]
 ):
     eq_type: EquationTypes = "ct" if null_type_stationarity == "trend" else "nc"
 
     n_obs = data.height
-    if eq_type == "ct":
+    if eq_type == "ct":  # run OLS with constant and trend
         x = build_kpss_equation(data, asset, eq_type)
         residuals = ols_classic(
             dependent_var=x.dep_vars, independent_vars=x.ind_var
         ).residuals
-    else:
+    else:  # just demean
         dependent_var = data.select(asset).to_numpy()
         residuals = dependent_var - dependent_var.mean()
 
@@ -276,5 +289,8 @@ def kpss(
     lags = min(lags, n_obs - 1)
 
     kpss_numerator = np.sum(residuals.cumsum() ** 2) / (n_obs**2)
+    kpss_denominator = _sigma_est_kpss(
+        residuals=residuals.ravel(), n_obs=n_obs, lags=lags
+    )
 
-    return kpss_numerator
+    return kpss_numerator / kpss_denominator
