@@ -1,4 +1,6 @@
 
+> [!ATTENTION] Update data with ADJUSTED prices (yfinance for now)
+
 > [!TODO] Break Down of Stochastic Process
 1. Pre-Processing
     > - [ ] Add KPSS tests [Reference link](https://www.statsmodels.org/dev/examples/notebooks/generated/stationarity_detrending_adf_kpss.html)

@@ -14,17 +14,13 @@ from maths.distributions import uniform_probs
 
 
 class Assets(BaseModel):
-    """
-    Base Class for all Assets, we include the risk driver which is deterministic, and increments which if test are passed can be considered invariants.
-    """
-
     model_config = ConfigDict(arbitrary_types_allowed=True)
     raw_data: pl.DataFrame
     risk_drivers: pl.DataFrame
     increments: pl.DataFrame
 
 
-def get_db_sample(tickers: list[str]) -> pl.DataFrame:
+def get_db_sample(tickers: list[str] | None) -> pl.DataFrame:
     if not os.path.exists("data/databento_ohlc.csv"):
         _ = load_dotenv()
         db_client = db.Historical(os.getenv("DATABENTO_API"))

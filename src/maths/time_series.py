@@ -7,14 +7,20 @@ from numpy import polyval
 from numpy.typing import NDArray
 from scipy.stats import norm
 
-from globals import DF_EQ_TYPE, MACKIN_TAU_CUTOFFS, MACKIN_TAU_PVALS
+from globals import EQ_TYPE_ADDED_DETS, MACKIN_TAU_CUTOFFS, MACKIN_TAU_PVALS
 
 # INFO: Most of the code/idea below is taken from statsmodels but modified for this use case
 
 
-class ADFEquation(NamedTuple):
+class OLSEquation(NamedTuple):
     ind_var: NDArray[np.floating]
     dep_vars: NDArray[np.floating]
+
+
+class ADFResults(NamedTuple):
+    test_stat: float
+    std_error: float
+    p_val: float
 
 
 EquationTypes = Literal["nc", "c", "ct", "ctt"]
@@ -25,6 +31,7 @@ class OLSResults:
     res: NDArray[np.floating]
     std_errors: NDArray[np.floating]
     t_stats: NDArray[np.floating]
+    residuals: NDArray[np.floating]
 
     def __post_init__(self) -> None:
         shape = self.res.shape
@@ -81,7 +88,7 @@ def _add_deterministics_to_eq(
     n_obs = independent_vars.shape[0]
 
     time_index = np.arange(1, n_obs + 1, dtype=float).reshape(-1, 1)
-    cols = [np.ones((n_obs, 1), dtype=float)]
+    cols = [np.ones((n_obs, 1), dtype=float)]  # add constants "c" as default
 
     if eq_type == "nc":
         return independent_vars
@@ -99,7 +106,7 @@ def _build_adf_equation(
     asset: str,
     lags: int,
     eq_type: EquationTypes,
-) -> ADFEquation:
+) -> OLSEquation:
     diff_lag_exprs = (
         [
             pl.col(asset).diff().shift(i).alias(f"{asset}_diff_1_lag_{i}")
@@ -125,20 +132,22 @@ def _build_adf_equation(
 
     y = df.select(f"{asset}_diff_1").to_numpy()
     x = df.select(x_col_order).to_numpy()
-    x_with_determs = _add_deterministics_to_eq(independent_vars=x, eq_type=eq_type)
+    if eq_type != "nc":
+        x = _add_deterministics_to_eq(independent_vars=x, eq_type=eq_type)
 
-    return ADFEquation(ind_var=x_with_determs, dep_vars=y)
+    return OLSEquation(ind_var=x, dep_vars=y)
 
 
-def ols(
+def ols_classic(
     dependent_var: NDArray[np.floating], independent_vars: NDArray[np.floating]
 ) -> OLSResults:
     res = np.linalg.lstsq(a=independent_vars, b=dependent_var, rcond=None)
     ols_res = res[0]
     sum_of_squared_residuals = res[1]
+    dependent_est = independent_vars @ ols_res
+    residuals = dependent_var - dependent_est
+
     if sum_of_squared_residuals.size == 0:
-        dependent_est = independent_vars @ ols_res
-        residuals = dependent_var - dependent_est
         sum_of_squared_residuals = float(residuals.T @ residuals)
     else:
         sum_of_squared_residuals = float(res[1].item())
@@ -152,7 +161,9 @@ def ols(
     standard_errors = np.sqrt(np.diag(scaled_cov_inv)).reshape(-1, 1)
     t_stats = ols_res / standard_errors
 
-    return OLSResults(res=ols_res, std_errors=standard_errors, t_stats=t_stats)
+    return OLSResults(
+        res=ols_res, std_errors=standard_errors, t_stats=t_stats, residuals=residuals
+    )
 
 
 def p_val_approx(
@@ -177,19 +188,14 @@ def p_val_approx(
     return float(norm.cdf(polyval(tau_coef[::-1], test_stat)))
 
 
-class ADFResults(NamedTuple):
-    test_stat: float
-    std_error: float
-    p_val: float
-
-
 def augmented_dickey_fuller(
     data: pl.DataFrame,
     asset: str,
     lags: int | None,
     eq_type: EquationTypes = "nc",
 ) -> ADFResults:
-    added_regressors = DF_EQ_TYPE[eq_type]
+    added_regressors = EQ_TYPE_ADDED_DETS[eq_type]
+    # TODO: Change below to autolag like statsmodels
     if lags is None:
         max_lags = _adf_max_lag(
             data.height,
@@ -199,7 +205,9 @@ def augmented_dickey_fuller(
         max_lags = lags
     adf_eq = _build_adf_equation(data=data, asset=asset, lags=max_lags, eq_type=eq_type)
 
-    ols_res = ols(dependent_var=adf_eq.dep_vars, independent_vars=adf_eq.ind_var)
+    ols_res = ols_classic(
+        dependent_var=adf_eq.dep_vars, independent_vars=adf_eq.ind_var
+    )
     adf_stat = float(ols_res.t_stats[added_regressors].item())
 
     approx_p_val = p_val_approx(
@@ -213,3 +221,60 @@ def augmented_dickey_fuller(
         std_error=float(ols_res.std_errors[added_regressors].item()),
         p_val=approx_p_val,
     )
+
+
+def build_kpss_equation(
+    data: pl.DataFrame, asset: str, eq_type: EquationTypes = "ct"
+) -> OLSEquation:
+    dependent_var = data.select(asset).to_numpy()
+
+    empty_arr = np.empty(shape=dependent_var.shape)
+    determs = _add_deterministics_to_eq(independent_vars=empty_arr, eq_type=eq_type)[
+        :, :-1
+    ]  # we remove original
+
+    return OLSEquation(ind_var=determs, dep_vars=dependent_var)
+
+
+# INFO: Below function is straight from statsmodels
+def _kpss_autolag(residuals: NDArray[np.floating], n_obs: int) -> int:
+    """
+    Computes the number of lags for covariance matrix estimation in KPSS test
+    using method of Hobijn et al (1998). See also Andrews (1991), Newey & West
+    (1994), and Schwert (1989). Assumes Bartlett / Newey-West kernel.
+    """
+    truncation_window = int(np.power(n_obs, 2.0 / 9.0))
+    radius = np.sum(residuals**2) / n_obs
+    s1 = 0
+    for i in range(1, truncation_window + 1):
+        resids_prod = np.dot(residuals[i:], residuals[: n_obs - i])
+        resids_prod /= n_obs / 2.0  # normalizing
+        radius += resids_prod
+        s1 += i * resids_prod
+    s_hat = s1 / radius
+    pwr = 1.0 / 3.0
+    gamma_hat = 1.1447 * np.power(s_hat * s_hat, pwr)
+    return int(gamma_hat * np.power(n_obs, pwr))
+
+
+def kpss(
+    data: pl.DataFrame, asset: str, null_type_stationarity: Literal["trend", "level"]
+):
+    eq_type: EquationTypes = "ct" if null_type_stationarity == "trend" else "nc"
+
+    n_obs = data.height
+    if eq_type == "ct":
+        x = build_kpss_equation(data, asset, eq_type)
+        residuals = ols_classic(
+            dependent_var=x.dep_vars, independent_vars=x.ind_var
+        ).residuals
+    else:
+        dependent_var = data.select(asset).to_numpy()
+        residuals = dependent_var - dependent_var.mean()
+
+    lags = _kpss_autolag(residuals=residuals.ravel(), n_obs=n_obs)
+    lags = min(lags, n_obs - 1)
+
+    kpss_numerator = np.sum(residuals.cumsum() ** 2) / (n_obs**2)
+
+    return kpss_numerator

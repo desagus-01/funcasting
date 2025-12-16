@@ -142,7 +142,7 @@ MACKIN_TAU_PVALS = {
 }
 
 
-DF_EQ_TYPE: dict[str, int | None] = {
+EQ_TYPE_ADDED_DETS: dict[str, int | None] = {
     "nc": 0,
     "c": 1,
     "ct": 2,
