@@ -24,11 +24,17 @@ dependencies = [
 where = ["src"]
 
 
-[tool.basedpyright]
-typeCheckingMode = "recommended"
-failOnWarnings = false
-allowedUntypedLibraries = ['pydantic', 'requests']
-reportExplicitAny = false
-reportAny = false
-reportMissingTypeStubs = false
+# [tool.basedpyright]
+# typeCheckingMode = "recommended"
+# failOnWarnings = false
+# allowedUntypedLibraries = ['pydantic', 'requests']
+# reportExplicitAny = false
+# reportAny = false
+# reportMissingTypeStubs = false
+
+[tool.pyrefly]
+project-includes = [
+    "**/*.py*",
+    "**/*.ipynb",
+]
 

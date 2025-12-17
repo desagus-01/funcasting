@@ -32,6 +32,8 @@ def sample_copula(
         cop = StudentCopula(values.shape[1])
     elif parametric_copula == "norm":
         cop = NormalCopula(values.shape[1])
+    else:
+        raise ValueError("You must choose either t or norm")
 
     _ = cop.fit(values, to_pobs=False)
     samples = cop.random(n=copula.height)
