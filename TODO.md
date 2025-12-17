@@ -3,11 +3,11 @@
 
 > [!TODO] Break Down of Stochastic Process
 1. Pre-Processing
-    > - [ ] Add KPSS tests [Reference link](https://www.statsmodels.org/dev/examples/notebooks/generated/stationarity_detrending_adf_kpss.html)
-    > - [ ] Change HyptTestRes to Dataclass/TypedTuple instead of TypedDict? 
-    > - [ ] De-trending  
+   > - [ ] De-trending  
     > - [ ] Stochastic de-trending (check how to) 
 1. Validation (Tests)
+    > - [ ] Change HyptTestRes to Dataclass/TypedTuple instead of TypedDict? 
+    > - [ ] Re-factor as confusing atm 
     > - [ ] Add tests for stationarity (currently only on iid) 
 1. Estimation
     > - [ ] Log-likelihood + FFP based log-likelihood implementation for estimating parameters 
@@ -33,6 +33,7 @@
 
 
 ## Completed
+     > - [X] Add KPSS tests [Reference link](https://www.statsmodels.org/dev/examples/notebooks/generated/stationarity_detrending_adf_kpss.html)
         > - [X] Deterministic de-trend (copy from statsmodels) 
     > - [X] Add elippsoid tests? 
 > - [X] Add tests for invariance (iid) 

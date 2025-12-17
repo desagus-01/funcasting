@@ -235,6 +235,7 @@ def build_kpss_equation(
     dependent_var = data.select(asset).to_numpy()
 
     empty_arr = np.empty(shape=dependent_var.shape)
+    np.zeros_like(dependent_var)
     determs = _add_deterministics_to_eq(independent_vars=empty_arr, eq_type=eq_type)[
         :, :-1
     ]  # we remove original
