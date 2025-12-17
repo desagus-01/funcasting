@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Any, Callable, Literal, NamedTuple, TypedDict
 
 import numpy as np
@@ -11,7 +12,8 @@ from models.types import ProbVector
 from utils.helpers import build_lag_df, compensate_prob, hyp_test_conc
 
 
-class HypTestRes(TypedDict):
+@dataclass(frozen=True, slots=True)
+class HypTestRes:
     stat: float
     p_val: float
     sign_lvl: float
@@ -25,7 +27,8 @@ class PerAssetLagResult(TypedDict):
     rejected_lags: list[str]
 
 
-class MeanCovRes(TypedDict):
+@dataclass(frozen=True, slots=True)
+class MeanCovRes:
     assets: list[str]
     means: NDArray[np.floating]
     cov: NDArray[np.floating]
@@ -41,20 +44,95 @@ class SplitDF(NamedTuple):
     second_half: pl.DataFrame
 
 
+InferenceLabel = Literal[
+    "stationary",
+    "trend-stationary",
+    "unit-root/non-stationary",
+    "inconclusive/conflict",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class StationarityInference:
+    label: InferenceLabel
+    sign_lvl: float
+    details: str
+    adf: HypTestRes
+    kpss_level: HypTestRes
+    kpss_trend: HypTestRes
+
+
+@dataclass(frozen=True)
+class Rule:
+    label: InferenceLabel
+    when: Callable[[bool, bool, bool], bool]
+    details: str
+
+
+RULES: tuple[Rule, ...] = (
+    Rule(
+        "stationary",
+        lambda A, L, T: A and (not L),
+        "ADF rejects unit root; KPSS(level) fails to reject level stationarity.",
+    ),
+    Rule(
+        "unit-root/non-stationary",
+        lambda A, L, T: (not A) and L,
+        "ADF fails to reject unit root; KPSS(level) rejects level stationarity.",
+    ),
+    Rule(
+        "trend-stationary",
+        lambda A, L, T: A and L and (not T),
+        "ADF rejects unit root; KPSS(level) rejects; KPSS(trend) fails to reject trend stationarity.",
+    ),
+)
+
+
+def infer_stationarity(
+    adf: HypTestRes,
+    kpss_level: HypTestRes,
+    kpss_trend: HypTestRes,
+) -> StationarityInference:
+    A = adf.reject_null
+    L = kpss_level.reject_null
+    T = kpss_trend.reject_null
+
+    for r in RULES:
+        if r.when(A, L, T):
+            return StationarityInference(
+                label=r.label,
+                sign_lvl=adf.sign_lvl,
+                details=r.details,
+                adf=adf,
+                kpss_level=kpss_level,
+                kpss_trend=kpss_trend,
+            )
+
+    return StationarityInference(
+        label="inconclusive/conflict",
+        sign_lvl=adf.sign_lvl,
+        details="No clean ADF/KPSS agreement pattern at this significance level.",
+        adf=adf,
+        kpss_level=kpss_level,
+        kpss_trend=kpss_trend,
+    )
+
+
 def _format_hyp_test_result(
     stat: float, p_val: float, null: str = "Independence"
 ) -> HypTestRes:
     p_val = float(p_val)
     stat = float(stat)
     hyp_conc = hyp_test_conc(p_val, null_hyp=null)
-    return {
-        "stat": round(stat, DEFAULT_ROUNDING),
-        "p_val": round(p_val, DEFAULT_ROUNDING),
-        "sign_lvl": SIGN_LVL,
-        "null": null,
-        "reject_null": hyp_conc["reject_null"],
-        "desc": hyp_conc["desc"],
-    }
+
+    return HypTestRes(
+        stat=round(stat, DEFAULT_ROUNDING),
+        p_val=round(p_val, DEFAULT_ROUNDING),
+        sign_lvl=SIGN_LVL,
+        null=null,
+        reject_null=hyp_conc["reject_null"],
+        desc=hyp_conc["desc"],
+    )
 
 
 def _select_assets(df: pl.DataFrame, assets: list[str] | None) -> list[str]:
@@ -97,7 +175,7 @@ def run_lagged_tests(
             )
             per_lag[f"lag_{lag}"] = res
 
-        rejected_lags = [k for k, res in per_lag.items() if res["reject_null"]]
+        rejected_lags = [k for k, res in per_lag.items() if res.reject_null]
 
         results[asset] = {
             "results": per_lag,
@@ -108,14 +186,20 @@ def run_lagged_tests(
 
 
 def _sample_meancov(
-    data: pl.DataFrame, prob: ProbVector, assets: list[str]
+    data: pl.DataFrame,
+    prob: ProbVector,
+    assets: list[str],
 ) -> MeanCovRes:
     data_np = data.select(assets).to_numpy()
 
     weighted_mean = prob @ data_np
     weighted_cov = ((data_np - weighted_mean).T * prob) @ (data_np - weighted_mean)
 
-    return {"assets": assets, "means": weighted_mean, "cov": weighted_cov}
+    return MeanCovRes(
+        assets=assets,
+        means=weighted_mean,
+        cov=weighted_cov,
+    )
 
 
 # TODO: Check on the correctness of p-val, currently assumes normal although we weight...
@@ -126,8 +210,7 @@ def autocorrelation_pair_test(
     Pairwise autocorrelation test on a 2-column DataFrame:
     column 0 = X_t, column 1 = X_{t-k}.
     """
-    mc = _sample_meancov(pair_df, prob, assets)
-    cov = mc["cov"]
+    cov = _sample_meancov(pair_df, prob, assets).cov
     var_t = cov[0, 0]
     var_lag = cov[1, 1]
     cov_t_lag = cov[0, 1]
@@ -291,7 +374,7 @@ def univariate_kolmogrov_smirnov_test(
         )
         ks_res[asset] = kolmogrov_smirnov_2stest(split_1, split_2)
 
-    rejected = [k for k, res in ks_res.items() if res["reject_null"]]
+    rejected = [k for k, res in ks_res.items() if res.reject_null]
 
     return {"results": ks_res, "rejected": rejected}
 
@@ -304,7 +387,9 @@ def augmented_dickey_fuller_test(
     )
 
     return _format_hyp_test_result(
-        stat=adf_res.test_stat, p_val=adf_res.p_val, null="Unit Root/Non-Stationarity"
+        stat=adf_res.test_stat,
+        p_val=adf_res.p_val,
+        null=f"Unit Root/Non-Stationarity at {lags} lags",
     )
 
 
@@ -319,4 +404,22 @@ def kpss_test(
         stat=kpss_res.test_stat,
         p_val=kpss_res.p_val,
         null=f"{null_type_stationarity} stationarity",
+    )
+
+
+def stationarity_tests(
+    data: pl.DataFrame,
+    asset: str,
+    lags: int | None,
+    eq_type: EquationTypes = "nc",
+) -> StationarityInference:
+    adf_res = augmented_dickey_fuller_test(
+        data=data, asset=asset, lags=lags, eq_type=eq_type
+    )
+    kpss_res_lvl = kpss_test(data=data, asset=asset, null_type_stationarity="level")
+
+    kpss_res_trend = kpss_test(data=data, asset=asset, null_type_stationarity="trend")
+
+    return infer_stationarity(
+        adf=adf_res, kpss_level=kpss_res_lvl, kpss_trend=kpss_res_trend
     )
