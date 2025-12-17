@@ -2,60 +2,65 @@
 from pprint import pprint as print
 
 from maths.distributions import uniform_probs
-from maths.econometrics.iid_tests import (
+from maths.econometrics import (
+    HypTestRes,
     copula_lag_independence_test,
     ellipsoid_lag_test,
+    stationarity_tests,
     univariate_kolmogrov_smirnov_test,
 )
-from maths.econometrics.stationarity_tests import stationarity_tests
 from maths.helpers import add_detrend_column
 from methods.cma import CopulaMarginalModel
 from models.scenarios import ScenarioProb
 from utils.template import get_template
 
-# %%
+
+# %% small helpers
+def show_results(title: str, results: dict[str, HypTestRes]) -> None:
+    print(f"\n=== {title} ===")
+    for name, res in results.items():
+        print(f"\n[{name}]")
+        print(res)
+
+
+# %% load once
 info_all = get_template()
-risk_drivers = info_all.asset_info.risk_drivers
 
-risk_drivers = add_detrend_column(
-    data=risk_drivers,
-)
+# =========================
+# Stationarity quick checks
+# =========================
+risk_drivers = add_detrend_column(data=info_all.asset_info.risk_drivers)
 
-risk_drivers
-# %%
+# Choose which series to test
+series_to_test = [
+    "MSFT_detrended",
+    # add more here if you want
+    # "AAPL_detrended",
+]
 
-assets = risk_drivers.drop("date").columns
-tests = ["level", "trend"]
+stationarity_res: dict[str, HypTestRes] = {}
+for col in series_to_test:
+    stationarity_res[col] = stationarity_tests(risk_drivers, col, lags=10)
+
+show_results("Stationarity tests", stationarity_res)
 
 
-stationarity_tests(risk_drivers, "MSFT_detrended", lags=10)
-
-# %%
-
-# Load data
-info_all = get_template()
+# =========================
+# IID-ish checks on increms
+# =========================
 increms = info_all.increms_df
+prob = uniform_probs(increms.height)
 
-PROB = uniform_probs(increms.height)
-
-# KS
-ks = univariate_kolmogrov_smirnov_test(increms)
-# Elliptical
-el = ellipsoid_lag_test(increms, PROB)
-# Copula
+# Build scenario + copula once (copula test reuses it)
 sp = ScenarioProb.default_inst(increms)
 cma = CopulaMarginalModel.from_scenario_dist(
     scenarios=sp.scenarios, prob=sp.prob, dates=sp.dates
 )
-cp = copula_lag_independence_test(cma.copula, prob=cma.prob)
 
-print(f"""
-KS:
-{ks}
+iid_res: dict[str, HypTestRes] = {
+    "KS split (identically distributed)": univariate_kolmogrov_smirnov_test(increms),
+    "Ellipsoid lag autocorr": ellipsoid_lag_test(increms, prob),
+    "Copula lag independence": copula_lag_independence_test(cma.copula, prob=cma.prob),
+}
 
-sp:
-{sp}
-
-cp:
-{cp}
-""")
+show_results("IID diagnostics", iid_res)
