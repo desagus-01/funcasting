@@ -32,10 +32,19 @@ where = ["src"]
 # reportExplicitAny = false
 # reportAny = false
 # reportMissingTypeStubs = false
+#
 
 [tool.pyrefly]
+python_version = "3.13"
+search_path = ["src"]
 project-includes = [
-    "**/*.py*",
-    "**/*.ipynb",
+  "**/*.py",
+  "**/*.pyi",
+  "**/*.ipynb",
+]
+project-excludes = [
+  ".venv/**",
+  "venv/**",
+  "**/__pycache__/**",
 ]
 

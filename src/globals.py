@@ -148,3 +148,11 @@ EQ_TYPE_ADDED_DETS: dict[str, int | None] = {
     "ct": 2,
     "ctt": 3,
 }
+
+
+KPSS_CRIT_VALUES = {
+    "c": [0.347, 0.463, 0.574, 0.739],
+    "ct": [0.119, 0.146, 0.176, 0.216],
+}
+
+KPSS_P_VALS = [0.10, 0.05, 0.025, 0.01]

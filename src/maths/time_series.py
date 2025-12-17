@@ -7,7 +7,13 @@ from numpy import polyval
 from numpy.typing import NDArray
 from scipy.stats import norm
 
-from globals import EQ_TYPE_ADDED_DETS, MACKIN_TAU_CUTOFFS, MACKIN_TAU_PVALS
+from globals import (
+    EQ_TYPE_ADDED_DETS,
+    KPSS_CRIT_VALUES,
+    KPSS_P_VALS,
+    MACKIN_TAU_CUTOFFS,
+    MACKIN_TAU_PVALS,
+)
 
 # INFO: Most of the code/idea below is taken from statsmodels but modified for this use case
 
@@ -17,10 +23,10 @@ class OLSEquation(NamedTuple):
     dep_vars: NDArray[np.floating]
 
 
-class ADFResults(NamedTuple):
+class StationaryTestsRes(NamedTuple):
     test_stat: float
-    std_error: float
     p_val: float
+    std_error: float | None
 
 
 EquationTypes = Literal["nc", "c", "ct", "ctt"]
@@ -166,7 +172,7 @@ def ols_classic(
     )
 
 
-def p_val_approx(
+def adf_p_val_approx(
     test_stat: float,
     regression: EquationTypes = "nc",
     n_integrated: int = 1,
@@ -193,7 +199,7 @@ def augmented_dickey_fuller(
     asset: str,
     lags: int | None,
     eq_type: EquationTypes = "nc",
-) -> ADFResults:
+) -> StationaryTestsRes:
     added_regressors = EQ_TYPE_ADDED_DETS[eq_type]
     # TODO: Change below to autolag like statsmodels
     if lags is None:
@@ -210,13 +216,13 @@ def augmented_dickey_fuller(
     )
     adf_stat = float(ols_res.t_stats[added_regressors].item())
 
-    approx_p_val = p_val_approx(
+    approx_p_val = adf_p_val_approx(
         test_stat=adf_stat,
         regression=eq_type,
         n_integrated=1,
     )
 
-    return ADFResults(
+    return StationaryTestsRes(
         test_stat=adf_stat,
         std_error=float(ols_res.std_errors[added_regressors].item()),
         p_val=approx_p_val,
@@ -236,8 +242,8 @@ def build_kpss_equation(
     return OLSEquation(ind_var=determs, dep_vars=dependent_var)
 
 
-# INFO: Below function is straight from statsmodels
-def _kpss_autolag(residuals: NDArray[np.floating], n_obs: int) -> int:
+# INFO: Below function is straight from statsmodels with slight modification
+def _kpss_choose_lag(residuals: NDArray[np.floating], n_obs: int) -> int:
     """
     Computes the number of lags for covariance matrix estimation in KPSS test
     using method of Hobijn et al (1998). See also Andrews (1991), Newey & West
@@ -254,7 +260,8 @@ def _kpss_autolag(residuals: NDArray[np.floating], n_obs: int) -> int:
     s_hat = s1 / radius
     pwr = 1.0 / 3.0
     gamma_hat = 1.1447 * np.power(s_hat * s_hat, pwr)
-    return int(gamma_hat * np.power(n_obs, pwr))
+    auto_lag = int(gamma_hat * np.power(n_obs, pwr))
+    return min(auto_lag, n_obs - 1)
 
 
 # INFO: So is the below
@@ -270,10 +277,15 @@ def _sigma_est_kpss(residuals: NDArray[np.floating], n_obs: int, lags: int) -> f
     return float(s_hat / n_obs)
 
 
+def _kpss_p_val_approx(t_stat: float, eq_type: EquationTypes) -> float:
+    crit_values = KPSS_CRIT_VALUES[eq_type]
+    return float(np.interp(t_stat, crit_values, KPSS_P_VALS))
+
+
 def kpss(
     data: pl.DataFrame, asset: str, null_type_stationarity: Literal["trend", "level"]
-):
-    eq_type: EquationTypes = "ct" if null_type_stationarity == "trend" else "nc"
+) -> StationaryTestsRes:
+    eq_type: EquationTypes = "ct" if null_type_stationarity == "trend" else "c"
 
     n_obs = data.height
     if eq_type == "ct":  # run OLS with constant and trend
@@ -285,12 +297,14 @@ def kpss(
         dependent_var = data.select(asset).to_numpy()
         residuals = dependent_var - dependent_var.mean()
 
-    lags = _kpss_autolag(residuals=residuals.ravel(), n_obs=n_obs)
-    lags = min(lags, n_obs - 1)
+    lags = _kpss_choose_lag(residuals=residuals.ravel(), n_obs=n_obs)
 
     kpss_numerator = np.sum(residuals.cumsum() ** 2) / (n_obs**2)
     kpss_denominator = _sigma_est_kpss(
         residuals=residuals.ravel(), n_obs=n_obs, lags=lags
     )
 
-    return kpss_numerator / kpss_denominator
+    kpss_stat = kpss_numerator / kpss_denominator
+    p_val = _kpss_p_val_approx(t_stat=kpss_stat, eq_type=eq_type)
+
+    return StationaryTestsRes(test_stat=kpss_stat, p_val=p_val, std_error=None)

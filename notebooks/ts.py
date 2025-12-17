@@ -1,6 +1,5 @@
 # %% imports
-
-from maths.time_series import augmented_dickey_fuller, kpss
+from maths.stat_tests import kpss_test
 from utils.template import get_template
 
 # %%
@@ -11,6 +10,6 @@ aapl = risk_drivers.select("AAPL")
 
 aapl
 # %%
-x = kpss(risk_drivers, "AAPL", "level")
+x = kpss_test(risk_drivers, "AAPL", "level")
 
-augmented_dickey_fuller()
+x

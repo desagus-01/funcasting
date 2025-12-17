@@ -1,4 +1,4 @@
-from typing import Any, Callable, NamedTuple, TypedDict
+from typing import Any, Callable, Literal, NamedTuple, TypedDict
 
 import numpy as np
 import polars as pl
@@ -6,7 +6,7 @@ import scipy.stats as st
 from numpy.typing import NDArray
 
 from globals import DEFAULT_ROUNDING, ITERS, LAGS, SIGN_LVL
-from maths.time_series import EquationTypes, augmented_dickey_fuller
+from maths.time_series import EquationTypes, augmented_dickey_fuller, kpss
 from models.types import ProbVector
 from utils.helpers import build_lag_df, compensate_prob, hyp_test_conc
 
@@ -305,4 +305,18 @@ def augmented_dickey_fuller_test(
 
     return _format_hyp_test_result(
         stat=adf_res.test_stat, p_val=adf_res.p_val, null="Unit Root/Non-Stationarity"
+    )
+
+
+def kpss_test(
+    data: pl.DataFrame, asset: str, null_type_stationarity: Literal["trend", "level"]
+) -> HypTestRes:
+    kpss_res = kpss(
+        data=data, asset=asset, null_type_stationarity=null_type_stationarity
+    )
+
+    return _format_hyp_test_result(
+        stat=kpss_res.test_stat,
+        p_val=kpss_res.p_val,
+        null=f"{null_type_stationarity} stationarity",
     )
