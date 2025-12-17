@@ -21,10 +21,12 @@ def kernel_smoothing(
 
     if time_based:
         data_n = len(data_array)
-        data_array = np.arange(data_n)
-        dist_to_ref = data_n - 1 - data_array  # uses last data point as ref
+        data = np.arange(data_n)
+        dist_to_ref = data_n - 1 - data  # uses last data point as ref
     elif not time_based and reference is not None:
         dist_to_ref = np.abs(reference - data_array)
+    else:
+        raise ValueError("You must choose correct parameters")
 
     bandwidth: float = half_life / (np.log(2.0) ** (1.0 / kernel_type))
     return np.exp(-((dist_to_ref / bandwidth) ** kernel_type))
