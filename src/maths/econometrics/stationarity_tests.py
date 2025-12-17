@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Literal, NamedTuple
+from typing import Callable, Literal, NamedTuple
 
 import numpy as np
 import polars as pl
@@ -14,13 +14,21 @@ from globals import (
     MACKIN_TAU_CUTOFFS,
     MACKIN_TAU_PVALS,
 )
+from maths.econometrics.base import (
+    EquationTypes,
+    HypTestRes,
+    OLSEquation,
+    add_deterministics_to_eq,
+    format_hyp_test_result,
+    ols_classic,
+)
 
-# INFO: Most of the code/idea below is taken from statsmodels but modified for this use case
-
-
-class OLSEquation(NamedTuple):
-    ind_var: NDArray[np.floating]
-    dep_vars: NDArray[np.floating]
+InferenceLabel = Literal[
+    "stationary",
+    "trend-stationary",
+    "unit-root/non-stationary",
+    "inconclusive/conflict",
+]
 
 
 class StationaryTestsRes(NamedTuple):
@@ -29,25 +37,70 @@ class StationaryTestsRes(NamedTuple):
     std_error: float | None
 
 
-EquationTypes = Literal["nc", "c", "ct", "ctt"]
+@dataclass(frozen=True, slots=True)
+class StationarityInference:
+    label: InferenceLabel
+    sign_lvl: float
+    details: str
+    adf: HypTestRes
+    kpss_level: HypTestRes
+    kpss_trend: HypTestRes
 
 
-@dataclass
-class OLSResults:
-    res: NDArray[np.floating]
-    std_errors: NDArray[np.floating]
-    t_stats: NDArray[np.floating]
-    residuals: NDArray[np.floating]
+@dataclass(frozen=True)
+class Rule:
+    label: InferenceLabel
+    when: Callable[[bool, bool, bool], bool]
+    details: str
 
-    def __post_init__(self) -> None:
-        shape = self.res.shape
-        if self.std_errors.shape != shape or self.t_stats.shape != shape:
-            raise ValueError(f"""
-            OLSResults values must all have the same shape:
-            res : {shape}
-            std_errors: {self.std_errors.shape}
-            t_stats: {self.t_stats}
-            """)
+
+RULES: tuple[Rule, ...] = (
+    Rule(
+        "stationary",
+        lambda A, L, T: A and (not L),
+        "ADF rejects unit root; KPSS(level) fails to reject level stationarity.",
+    ),
+    Rule(
+        "unit-root/non-stationary",
+        lambda A, L, T: (not A) and L,
+        "ADF fails to reject unit root; KPSS(level) rejects level stationarity.",
+    ),
+    Rule(
+        "trend-stationary",
+        lambda A, L, T: A and L and (not T),
+        "ADF rejects unit root; KPSS(level) rejects; KPSS(trend) fails to reject trend stationarity.",
+    ),
+)
+
+
+def infer_stationarity(
+    adf: HypTestRes,
+    kpss_level: HypTestRes,
+    kpss_trend: HypTestRes,
+) -> StationarityInference:
+    A = adf.reject_null
+    L = kpss_level.reject_null
+    T = kpss_trend.reject_null
+
+    for r in RULES:
+        if r.when(A, L, T):
+            return StationarityInference(
+                label=r.label,
+                sign_lvl=adf.sign_lvl,
+                details=r.details,
+                adf=adf,
+                kpss_level=kpss_level,
+                kpss_trend=kpss_trend,
+            )
+
+    return StationarityInference(
+        label="inconclusive/conflict",
+        sign_lvl=adf.sign_lvl,
+        details="No clean ADF/KPSS agreement pattern at this significance level.",
+        adf=adf,
+        kpss_level=kpss_level,
+        kpss_trend=kpss_trend,
+    )
 
 
 def _adf_max_lag(n_obs: int, n_reg: int | None) -> int:
@@ -61,90 +114,6 @@ def _adf_max_lag(n_obs: int, n_reg: int | None) -> int:
     else:
         max_lag = np.ceil(12.0 * np.power(n_obs / 100.0, 1 / 4.0))
         return int(min(n_obs // 2 - n_reg - 1, max_lag))
-
-
-def _add_deterministics_to_eq(
-    independent_vars: NDArray[np.floating], eq_type: EquationTypes
-):
-    n_obs = independent_vars.shape[0]
-
-    time_index = np.arange(1, n_obs + 1, dtype=float).reshape(-1, 1)
-    cols = [np.ones((n_obs, 1), dtype=float)]  # add constants "c" as default
-
-    if eq_type == "nc":
-        return independent_vars
-    if eq_type in ("ct", "ctt"):
-        cols.append(time_index)
-    if eq_type == "ctt":
-        cols.append(time_index**2)
-
-    deterministics = np.hstack(cols)
-    return np.hstack([deterministics, independent_vars])
-
-
-def _build_adf_equation(
-    data: pl.DataFrame,
-    asset: str,
-    lags: int,
-    eq_type: EquationTypes,
-) -> OLSEquation:
-    diff_lag_exprs = (
-        [
-            pl.col(asset).diff().shift(i).alias(f"{asset}_diff_1_lag_{i}")
-            for i in range(1, lags + 1)
-        ]
-        if lags > 0
-        else []
-    )
-
-    df = (
-        data.select(asset)
-        .with_columns(
-            pl.col(asset).diff().alias(f"{asset}_diff_1"),
-            pl.col(asset).shift(1).alias(f"{asset}_lag_1"),
-            *diff_lag_exprs,
-        )
-        .drop_nulls()
-    )
-
-    x_col_order = [f"{asset}_lag_1"] + (
-        [f"{asset}_diff_1_lag_{i}" for i in range(1, lags + 1)] if lags > 0 else []
-    )
-
-    y = df.select(f"{asset}_diff_1").to_numpy()
-    x = df.select(x_col_order).to_numpy()
-    if eq_type != "nc":
-        x = _add_deterministics_to_eq(independent_vars=x, eq_type=eq_type)
-
-    return OLSEquation(ind_var=x, dep_vars=y)
-
-
-def ols_classic(
-    dependent_var: NDArray[np.floating], independent_vars: NDArray[np.floating]
-) -> OLSResults:
-    res = np.linalg.lstsq(a=independent_vars, b=dependent_var, rcond=None)
-    ols_res = res[0]
-    sum_of_squared_residuals = res[1]
-    dependent_est = independent_vars @ ols_res
-    residuals = dependent_var - dependent_est
-
-    if sum_of_squared_residuals.size == 0:
-        sum_of_squared_residuals = float(residuals.T @ residuals)
-    else:
-        sum_of_squared_residuals = float(res[1].item())
-
-    n_obs = dependent_var.shape[0]
-    k = independent_vars.shape[1]
-    cov_scaler = sum_of_squared_residuals / (n_obs - k)
-
-    cov_inv = np.linalg.inv(independent_vars.T @ independent_vars)
-    scaled_cov_inv = cov_scaler * cov_inv
-    standard_errors = np.sqrt(np.diag(scaled_cov_inv)).reshape(-1, 1)
-    t_stats = ols_res / standard_errors
-
-    return OLSResults(
-        res=ols_res, std_errors=standard_errors, t_stats=t_stats, residuals=residuals
-    )
 
 
 def adf_p_val_approx(
@@ -211,7 +180,7 @@ def build_kpss_equation(
 
     empty_arr = np.empty(shape=dependent_var.shape)
     np.zeros_like(dependent_var)
-    determs = _add_deterministics_to_eq(independent_vars=empty_arr, eq_type=eq_type)[
+    determs = add_deterministics_to_eq(independent_vars=empty_arr, eq_type=eq_type)[
         :, :-1
     ]  # we remove original
 
@@ -284,3 +253,86 @@ def kpss(
     p_val = _kpss_p_val_approx(t_stat=kpss_stat, eq_type=eq_type)
 
     return StationaryTestsRes(test_stat=kpss_stat, p_val=p_val, std_error=None)
+
+
+def _build_adf_equation(
+    data: pl.DataFrame,
+    asset: str,
+    lags: int,
+    eq_type: EquationTypes,
+) -> OLSEquation:
+    diff_lag_exprs = (
+        [
+            pl.col(asset).diff().shift(i).alias(f"{asset}_diff_1_lag_{i}")
+            for i in range(1, lags + 1)
+        ]
+        if lags > 0
+        else []
+    )
+
+    df = (
+        data.select(asset)
+        .with_columns(
+            pl.col(asset).diff().alias(f"{asset}_diff_1"),
+            pl.col(asset).shift(1).alias(f"{asset}_lag_1"),
+            *diff_lag_exprs,
+        )
+        .drop_nulls()
+    )
+
+    x_col_order = [f"{asset}_lag_1"] + (
+        [f"{asset}_diff_1_lag_{i}" for i in range(1, lags + 1)] if lags > 0 else []
+    )
+
+    y = df.select(f"{asset}_diff_1").to_numpy()
+    x = df.select(x_col_order).to_numpy()
+    if eq_type != "nc":
+        x = add_deterministics_to_eq(independent_vars=x, eq_type=eq_type)
+
+    return OLSEquation(ind_var=x, dep_vars=y)
+
+
+def augmented_dickey_fuller_test(
+    data: pl.DataFrame, asset: str, lags: int | None, eq_type: EquationTypes = "nc"
+) -> HypTestRes:
+    adf_res = augmented_dickey_fuller(
+        data=data, asset=asset, lags=lags, eq_type=eq_type
+    )
+
+    return format_hyp_test_result(
+        stat=adf_res.test_stat,
+        p_val=adf_res.p_val,
+        null=f"Unit Root/Non-Stationarity at {lags} lags",
+    )
+
+
+def kpss_test(
+    data: pl.DataFrame, asset: str, null_type_stationarity: Literal["trend", "level"]
+) -> HypTestRes:
+    kpss_res = kpss(
+        data=data, asset=asset, null_type_stationarity=null_type_stationarity
+    )
+
+    return format_hyp_test_result(
+        stat=kpss_res.test_stat,
+        p_val=kpss_res.p_val,
+        null=f"{null_type_stationarity} stationarity",
+    )
+
+
+def stationarity_tests(
+    data: pl.DataFrame,
+    asset: str,
+    lags: int | None,
+    eq_type: EquationTypes = "nc",
+) -> StationarityInference:
+    adf_res = augmented_dickey_fuller_test(
+        data=data, asset=asset, lags=lags, eq_type=eq_type
+    )
+    kpss_res_lvl = kpss_test(data=data, asset=asset, null_type_stationarity="level")
+
+    kpss_res_trend = kpss_test(data=data, asset=asset, null_type_stationarity="trend")
+
+    return infer_stationarity(
+        adf=adf_res, kpss_level=kpss_res_lvl, kpss_trend=kpss_res_trend
+    )

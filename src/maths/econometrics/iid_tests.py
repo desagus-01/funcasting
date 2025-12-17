@@ -1,25 +1,17 @@
 from dataclasses import dataclass
-from typing import Any, Callable, Literal, NamedTuple, TypedDict
+from typing import Any, Callable, TypedDict
 
 import numpy as np
 import polars as pl
 import scipy.stats as st
 from numpy.typing import NDArray
 
-from globals import DEFAULT_ROUNDING, ITERS, LAGS, SIGN_LVL
-from maths.time_series import EquationTypes, augmented_dickey_fuller, kpss
+from globals import ITERS, LAGS
+from maths.econometrics.base import HypTestRes, format_hyp_test_result
 from models.types import ProbVector
-from utils.helpers import build_lag_df, compensate_prob, hyp_test_conc
+from utils.helpers import build_lag_df, compensate_prob, select_assets, split_df_in_half
 
-
-@dataclass(frozen=True, slots=True)
-class HypTestRes:
-    stat: float
-    p_val: float
-    sign_lvl: float
-    null: str
-    reject_null: bool
-    desc: str
+StatFunc = Callable[[np.ndarray, ProbVector, np.random.Generator | None], float]
 
 
 class PerAssetLagResult(TypedDict):
@@ -27,121 +19,15 @@ class PerAssetLagResult(TypedDict):
     rejected_lags: list[str]
 
 
+LagTestResult = dict[str, PerAssetLagResult]
+PairTest = Callable[..., HypTestRes]
+
+
 @dataclass(frozen=True, slots=True)
 class MeanCovRes:
     assets: list[str]
     means: NDArray[np.floating]
     cov: NDArray[np.floating]
-
-
-LagTestResult = dict[str, PerAssetLagResult]
-PairTest = Callable[..., HypTestRes]
-StatFunc = Callable[[np.ndarray, ProbVector, np.random.Generator | None], float]
-
-
-class SplitDF(NamedTuple):
-    first_half: pl.DataFrame
-    second_half: pl.DataFrame
-
-
-InferenceLabel = Literal[
-    "stationary",
-    "trend-stationary",
-    "unit-root/non-stationary",
-    "inconclusive/conflict",
-]
-
-
-@dataclass(frozen=True, slots=True)
-class StationarityInference:
-    label: InferenceLabel
-    sign_lvl: float
-    details: str
-    adf: HypTestRes
-    kpss_level: HypTestRes
-    kpss_trend: HypTestRes
-
-
-@dataclass(frozen=True)
-class Rule:
-    label: InferenceLabel
-    when: Callable[[bool, bool, bool], bool]
-    details: str
-
-
-RULES: tuple[Rule, ...] = (
-    Rule(
-        "stationary",
-        lambda A, L, T: A and (not L),
-        "ADF rejects unit root; KPSS(level) fails to reject level stationarity.",
-    ),
-    Rule(
-        "unit-root/non-stationary",
-        lambda A, L, T: (not A) and L,
-        "ADF fails to reject unit root; KPSS(level) rejects level stationarity.",
-    ),
-    Rule(
-        "trend-stationary",
-        lambda A, L, T: A and L and (not T),
-        "ADF rejects unit root; KPSS(level) rejects; KPSS(trend) fails to reject trend stationarity.",
-    ),
-)
-
-
-def infer_stationarity(
-    adf: HypTestRes,
-    kpss_level: HypTestRes,
-    kpss_trend: HypTestRes,
-) -> StationarityInference:
-    A = adf.reject_null
-    L = kpss_level.reject_null
-    T = kpss_trend.reject_null
-
-    for r in RULES:
-        if r.when(A, L, T):
-            return StationarityInference(
-                label=r.label,
-                sign_lvl=adf.sign_lvl,
-                details=r.details,
-                adf=adf,
-                kpss_level=kpss_level,
-                kpss_trend=kpss_trend,
-            )
-
-    return StationarityInference(
-        label="inconclusive/conflict",
-        sign_lvl=adf.sign_lvl,
-        details="No clean ADF/KPSS agreement pattern at this significance level.",
-        adf=adf,
-        kpss_level=kpss_level,
-        kpss_trend=kpss_trend,
-    )
-
-
-def _format_hyp_test_result(
-    stat: float, p_val: float, null: str = "Independence"
-) -> HypTestRes:
-    p_val = float(p_val)
-    stat = float(stat)
-    hyp_conc = hyp_test_conc(p_val, null_hyp=null)
-
-    return HypTestRes(
-        stat=round(stat, DEFAULT_ROUNDING),
-        p_val=round(p_val, DEFAULT_ROUNDING),
-        sign_lvl=SIGN_LVL,
-        null=null,
-        reject_null=hyp_conc["reject_null"],
-        desc=hyp_conc["desc"],
-    )
-
-
-def _select_assets(df: pl.DataFrame, assets: list[str] | None) -> list[str]:
-    """
-    Retrieves and makes sures that assets exist in df, if None, chooses all assets ex date
-    """
-    if assets is None:
-        return [c for c in df.columns if c != "date"]
-    return df.select(assets).columns
 
 
 def run_lagged_tests(
@@ -152,7 +38,7 @@ def run_lagged_tests(
     lags: int = LAGS["testing"],
     **test_kwargs: Any,
 ) -> LagTestResult:
-    sel_assets = _select_assets(data, assets)
+    sel_assets = select_assets(data, assets)
     results: LagTestResult = {}
     for asset in sel_assets:
         df_lagged = build_lag_df(data=data, asset=asset, lags=lags)
@@ -219,7 +105,7 @@ def autocorrelation_pair_test(
     Z = abs(corr) * np.sqrt(pair_df.height)
     p_val = float(2 * (1 - st.norm.cdf(Z)))
 
-    return _format_hyp_test_result(stat=corr, p_val=p_val, null="Independence")
+    return format_hyp_test_result(stat=corr, p_val=p_val, null="Independence")
 
 
 def ellipsoid_lag_test(
@@ -312,7 +198,7 @@ def independence_permutation_test(
 
     p_val = (1.0 + (null_dist >= stat).sum()) / (iter + 1.0)
 
-    return _format_hyp_test_result(stat=stat, p_val=p_val, null="Independence")
+    return format_hyp_test_result(stat=stat, p_val=p_val, null="Independence")
 
 
 def copula_lag_independence_test(
@@ -330,20 +216,6 @@ def copula_lag_independence_test(
     )
 
 
-def split_df_in_half(data: pl.DataFrame) -> SplitDF:
-    height = data.height
-
-    if height % 2 != 0:
-        height -= 1
-        data = data.slice(0, height)
-
-    mid = height // 2
-    first_half = data.slice(0, mid)
-    second_half = data.slice(mid, mid)
-
-    return SplitDF(first_half, second_half)
-
-
 def kolmogrov_smirnov_2stest(
     dist_1: NDArray[np.floating],
     dist_2: NDArray[np.floating],
@@ -354,7 +226,7 @@ def kolmogrov_smirnov_2stest(
         alternative="two-sided",
     )
 
-    return _format_hyp_test_result(
+    return format_hyp_test_result(
         stat=res.statistic, p_val=res.pvalue, null="Identically Distributed"
     )
 
@@ -362,7 +234,7 @@ def kolmogrov_smirnov_2stest(
 def univariate_kolmogrov_smirnov_test(
     data: pl.DataFrame, assets: list[str] | None = None
 ) -> dict[str, dict[str, HypTestRes] | list[str]]:
-    sel_assets = _select_assets(data, assets)
+    sel_assets = select_assets(data, assets)
 
     ks_res: dict[str, HypTestRes] = {}
     for asset in sel_assets:
@@ -377,49 +249,3 @@ def univariate_kolmogrov_smirnov_test(
     rejected = [k for k, res in ks_res.items() if res.reject_null]
 
     return {"results": ks_res, "rejected": rejected}
-
-
-def augmented_dickey_fuller_test(
-    data: pl.DataFrame, asset: str, lags: int | None, eq_type: EquationTypes = "nc"
-) -> HypTestRes:
-    adf_res = augmented_dickey_fuller(
-        data=data, asset=asset, lags=lags, eq_type=eq_type
-    )
-
-    return _format_hyp_test_result(
-        stat=adf_res.test_stat,
-        p_val=adf_res.p_val,
-        null=f"Unit Root/Non-Stationarity at {lags} lags",
-    )
-
-
-def kpss_test(
-    data: pl.DataFrame, asset: str, null_type_stationarity: Literal["trend", "level"]
-) -> HypTestRes:
-    kpss_res = kpss(
-        data=data, asset=asset, null_type_stationarity=null_type_stationarity
-    )
-
-    return _format_hyp_test_result(
-        stat=kpss_res.test_stat,
-        p_val=kpss_res.p_val,
-        null=f"{null_type_stationarity} stationarity",
-    )
-
-
-def stationarity_tests(
-    data: pl.DataFrame,
-    asset: str,
-    lags: int | None,
-    eq_type: EquationTypes = "nc",
-) -> StationarityInference:
-    adf_res = augmented_dickey_fuller_test(
-        data=data, asset=asset, lags=lags, eq_type=eq_type
-    )
-    kpss_res_lvl = kpss_test(data=data, asset=asset, null_type_stationarity="level")
-
-    kpss_res_trend = kpss_test(data=data, asset=asset, null_type_stationarity="trend")
-
-    return infer_stationarity(
-        adf=adf_res, kpss_level=kpss_res_lvl, kpss_trend=kpss_res_trend
-    )

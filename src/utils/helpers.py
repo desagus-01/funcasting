@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import NamedTuple, TypedDict
 
 import numpy as np
 import polars as pl
@@ -8,6 +8,34 @@ from pydantic import validate_call
 
 from globals import LAGS, SIGN_LVL, model_cfg, sign_operations
 from models.types import CorrInfo, ProbVector, View
+
+
+class SplitDF(NamedTuple):
+    first_half: pl.DataFrame
+    second_half: pl.DataFrame
+
+
+def split_df_in_half(data: pl.DataFrame) -> SplitDF:
+    height = data.height
+
+    if height % 2 != 0:
+        height -= 1
+        data = data.slice(0, height)
+
+    mid = height // 2
+    first_half = data.slice(0, mid)
+    second_half = data.slice(mid, mid)
+
+    return SplitDF(first_half, second_half)
+
+
+def select_assets(df: pl.DataFrame, assets: list[str] | None) -> list[str]:
+    """
+    Retrieves and makes sures that assets exist in df, if None, chooses all assets ex date
+    """
+    if assets is None:
+        return [c for c in df.columns if c != "date"]
+    return df.select(assets).columns
 
 
 def weighted_moments(

@@ -9,7 +9,8 @@ from polars import DataFrame
 
 from globals import ITERS
 from maths.distributions import uniform_probs
-from maths.stat_tests import HypTestRes, independence_permutation_test, sw_mc
+from maths.econometrics.base import HypTestRes
+from maths.econometrics.iid_tests import independence_permutation_test, sw_mc
 from methods.cma import CopulaMarginalModel
 from methods.ep import entropy_pooling_probs
 from models.types import ProbVector, View
