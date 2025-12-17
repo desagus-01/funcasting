@@ -10,6 +10,5 @@ aapl = risk_drivers.select("AAPL")
 
 aapl
 # %%
-x = kpss_test(risk_drivers, "AAPL", "level")
 
-x
+x = kpss_test(risk_drivers, "AAPL", "level")

@@ -4,6 +4,7 @@
 > [!TODO] Break Down of Stochastic Process
 1. Pre-Processing
     > - [ ] Add KPSS tests [Reference link](https://www.statsmodels.org/dev/examples/notebooks/generated/stationarity_detrending_adf_kpss.html)
+    > - [ ] Change HyptTestRes to Dataclass/TypedTuple instead of TypedDict? 
     > - [ ] De-trending  
     > - [ ] Stochastic de-trending (check how to) 
 1. Validation (Tests)

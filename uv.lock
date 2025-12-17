@@ -517,7 +517,6 @@ dependencies = [
     { name = "pytest" },
     { name = "scipy" },
     { name = "scipy-stubs" },
-    { name = "statsmodels" },
 ]
 
 [package.metadata]
@@ -535,7 +534,6 @@ requires-dist = [
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "scipy", specifier = ">=1.16.1" },
     { name = "scipy-stubs", specifier = ">=1.16.3.3" },
-    { name = "statsmodels", specifier = ">=0.14.5" },
 ]
 
 [[package]]
