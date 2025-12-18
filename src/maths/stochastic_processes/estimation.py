@@ -18,6 +18,8 @@ class OLSResults:
     std_errors: NDArray[np.floating]
     t_stats: NDArray[np.floating]
     residuals: NDArray[np.floating]
+    aic: float
+    bic: float
 
     def __post_init__(self) -> None:
         shape = self.res.shape
@@ -49,9 +51,47 @@ def add_deterministics_to_eq(
     return np.hstack([deterministics, independent_vars])
 
 
-def ols_classic(
+def ols_log_likelihood(sum_of_squared_residuals: float, n_obs: int) -> float:
+    return (
+        -0.5
+        * n_obs
+        * (np.log(2 * np.pi) + 1.0 + np.log(sum_of_squared_residuals / n_obs))
+    )
+
+
+def get_aic(log_likelihood: float, n_parameters: int) -> float:
+    return -2 * log_likelihood + 2 * n_parameters
+
+
+def get_bic(log_likelihood: float, n_obs: int, n_parameters: int) -> float:
+    return -2 * log_likelihood + np.log(n_obs) * n_parameters
+
+
+class AICBIC(NamedTuple):
+    aic: float
+    bic: float
+
+
+def get_aic_bic(
+    sum_of_squared_residuals: float, n_obs: int, n_parameters: int
+) -> AICBIC:
+    llf = ols_log_likelihood(
+        sum_of_squared_residuals=sum_of_squared_residuals, n_obs=n_obs
+    )
+    aic = get_aic(log_likelihood=llf, n_parameters=n_parameters)
+    bic = get_bic(log_likelihood=llf, n_obs=n_obs, n_parameters=n_parameters)
+    return AICBIC(aic=aic, bic=bic)
+
+
+class LeastSquaresRes(NamedTuple):
+    results: NDArray[np.floating]
+    residuals: NDArray[np.floating]
+    sum_of_squared_residuals: float
+
+
+def least_squares_fit(
     dependent_var: NDArray[np.floating], independent_vars: NDArray[np.floating]
-) -> OLSResults:
+) -> LeastSquaresRes:
     res = np.linalg.lstsq(a=independent_vars, b=dependent_var, rcond=None)
     ols_res = res[0]
     sum_of_squared_residuals = res[1]
@@ -63,15 +103,50 @@ def ols_classic(
     else:
         sum_of_squared_residuals = float(res[1].item())
 
-    n_obs = dependent_var.shape[0]
+    return LeastSquaresRes(
+        results=ols_res,
+        residuals=residuals,
+        sum_of_squared_residuals=sum_of_squared_residuals,
+    )
+
+
+def ols_standard_errors(
+    independent_vars: NDArray[np.floating], sum_of_squared_residuals: float, n_obs: int
+) -> NDArray[np.floating]:
     k = independent_vars.shape[1]
     cov_scaler = sum_of_squared_residuals / (n_obs - k)
 
-    cov_inv = np.linalg.inv(independent_vars.T @ independent_vars)
+    cov_inv = np.linalg.pinv(independent_vars.T @ independent_vars)
     scaled_cov_inv = cov_scaler * cov_inv
-    standard_errors = np.sqrt(np.diag(scaled_cov_inv)).reshape(-1, 1)
-    t_stats = ols_res / standard_errors
+    return np.sqrt(np.diag(scaled_cov_inv)).reshape(-1, 1)
+
+
+def ols_classic(
+    dependent_var: NDArray[np.floating], independent_vars: NDArray[np.floating]
+) -> OLSResults:
+    n_obs = dependent_var.shape[0]
+
+    ols_res, residuals, sum_of_squared_residuals = least_squares_fit(
+        dependent_var=dependent_var, independent_vars=independent_vars
+    )
+
+    standard_errors = ols_standard_errors(
+        independent_vars=independent_vars,
+        sum_of_squared_residuals=sum_of_squared_residuals,
+        n_obs=n_obs,
+    )
+
+    fit_evals = get_aic_bic(
+        sum_of_squared_residuals=sum_of_squared_residuals,
+        n_obs=n_obs,
+        n_parameters=independent_vars.shape[1],
+    )
 
     return OLSResults(
-        res=ols_res, std_errors=standard_errors, t_stats=t_stats, residuals=residuals
+        res=ols_res,
+        std_errors=standard_errors,
+        t_stats=ols_res / standard_errors,
+        residuals=residuals,
+        aic=fit_evals.aic,
+        bic=fit_evals.bic,
     )
