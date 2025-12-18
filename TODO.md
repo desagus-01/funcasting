@@ -5,7 +5,7 @@
 1. Pre-Processing
    > - [ ] Stochastic de-trending (check how to) 
 2. Validation (Tests)
-    > - [ ] Add in auto lag for ADF test 
+    > - [ ] Look at ARPM for other types of tests 
 1. Estimation
     > - [ ] Log-likelihood + FFP based log-likelihood implementation for estimating parameters 
 1. Foreacasting
@@ -30,6 +30,7 @@
 
 
 ## Completed
+    > - [X] Add in auto lag for ADF test 
    > - [X] Deterministic De-trending  
     > - [X] Re-factor as confusing atm 
     > - [X] Add tests for stationarity (currently only on iid) 
