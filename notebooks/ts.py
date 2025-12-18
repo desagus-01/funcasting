@@ -2,14 +2,14 @@
 from pprint import pprint as print
 
 from maths.distributions import uniform_probs
-from maths.econometrics import (
+from maths.helpers import add_detrend_column
+from maths.stochastic_processes import (
     HypTestRes,
     copula_lag_independence_test,
     ellipsoid_lag_test,
     stationarity_tests,
     univariate_kolmogrov_smirnov_test,
 )
-from maths.helpers import add_detrend_column
 from methods.cma import CopulaMarginalModel
 from models.scenarios import ScenarioProb
 from utils.template import get_template

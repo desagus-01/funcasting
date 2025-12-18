@@ -1,4 +1,4 @@
-from typing import NamedTuple, TypedDict
+from typing import NamedTuple
 
 import numpy as np
 import polars as pl
@@ -6,7 +6,7 @@ import polars.selectors as cs
 from numpy.typing import NDArray
 from pydantic import validate_call
 
-from globals import LAGS, SIGN_LVL, model_cfg, sign_operations
+from globals import LAGS, model_cfg, sign_operations
 from models.types import CorrInfo, ProbVector, View
 
 
@@ -135,23 +135,3 @@ def compensate_prob(prob: ProbVector, n_remove: int) -> ProbVector:
     diff_fac = removed_probs.sum() / (len(prob) - len(removed_probs))
 
     return prob[n_remove:] + diff_fac
-
-
-class HypTestRes(TypedDict):
-    reject_null: bool
-    desc: str
-
-
-def hyp_test_conc(p_val: float, null_hyp: str) -> HypTestRes:
-    if p_val >= SIGN_LVL:
-        return {
-            "reject_null": False,
-            "desc": (
-                f"Fail to reject null hypothesis of {null_hyp} at {SIGN_LVL} significance."
-            ),
-        }
-    else:
-        return {
-            "reject_null": True,
-            "desc": f"Reject null hypothesis of {null_hyp} at {SIGN_LVL} significance.",
-        }

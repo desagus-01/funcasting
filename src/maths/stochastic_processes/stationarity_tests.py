@@ -14,12 +14,14 @@ from globals import (
     MACKIN_TAU_CUTOFFS,
     MACKIN_TAU_PVALS,
 )
-from maths.econometrics.base import (
-    EquationTypes,
+from maths.stochastic_processes.base import (
     HypTestRes,
+    format_hyp_test_result,
+)
+from maths.stochastic_processes.estimation import (
+    EquationTypes,
     OLSEquation,
     add_deterministics_to_eq,
-    format_hyp_test_result,
     ols_classic,
 )
 
