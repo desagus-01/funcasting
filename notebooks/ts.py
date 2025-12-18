@@ -40,7 +40,7 @@ series_to_test = [
 
 stationarity_res: dict[str, HypTestRes] = {}
 for col in series_to_test:
-    stationarity_res[col] = stationarity_tests(risk_drivers, col, lags=10)
+    stationarity_res[col] = stationarity_tests(risk_drivers, col, lags=10, eq_type="nc")
 
 show_results("Stationarity tests", stationarity_res)
 

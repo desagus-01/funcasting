@@ -7,6 +7,12 @@ from numpy.typing import NDArray
 EquationTypes = Literal["nc", "c", "ct", "ctt"]
 
 
+class LeastSquaresRes(NamedTuple):
+    results: NDArray[np.floating]
+    residuals: NDArray[np.floating]
+    sum_of_squared_residuals: float
+
+
 class OLSEquation(NamedTuple):
     ind_var: NDArray[np.floating]
     dep_vars: NDArray[np.floating]
@@ -81,12 +87,6 @@ def get_aic_bic(
     aic = get_aic(log_likelihood=llf, n_parameters=n_parameters)
     bic = get_bic(log_likelihood=llf, n_obs=n_obs, n_parameters=n_parameters)
     return AICBIC(aic=aic, bic=bic)
-
-
-class LeastSquaresRes(NamedTuple):
-    results: NDArray[np.floating]
-    residuals: NDArray[np.floating]
-    sum_of_squared_residuals: float
 
 
 def least_squares_fit(

@@ -140,11 +140,37 @@ def adf_p_val_approx(
     return float(norm.cdf(polyval(tau_coef[::-1], test_stat)))
 
 
+def _adf_autolag(
+    dependent_var: NDArray[np.floating],
+    independent_vars: NDArray[np.floating],
+    columns_to_exclude: int,
+    max_lag: int,
+    metric: Literal["aic", "bic"] = "aic",
+) -> tuple[float, int]:
+    """
+    Assume this has already been passed by _build_adf_equation
+    Will output numbers of lags to include
+    """
+    ols_results = {}
+    for lag in range(columns_to_exclude, columns_to_exclude + max_lag + 1):
+        independent_lags = independent_vars[:, :lag]
+        ols_results[lag] = ols_classic(
+            dependent_var=dependent_var, independent_vars=independent_lags
+        )
+    best_metric, best_cutoff = min(
+        (getattr(res, metric), lag_n) for lag_n, res in ols_results.items()
+    )
+
+    lags_to_keep = best_cutoff - columns_to_exclude
+    return best_metric, lags_to_keep
+
+
 def _build_adf_equation(
     data: pl.DataFrame,
     asset: str,
     lags: int,
     eq_type: EquationTypes,
+    metric: Literal["aic", "bic"] = "aic",
 ) -> OLSEquation:
     diff_lag_exprs = (
         [
@@ -174,17 +200,28 @@ def _build_adf_equation(
     if eq_type != "nc":
         x = add_deterministics_to_eq(independent_vars=x, eq_type=eq_type)
 
+    added_columns = EQ_TYPE_ADDED_DETS[eq_type] + 1
+    best_metric, lags_to_keep = _adf_autolag(
+        dependent_var=y,
+        independent_vars=x,
+        columns_to_exclude=added_columns,
+        max_lag=lags,
+        metric=metric,
+    )
+    cutoff = added_columns + lags_to_keep
+    x = x[:, :cutoff]
+
     return OLSEquation(ind_var=x, dep_vars=y)
 
 
 def augmented_dickey_fuller(
     data: pl.DataFrame,
     asset: str,
-    lags: int | None,
+    metric: Literal["aic", "bic"] = "aic",
+    lags: int | None = None,
     eq_type: EquationTypes = "nc",
 ) -> StationaryTestsRes:
     added_regressors = EQ_TYPE_ADDED_DETS[eq_type]
-    # TODO: Change below to autolag like statsmodels
     if lags is None:
         max_lags = _adf_max_lag(
             data.height,
@@ -192,7 +229,9 @@ def augmented_dickey_fuller(
         )
     else:
         max_lags = lags
-    adf_eq = _build_adf_equation(data=data, asset=asset, lags=max_lags, eq_type=eq_type)
+    adf_eq = _build_adf_equation(
+        data=data, asset=asset, lags=max_lags, eq_type=eq_type, metric=metric
+    )
 
     ols_res = ols_classic(
         dependent_var=adf_eq.dep_vars, independent_vars=adf_eq.ind_var
@@ -294,16 +333,20 @@ def kpss(
 
 
 def augmented_dickey_fuller_test(
-    data: pl.DataFrame, asset: str, lags: int | None, eq_type: EquationTypes = "nc"
+    data: pl.DataFrame,
+    asset: str,
+    metric: Literal["aic", "bic"] = "aic",
+    lags: int | None = None,
+    eq_type: EquationTypes = "nc",
 ) -> HypTestRes:
     adf_res = augmented_dickey_fuller(
-        data=data, asset=asset, lags=lags, eq_type=eq_type
+        data=data, asset=asset, metric=metric, lags=lags, eq_type=eq_type
     )
 
     return format_hyp_test_result(
         stat=adf_res.test_stat,
         p_val=adf_res.p_val,
-        null=f"Unit Root/Non-Stationarity at {lags} lags",
+        null="Unit Root/Non-Stationarity",
     )
 
 
@@ -324,11 +367,12 @@ def kpss_test(
 def stationarity_tests(
     data: pl.DataFrame,
     asset: str,
-    lags: int | None,
+    adf_metric: Literal["aic", "bic"] = "aic",
+    lags: int | None = None,
     eq_type: EquationTypes = "nc",
 ) -> StationarityInference:
     adf_res = augmented_dickey_fuller_test(
-        data=data, asset=asset, lags=lags, eq_type=eq_type
+        data=data, asset=asset, metric=adf_metric, lags=lags, eq_type=eq_type
     )
     kpss_res_lvl = kpss_test(data=data, asset=asset, null_type_stationarity="level")
 
