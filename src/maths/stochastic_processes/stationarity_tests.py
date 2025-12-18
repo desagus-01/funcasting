@@ -138,6 +138,43 @@ def adf_p_val_approx(
     return float(norm.cdf(polyval(tau_coef[::-1], test_stat)))
 
 
+def _build_adf_equation(
+    data: pl.DataFrame,
+    asset: str,
+    lags: int,
+    eq_type: EquationTypes,
+) -> OLSEquation:
+    diff_lag_exprs = (
+        [
+            pl.col(asset).diff().shift(i).alias(f"{asset}_diff_1_lag_{i}")
+            for i in range(1, lags + 1)
+        ]
+        if lags > 0
+        else []
+    )
+
+    df = (
+        data.select(asset)
+        .with_columns(
+            pl.col(asset).diff().alias(f"{asset}_diff_1"),
+            pl.col(asset).shift(1).alias(f"{asset}_lag_1"),
+            *diff_lag_exprs,
+        )
+        .drop_nulls()
+    )
+
+    x_col_order = [f"{asset}_lag_1"] + (
+        [f"{asset}_diff_1_lag_{i}" for i in range(1, lags + 1)] if lags > 0 else []
+    )
+
+    y = df.select(f"{asset}_diff_1").to_numpy()
+    x = df.select(x_col_order).to_numpy()
+    if eq_type != "nc":
+        x = add_deterministics_to_eq(independent_vars=x, eq_type=eq_type)
+
+    return OLSEquation(ind_var=x, dep_vars=y)
+
+
 def augmented_dickey_fuller(
     data: pl.DataFrame,
     asset: str,
@@ -252,43 +289,6 @@ def kpss(
     p_val = _kpss_p_val_approx(t_stat=kpss_stat, eq_type=eq_type)
 
     return StationaryTestsRes(test_stat=kpss_stat, p_val=p_val, std_error=None)
-
-
-def _build_adf_equation(
-    data: pl.DataFrame,
-    asset: str,
-    lags: int,
-    eq_type: EquationTypes,
-) -> OLSEquation:
-    diff_lag_exprs = (
-        [
-            pl.col(asset).diff().shift(i).alias(f"{asset}_diff_1_lag_{i}")
-            for i in range(1, lags + 1)
-        ]
-        if lags > 0
-        else []
-    )
-
-    df = (
-        data.select(asset)
-        .with_columns(
-            pl.col(asset).diff().alias(f"{asset}_diff_1"),
-            pl.col(asset).shift(1).alias(f"{asset}_lag_1"),
-            *diff_lag_exprs,
-        )
-        .drop_nulls()
-    )
-
-    x_col_order = [f"{asset}_lag_1"] + (
-        [f"{asset}_diff_1_lag_{i}" for i in range(1, lags + 1)] if lags > 0 else []
-    )
-
-    y = df.select(f"{asset}_diff_1").to_numpy()
-    x = df.select(x_col_order).to_numpy()
-    if eq_type != "nc":
-        x = add_deterministics_to_eq(independent_vars=x, eq_type=eq_type)
-
-    return OLSEquation(ind_var=x, dep_vars=y)
 
 
 def augmented_dickey_fuller_test(
