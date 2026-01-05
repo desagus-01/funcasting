@@ -15,8 +15,7 @@ def deterministic_detrend(
     elif data.ndim > 2:
         raise NotImplementedError("data.ndim > 2 is not implemented until it is needed")
 
-    if polynomial_order == 0:
-        # Special case demean
+    if polynomial_order == 0:  # Special case, just de-mean
         resid = data - data.mean(axis=0)
     else:
         trends = np.vander(np.arange(float(data.shape[0])), N=polynomial_order + 1)
@@ -32,7 +31,7 @@ def deterministic_detrend(
 def add_detrend_column(
     data: pl.DataFrame,
     assets: list[str] | None = None,
-    polynomial_order: int = 1,
+    polynomial_orders: list[int] = [0, 1, 2, 3],
     axis: int = 0,
 ) -> pl.DataFrame:
     if assets is None:
@@ -40,17 +39,18 @@ def add_detrend_column(
             cs.numeric()
         ).columns  # only get numeric columns (ie no dates)
 
-    detrended_series = deterministic_detrend(
-        data=data.select(assets).to_numpy(),
-        polynomial_order=polynomial_order,
-        axis=axis,
-    )
+    asset_arrays = data.select(assets).to_numpy()
 
-    new_cols = [
-        pl.Series(name=f"{asset}_detrended", values=detrended_series[:, i]).cast(
-            pl.Float64
-        )
-        for i, asset in enumerate(assets)
-    ]
+    new_cols: list[pl.Series] = []
+    for p in polynomial_orders:
+        detrended = deterministic_detrend(asset_arrays, polynomial_order=p, axis=axis)
+
+        for i, asset in enumerate(assets):
+            new_cols.append(
+                pl.Series(
+                    name=f"{asset}_detrended_p{p}",
+                    values=detrended[:, i],
+                ).cast(pl.Float64)
+            )
 
     return data.with_columns(new_cols)

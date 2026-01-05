@@ -1,6 +1,19 @@
 
 > [!ATTENTION] Update data with ADJUSTED prices (yfinance for now)
 
+**Possible Univariate Pipeline**
+1. Test Efficiency
+    1. Invariance Tests on **increments**
+2. If efficiency
+    1. Accept RW
+    2. Choose distribution for Et
+3. If not efficiency
+    1. test for trend
+    2. test for seasonality
+    3. re-test efficiency
+4. If still fails look at other phenomenon 
+ 
+
 > [!TODO] Break Down of Stochastic Process
 1. Pre-Processing
    > - [ ] Stochastic de-trending (check how to) 
