@@ -8,7 +8,7 @@
     1. Accept RW
     2. Choose distribution for Et
 3. If not efficiency
-    1. test for trend
+    1. [x] test for trend ✅ 2026-01-05
     2. test for seasonality
     3. re-test efficiency
 4. If still fails look at other phenomenon 
