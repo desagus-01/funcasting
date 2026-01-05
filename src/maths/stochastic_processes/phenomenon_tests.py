@@ -13,6 +13,8 @@ from maths.stochastic_processes.stationarity_tests import (
 
 
 class DTrendRes(NamedTuple):
+    """Result for one asset and one polynomial order."""
+
     asset: str
     polynomial_order: int
     stationarity_inf: str
@@ -21,18 +23,75 @@ class DTrendRes(NamedTuple):
 
 @dataclass(frozen=True)
 class DTrendTest:
+    """Summary of deterministic-trend evidence for one asset."""
+
     evidence_of_deterministic_trend: bool
     lowest_polynomial_stationary: int | None
     results: list[DTrendRes]
 
 
 def is_stationary_result(res: DTrendRes) -> bool:
+    """True if stationarity inference is 'stationary'."""
     return res.stationarity_inf == "stationary"
 
 
 def lowest_polynomial_trend(results: list[DTrendRes]) -> int | None:
+    """Return the lowest polynomial order that yields stationarity, else None."""
     orders = [r.polynomial_order for r in results if is_stationary_result(r)]
     return min(orders) if orders else None
+
+
+def _detrended_col(asset: str, p: int) -> str:
+    """Column name for detrended series."""
+    return f"{asset}_detrended_p{p}"
+
+
+def _parse_poly_order(col: str) -> int:
+    """Parse polynomial order from a detrended column name."""
+    m = re.search(r"_p(\d+)$", col)
+    if not m:
+        raise ValueError(f"Can't parse polynomial order from column: {col}")
+    return int(m.group(1))
+
+
+def _stationarity_for_col(
+    df: DataFrame,
+    col: str,
+    *,
+    lags: int,
+    eq_type: EquationTypes,
+) -> StationarityInference:
+    """Run stationarity tests for one column."""
+    if col not in df.columns:
+        raise ValueError(
+            f"Expected detrended column '{col}' not found. "
+            "Check add_detrend_column naming."
+        )
+    return stationarity_tests(data=df, asset=col, lags=lags, eq_type=eq_type)
+
+
+def _asset_dtrend_results(
+    df: DataFrame,
+    asset: str,
+    polynomial_orders: list[int],
+    *,
+    lags: int,
+    eq_type: EquationTypes,
+) -> list[DTrendRes]:
+    """Compute DTrendRes list for one asset across polynomial orders."""
+    res: list[DTrendRes] = []
+    for p in polynomial_orders:
+        col = _detrended_col(asset, p)
+        inf = _stationarity_for_col(df, col, lags=lags, eq_type=eq_type)
+        res.append(
+            DTrendRes(
+                asset=asset,
+                polynomial_order=_parse_poly_order(col),
+                stationarity_inf=inf.label,
+                full_test_res=inf,
+            )
+        )
+    return res
 
 
 def test_deterministic_trend(
@@ -40,7 +99,14 @@ def test_deterministic_trend(
     assets: list[str],
     polynomial_orders: list[int] | None = None,
     eq_type: EquationTypes = "c",
-) -> DTrendTest:
+    lags: int = 10,
+    max_order_accept: int = 1,
+) -> dict[str, DTrendTest]:
+    """
+    Detrend with polynomial orders and test residual stationarity.
+
+    Returns per-asset decisions; accepts only if best order <= max_order_accept.
+    """
     if polynomial_orders is None:
         polynomial_orders = [0, 1, 2, 3]
 
@@ -48,33 +114,13 @@ def test_deterministic_trend(
         data=data, assets=assets, polynomial_orders=polynomial_orders
     )
 
-    detrended_cols = [c for c in detrended_df.columns if "detrended" in c]
-
-    deterministic_stationary_res: list[DTrendRes] = []
-    for col in detrended_cols:
-        stationarity_res = stationarity_tests(
-            data=detrended_df, asset=col, lags=10, eq_type=eq_type
+    d_trend_res: dict[str, DTrendTest] = {}
+    for asset in assets:
+        results = _asset_dtrend_results(
+            detrended_df, asset, polynomial_orders, lags=lags, eq_type=eq_type
         )
+        lowest = lowest_polynomial_trend(results)
+        evidence = (lowest is not None) and (lowest <= max_order_accept)
+        d_trend_res[asset] = DTrendTest(evidence, lowest, results)
 
-        m = re.search(r"(\d+)$", col)
-        if not m:
-            raise ValueError(f"Can't parse polynomial order from column: {col}")
-        polynomial_order = int(m.group(1))
-
-        deterministic_stationary_res.append(
-            DTrendRes(
-                asset=col,
-                polynomial_order=polynomial_order,
-                stationarity_inf=stationarity_res.label,
-                full_test_res=stationarity_res,
-            )
-        )
-
-    lowest = lowest_polynomial_trend(deterministic_stationary_res)
-    evidence = lowest is not None
-
-    return DTrendTest(
-        evidence_of_deterministic_trend=evidence,
-        lowest_polynomial_stationary=lowest,
-        results=deterministic_stationary_res,
-    )
+    return d_trend_res

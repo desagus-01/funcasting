@@ -39,8 +39,9 @@ info_all = get_template()
 #     stationarity_res[col] = stationarity_tests(risk_drivers, col, lags=10, eq_type="c")
 #
 stationarity_res = test_deterministic_trend(
-    data=info_all.asset_info.risk_drivers, assets=["MSFT"]
+    data=info_all.asset_info.risk_drivers, assets=["MSFT", "AAPL", "GOOG"]
 )
+
 
 print(stationarity_res)
 
