@@ -54,3 +54,14 @@ def add_detrend_column(
             )
 
     return data.with_columns(new_cols)
+
+
+def add_differenced_columns(
+    data: pl.DataFrame, assets: list[str], difference: int = 1
+) -> pl.DataFrame:
+    return data.with_columns(
+        [
+            pl.col(assets).diff(d).name.suffix(f"_diff_{d}")
+            for d in range(1, difference + 1)
+        ]
+    )

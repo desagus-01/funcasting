@@ -21,23 +21,6 @@ def show_results(title: str, results: dict[str, HypTestRes]) -> None:
 # %% load once
 info_all = get_template()
 
-# =========================
-# Stationarity quick checks
-# =========================
-# risk_drivers = add_detrend_column(data=info_all.asset_info.risk_drivers)
-#
-# # Choose which series to test
-# series_to_test = [
-#     "MSFT_detrended_p0",
-#     "MSFT_detrended_p1",
-#     "MSFT_detrended_p2",
-#     "MSFT_detrended_p3",
-# ]
-#
-# stationarity_res: dict[str, HypTestRes] = {}
-# for col in series_to_test:
-#     stationarity_res[col] = stationarity_tests(risk_drivers, col, lags=10, eq_type="c")
-#
 stationarity_res = test_deterministic_trend(
     data=info_all.asset_info.risk_drivers, assets=["MSFT", "AAPL", "GOOG"]
 )
