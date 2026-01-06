@@ -56,6 +56,17 @@ def add_detrend_column(
     return data.with_columns(new_cols)
 
 
+def add_detrend_columns_max(
+    data: pl.DataFrame,
+    assets: list[str],
+    max_polynomial_order: int,
+) -> pl.DataFrame:
+    polynomial_orders = list(range(0, max_polynomial_order + 1))
+    return add_detrend_column(
+        data=data, assets=assets, polynomial_orders=polynomial_orders
+    )
+
+
 def add_differenced_columns(
     data: pl.DataFrame, assets: list[str], difference: int = 1
 ) -> pl.DataFrame:
