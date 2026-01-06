@@ -9,7 +9,7 @@
     2. Choose distribution for Et
 3. If not efficiency
     1. [x] test for deterministic trend ✅ 2026-01-05
-    2. [ ] test for stochastic trend
+    2. [x] test for stochastic trend ✅ 2026-01-06
     3. test for seasonality
     4. re-test efficiency
 4. If still fails look at other phenomenon 

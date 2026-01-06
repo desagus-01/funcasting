@@ -27,7 +27,7 @@ x = trend_diagnostic(
     data=risk_drivers,
     assets=["AAPL", "MSFT"],
     order_max=3,
-    threshold_order=1,
+    threshold_order=3,
     trend_type="both",
 )
 print(x)

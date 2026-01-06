@@ -1,6 +1,6 @@
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Literal, NamedTuple
+from dataclasses import dataclass, field
+from typing import Literal
 
 from polars.dataframe.frame import DataFrame
 
@@ -15,35 +15,40 @@ transform_types = Literal["polynomial", "difference"]
 trend_types = Literal["deterministic", "stochastic"]
 
 
-class TrendRes(NamedTuple):
-    """Result for one asset and one polynomial order."""
-
+@dataclass(frozen=True)
+class TrendRes:
     asset: str
     transform_type: transform_types
     order: int
     stationarity_inf: str
-    full_test_res: StationarityInference
+    full_test_res: StationarityInference = field(repr=False)
 
 
 @dataclass(frozen=True)
 class TrendTest:
-    """Summary of deterministic-trend evidence for one asset."""
-
     trend_type: trend_types
-    trend_stationary: bool
+    transformation_needed: bool
     lowest_order_threshold: int
-    lowest_order_stationary: int | None
+    transformation_order_needed: int | None
     results: list[TrendRes]
 
-
-def lowest_stationary_order(results: list[TrendRes]) -> int | None:
-    """
-    Returns the smallest rested order labeled 'stationary', else None
-    """
-    for res in sorted(results, key=lambda x: x.order):
-        if res.stationarity_inf == "stationary":
-            return res.order
-    return None
+    @property
+    def description(self) -> str:
+        if self.transformation_order_needed is None:
+            return (
+                f"No stationary transform found up to order {self.lowest_order_threshold} "
+                f"for {self.trend_type}."
+            )
+        if self.transformation_needed:
+            return (
+                f"Transformation needed: {self.trend_type} "
+                f"({self.results[0].transform_type}) of order "
+                f"{self.transformation_order_needed}."
+            )
+        return (
+            f"Stationarity achieved at order {self.transformation_order_needed}, "
+            f"but exceeds acceptance threshold (tested up to {self.lowest_order_threshold})."
+        )
 
 
 ColBuilder = Callable[[str, int], str]
@@ -108,6 +113,13 @@ class StationarityRunner:
         return cls(lags=10, eq_type="c")
 
 
+def lowest_stationary_order(results: list[TrendRes]) -> int | None:
+    for res in sorted(results, key=lambda x: x.order):
+        if res.stationarity_inf == "stationary":
+            return res.order
+    return None
+
+
 def run_stationary(
     data: DataFrame,
     asset: str,
@@ -162,17 +174,17 @@ def _run_trend_diagnostic(
             run_stationary=runner,
         )
 
-        lowest_order = lowest_stationary_order(results)
-
-        is_stationary = (
-            lowest_order is not None and lowest_order <= order_spec.max_accept
+        transformation_order_needed = lowest_stationary_order(results)
+        transformation_needed = (
+            transformation_order_needed is not None
+            and transformation_order_needed <= order_spec.max_accept
         )
 
         asset_trend_res[asset] = TrendTest(
             trend_type=transform.trend_type,
-            trend_stationary=is_stationary,
+            transformation_needed=transformation_needed,
             lowest_order_threshold=order_spec.max_accept,
-            lowest_order_stationary=lowest_order,
+            transformation_order_needed=transformation_order_needed,
             results=results,
         )
     return asset_trend_res
@@ -185,11 +197,13 @@ def trend_diagnostic(
     threshold_order: int,
     *,
     trend_type: Literal["deterministic", "stochastic", "both"],
-):
+) -> dict[str, dict[str, TrendTest]]:
     runner = StationarityRunner.trend()
 
-    if trend_type == "deterministic":
-        return _run_trend_diagnostic(
+    out: dict[str, dict[str, TrendTest]] = {"deterministic": {}, "stochastic": {}}
+
+    if trend_type in ("deterministic", "both"):
+        out["deterministic"] = _run_trend_diagnostic(
             data=data,
             assets=assets,
             transform=TrendTransformSpec.deterministic(),
@@ -199,8 +213,8 @@ def trend_diagnostic(
             runner=runner,
         )
 
-    if trend_type == "stochastic":
-        return _run_trend_diagnostic(
+    if trend_type in ("stochastic", "both"):
+        out["stochastic"] = _run_trend_diagnostic(
             data=data,
             assets=assets,
             transform=TrendTransformSpec.stochastic(),
@@ -209,25 +223,4 @@ def trend_diagnostic(
             ),
             runner=runner,
         )
-
-    # both
-    return {
-        "deterministic": _run_trend_diagnostic(
-            data=data,
-            assets=assets,
-            transform=TrendTransformSpec.deterministic(),
-            order_spec=OrderSpec.polynomial(
-                max_order=order_max, max_accept=threshold_order
-            ),
-            runner=runner,
-        ),
-        "stochastic": _run_trend_diagnostic(
-            data=data,
-            assets=assets,
-            transform=TrendTransformSpec.stochastic(),
-            order_spec=OrderSpec.difference(
-                max_order=order_max, max_accept=threshold_order
-            ),
-            runner=runner,
-        ),
-    }
+    return out
