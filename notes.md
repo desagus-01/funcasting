@@ -14,10 +14,13 @@ be obscured by taking difference
 
 [Amazing intuitive explanation on FFT](https://www.youtube.com/watch?v=g8RkArhtCc4)
 
+[Best explantion of whole process](https://www.youtube.com/watch?v=pfjiwxhqd1M)
+
 [Stephen P. info (great explanations)](https://www.le.ac.uk/users/dsgp1/)
 
 [Code source for periodograms](https://quanteconpy.readthedocs.io/en/latest/_modules/quantecon/_estspec.html#ar_periodogram)
 
+[Tests for seasonality in the frequency domain](https://www.census.gov/content/dam/Census/library/working-papers/2017/adrm/rrs2017-01.pdf)
 
 **Decision**
 Apply Meucci's approach of using a simpler harmonic regression which only identifies 1 seasonal component instead of band approach by Stephen P. As this is easier to implement and quikcker. **Definetly** come back and implement latter though.

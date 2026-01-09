@@ -13,7 +13,7 @@ risk_drivers = info_all.asset_info.risk_drivers
 
 x = trend_diagnostic(
     data=risk_drivers,
-    assets=["MSFT"],
+    assets=["MSFT", "GOOG"],
     order_max=3,
     threshold_order=3,
     trend_type="both",
