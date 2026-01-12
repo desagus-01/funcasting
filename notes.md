@@ -3,6 +3,9 @@
 
 [Excellent general resource](https://python-advanced.quantecon.org/arma.html)
 
+[Seasonality tests performed by Belgium](https://jdemetradocumentation.github.io/JDemetra-documentation/pages/theory/Tests_peaks.html)
+
+[Repo for spectral estimation methods](https://github.com/IvanovicM/spectral-estimation/tree/master)
 
 ## Seasonality
 [Explanation on Seasonality Adjustment](https://www.le.ac.uk/economics/research/RePEc/lec/leecon/dp11-12.pdf)
@@ -14,7 +17,7 @@ be obscured by taking difference
 
 [Amazing intuitive explanation on FFT](https://www.youtube.com/watch?v=g8RkArhtCc4)
 
-[Best explantion of whole process](https://www.youtube.com/watch?v=pfjiwxhqd1M)
+[Best explanation of whole process](https://www.youtube.com/watch?v=pfjiwxhqd1M)
 
 [Stephen P. info (great explanations)](https://www.le.ac.uk/users/dsgp1/)
 

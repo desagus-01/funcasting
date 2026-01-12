@@ -3,6 +3,9 @@
 
 ## Break Down of Stochastic Process
 - [ ] Apply seasonality adjustment
+    - [ ] Identify/test for peaks
+    - [ ] Run harmonic regression
+    - [ ] De-season from de-trended series
 - [ ] Write Decision rule between stochastic and deterministic trend removal
 - [ ] Log-likelihood + FFP based log-likelihood implementation for estimating parameters 
 - [ ] FFT Algorithm to calculate increment distribution? (see 45.5.1) 

@@ -114,7 +114,7 @@ def plot_welch_peaks_fast(
     fs=252.0,
     nperseg=256,
     detrend="constant",
-    window="hann",
+    window="bartlett",  # same as paper
     top_k=15,
     prominence_q=0.95,
     label_periods=True,
