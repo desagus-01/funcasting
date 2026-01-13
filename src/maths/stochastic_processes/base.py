@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 from typing import TypedDict
 
@@ -37,8 +38,15 @@ def hyp_test_conclusion(p_val: float, null_hyp: str) -> HypTestConclusion:
 def format_hyp_test_result(
     stat: float, p_val: float, null: str = "Independence"
 ) -> HypTestRes:
-    p_val = float(p_val)
-    stat = float(stat)
+    try:
+        stat = float(stat)
+        p_val = float(p_val)
+    except (TypeError, ValueError):
+        raise ValueError(f"Invalid stat or p_val: stat={stat}, p_val={p_val}")
+
+    if math.isnan(stat) or math.isnan(p_val):
+        raise ValueError(f"Invalid stat or p_val: stat={stat}, p_val={p_val}")
+
     hyp_conc = hyp_test_conclusion(p_val, null_hyp=null)
 
     return HypTestRes(
