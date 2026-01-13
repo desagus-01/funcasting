@@ -41,4 +41,4 @@ res_quarterly = seas.periodogram_seasonality_test(y, "quarterly")
 
 res_quarterly
 
-seas.plot_periodogram(y, max_period=130)
+# seas.plot_periodogram(y, max_period=130)
