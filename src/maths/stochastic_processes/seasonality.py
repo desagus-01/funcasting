@@ -11,10 +11,10 @@ from maths.stochastic_processes.base import format_hyp_test_result
 
 SEASONAL_PERIODS = Literal["weekly", "monthly", "quarterly", "semi-annual", "annual"]
 
-trading_days_seasonal_periods_dict = {
+SEASONAL_MAP = {
     "weekly": 5,
     "monthly": 21,
-    "semi_annual": 126,
+    "semi-annual": 126,
     "annual": 252,
     "quarterly": 63,
 }
@@ -42,10 +42,11 @@ class FStatRes(NamedTuple):
     denominator_degree_of_freedom: int
 
 
-def plot_periodogram(freq, spectrum, max_period=260):
-    mask = freq > 0
-    periods = 1.0 / freq[mask]
-    spec = spectrum[mask]
+def plot_periodogram(data: NDArray[np.floating], max_period: int = 260):
+    periodo = periodogram(data=data)
+    mask = periodo.freq_cycles > 0
+    periods = 1.0 / periodo.freq_cycles[mask]
+    spec = periodo.power[mask]
 
     fig, ax = plt.subplots()
     ax.plot(periods, spec)
@@ -178,7 +179,7 @@ def get_periodogram_p_val(
 def periodogram_seasonality_test(
     data: NDArray[np.floating], seasonal_period: SEASONAL_PERIODS
 ):
-    seasonal_period_n = trading_days_seasonal_periods_dict[seasonal_period]
+    seasonal_period_n = SEASONAL_MAP[seasonal_period]
     data = _make_len_multiple_of_seasonal_period(
         data=data, seasonal_period=seasonal_period_n
     )
@@ -188,5 +189,5 @@ def periodogram_seasonality_test(
     )
 
     return format_hyp_test_result(
-        p_val=p_val, stat=stat, null=f"No seasonality (period={seasonal_period})"
+        p_val=p_val, stat=stat, null=f"No {seasonal_period} seasonality"
     )

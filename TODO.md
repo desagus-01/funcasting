@@ -3,7 +3,7 @@
 
 ## Break Down of Stochastic Process
 - [ ] Apply seasonality adjustment
-    - [ ] Identify/test for peaks
+    - [x] Identify/test for peaks ✅ 2026-01-13
     - [ ] Run harmonic regression
     - [ ] De-season from de-trended series
 - [ ] Write Decision rule between stochastic and deterministic trend removal
