@@ -29,7 +29,7 @@ def split_df_in_half(data: pl.DataFrame) -> SplitDF:
     return SplitDF(first_half, second_half)
 
 
-def select_assets(df: pl.DataFrame, assets: list[str] | None) -> list[str]:
+def get_assets_names(df: pl.DataFrame, assets: list[str] | None) -> list[str]:
     """
     Retrieves and makes sures that assets exist in df, if None, chooses all assets ex date
     """

@@ -1,13 +1,15 @@
 from dataclasses import dataclass
-from typing import NamedTuple
+from typing import NamedTuple, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy._typing._array_like import NDArray
+from polars.dataframe.frame import DataFrame
 from scipy.stats import f as f_dist
 from typing_extensions import Literal
 
-from maths.stochastic_processes.base import format_hyp_test_result
+from maths.stochastic_processes.base import HypTestRes, format_hyp_test_result
+from utils.helpers import get_assets_names
 
 SEASONAL_PERIODS = Literal["weekly", "monthly", "quarterly", "semi-annual", "annual"]
 
@@ -18,6 +20,11 @@ SEASONAL_MAP = {
     "annual": 252,
     "quarterly": 63,
 }
+
+
+class SeasonalityPeriodTest(NamedTuple):
+    seasonal_period: str
+    res: HypTestRes
 
 
 class SeasonalBin(NamedTuple):
@@ -32,7 +39,6 @@ class SeasonalBin(NamedTuple):
 class Periodogram:
     power: NDArray[np.floating]
     freq_cycles: NDArray[np.floating]
-    freq_radians: NDArray[np.floating]
     sample_count: int
 
 
@@ -42,7 +48,12 @@ class FStatRes(NamedTuple):
     denominator_degree_of_freedom: int
 
 
-def plot_periodogram(data: NDArray[np.floating], max_period: int = 260):
+def plot_periodogram(
+    data: NDArray[np.floating],
+    max_period: int = 260,
+    seasonal_map: dict[str, int] = SEASONAL_MAP,
+    show_labels: bool = True,
+):
     periodo = periodogram(data=data)
     mask = periodo.freq_cycles > 0
     periods = 1.0 / periodo.freq_cycles[mask]
@@ -50,10 +61,28 @@ def plot_periodogram(data: NDArray[np.floating], max_period: int = 260):
 
     fig, ax = plt.subplots()
     ax.plot(periods, spec)
+
+    # Add seasonal reference lines
+    for name, td in seasonal_map.items():
+        if 1 <= td <= max_period:
+            ax.axvline(td, linestyle="--", linewidth=1, alpha=0.8)
+            if show_labels:
+                ax.text(
+                    td,
+                    0.98,
+                    name,
+                    rotation=90,
+                    va="top",
+                    ha="right",
+                    transform=ax.get_xaxis_transform(),
+                    fontsize=9,
+                    alpha=0.9,
+                )
+
     ax.set_xlim(1, max_period)
     ax.set_xlabel("Trading Days per cycle")
     ax.set_ylabel("Power")
-    ax.set_title("Periodogram ")
+    ax.set_title("Periodogram")
     return ax
 
 
@@ -95,12 +124,10 @@ def periodogram(data: NDArray[np.floating]) -> Periodogram:
     # Frequency grids
     k = np.arange(power.size, dtype=float)
     freq_cycles = k / sample_count
-    freq_radians = 2.0 * np.pi * freq_cycles
 
     return Periodogram(
         power=power,
         freq_cycles=freq_cycles,
-        freq_radians=freq_radians,
         sample_count=sample_count,
     )
 
@@ -162,7 +189,6 @@ def get_period_fstat(periodogram: Periodogram, seasonal_period: int) -> FStatRes
         numerator_degree_of_freedom=degrees_of_freedom,
         denominator_degree_of_freedom=remaining_degrees_of_freedom,
     )
-    # return f_stat_numerator / f_stat_denominator
 
 
 def get_periodogram_p_val(
@@ -178,7 +204,7 @@ def get_periodogram_p_val(
 
 def periodogram_seasonality_test(
     data: NDArray[np.floating], seasonal_period: SEASONAL_PERIODS
-):
+) -> SeasonalityPeriodTest:
     seasonal_period_n = SEASONAL_MAP[seasonal_period]
     data = _make_len_multiple_of_seasonal_period(
         data=data, seasonal_period=seasonal_period_n
@@ -188,6 +214,35 @@ def periodogram_seasonality_test(
         periodogram=period, seasonal_period=seasonal_period_n
     )
 
-    return format_hyp_test_result(
+    hypothesis_test_res = format_hyp_test_result(
         p_val=p_val, stat=stat, null=f"No {seasonal_period} seasonality"
     )
+
+    return SeasonalityPeriodTest(
+        seasonal_period=seasonal_period, res=hypothesis_test_res
+    )
+
+
+def seasonality_diagnostic(
+    *,
+    data: DataFrame,
+    assets: list[str] | None = None,
+    seasonal_periods: Sequence[SEASONAL_PERIODS] | None = None,
+) -> dict[str, list[SeasonalityPeriodTest]]:
+    if assets is None:
+        assets = get_assets_names(df=data, assets=assets)
+    if seasonal_periods is None:
+        seasonal_periods = ["weekly", "monthly", "quarterly", "semi-annual", "annual"]
+
+    asset_seasonality_res = {}
+    for asset in assets:
+        data_array = data.select(asset).to_numpy().flatten()
+        seasonal_res = [
+            periodogram_seasonality_test(
+                data=data_array, seasonal_period=seasonal_period
+            )
+            for seasonal_period in seasonal_periods
+        ]
+        asset_seasonality_res[asset] = seasonal_res
+
+    return asset_seasonality_res

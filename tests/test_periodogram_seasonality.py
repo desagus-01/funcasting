@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-import maths.stochastic_processes.seasonality as seas
+import maths.stochastic_processes.diagnostics.seasonality as seas
 
 SEASONAL_LABELS = ["weekly", "monthly", "quarterly", "semi-annual", "annual"]
 SEASONAL_MAP = {

@@ -1,7 +1,7 @@
 # %% imports + data
 import numpy as np
 
-import maths.stochastic_processes.seasonality as seas
+import maths.stochastic_processes.diagnostics.seasonality as seas
 from maths.helpers import add_detrend_columns_max, add_differenced_columns
 from utils.template import get_template
 
@@ -34,6 +34,13 @@ for i in range(1, n_days):
 y = weekly + monthly + quarterly + e
 y = y - y.mean()  # remove DC
 
+
+# %%
+
+rds = get_template().asset_info.risk_drivers
+seas.seasonality_diagnostic(data=rds, assets=["MSFT", "AAPL"])
+
+# %%
 # ---- Run tests ----
 res_weekly = seas.periodogram_seasonality_test(y, "weekly")
 res_monthly = seas.periodogram_seasonality_test(y, "monthly")
@@ -41,4 +48,4 @@ res_quarterly = seas.periodogram_seasonality_test(y, "quarterly")
 
 res_quarterly
 
-# seas.plot_periodogram(y, max_period=130)
+seas.plot_periodogram(y, max_period=130)

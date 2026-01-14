@@ -9,7 +9,12 @@ from numpy.typing import NDArray
 from globals import ITERS, LAGS
 from maths.stochastic_processes.base import HypTestRes, format_hyp_test_result
 from models.types import ProbVector
-from utils.helpers import build_lag_df, compensate_prob, select_assets, split_df_in_half
+from utils.helpers import (
+    build_lag_df,
+    compensate_prob,
+    get_assets_names,
+    split_df_in_half,
+)
 
 StatFunc = Callable[[np.ndarray, ProbVector, np.random.Generator | None], float]
 
@@ -38,7 +43,7 @@ def run_lagged_tests(
     lags: int = LAGS["testing"],
     **test_kwargs: Any,
 ) -> LagTestResult:
-    sel_assets = select_assets(data, assets)
+    sel_assets = get_assets_names(data, assets)
     results: LagTestResult = {}
     for asset in sel_assets:
         df_lagged = build_lag_df(data=data, asset=asset, lags=lags)
@@ -234,7 +239,7 @@ def kolmogrov_smirnov_2stest(
 def univariate_kolmogrov_smirnov_test(
     data: pl.DataFrame, assets: list[str] | None = None
 ) -> dict[str, dict[str, HypTestRes] | list[str]]:
-    sel_assets = select_assets(data, assets)
+    sel_assets = get_assets_names(data, assets)
 
     ks_res: dict[str, HypTestRes] = {}
     for asset in sel_assets:
