@@ -24,6 +24,7 @@ SEASONAL_MAP = {
 
 class SeasonalityPeriodTest(NamedTuple):
     seasonal_period: str
+    seasonal_frequency_radian: float
     res: HypTestRes
 
 
@@ -146,16 +147,16 @@ def get_seasonal_bins(
     n_harmonics = (seasonal_period - 1) // 2
     cycles_in_sample = n_samples // seasonal_period
 
-    out: list[SeasonalBin] = []
+    seasonal_bins: list[SeasonalBin] = []
     for k in range(1, n_harmonics + 1):
         idx = k * cycles_in_sample
         pwr = float(power[idx])
         f = float(frequency[idx])
-        out.append(
+        seasonal_bins.append(
             SeasonalBin(harmonic=k, power=pwr, idx=idx, frequency=f, period=1.0 / f)
         )
 
-    return out
+    return seasonal_bins
 
 
 def get_period_fstat(periodogram: Periodogram, seasonal_period: int) -> FStatRes:
@@ -219,7 +220,9 @@ def periodogram_seasonality_test(
     )
 
     return SeasonalityPeriodTest(
-        seasonal_period=seasonal_period, res=hypothesis_test_res
+        seasonal_period=seasonal_period,
+        seasonal_frequency_radian=2 * np.pi * SEASONAL_MAP[seasonal_period],
+        res=hypothesis_test_res,
     )
 
 

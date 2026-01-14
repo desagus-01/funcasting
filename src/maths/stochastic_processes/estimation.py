@@ -38,6 +38,11 @@ class OLSResults:
             """)
 
 
+class AICBIC(NamedTuple):
+    aic: float
+    bic: float
+
+
 def add_deterministics_to_eq(
     independent_vars: NDArray[np.floating], eq_type: EquationTypes
 ):
@@ -71,11 +76,6 @@ def get_aic(log_likelihood: float, n_parameters: int) -> float:
 
 def get_bic(log_likelihood: float, n_obs: int, n_parameters: int) -> float:
     return -2 * log_likelihood + np.log(n_obs) * n_parameters
-
-
-class AICBIC(NamedTuple):
-    aic: float
-    bic: float
 
 
 def get_aic_bic(
@@ -129,7 +129,6 @@ def ols_classic(
     ols_res, residuals, sum_of_squared_residuals = least_squares_fit(
         dependent_var=dependent_var, independent_vars=independent_vars
     )
-
     standard_errors = ols_standard_errors(
         independent_vars=independent_vars,
         sum_of_squared_residuals=sum_of_squared_residuals,
