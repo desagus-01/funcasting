@@ -47,7 +47,7 @@ Apply Meucci's approach of using a simpler harmonic regression which only identi
 3. If not efficiency
     1. [x] test for deterministic trend ✅ 2026-01-05 
     2. [x] test for stochastic trend ✅ 2026-01-06
-    3. test for seasonality
+    3. [x] test for seasonality ✅ 2026-01-14
     4. re-test efficiency
 4. If still fails look at other phenomenon 
  

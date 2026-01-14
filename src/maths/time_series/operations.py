@@ -3,7 +3,7 @@ import polars as pl
 from numpy.typing import NDArray
 from polars.dataframe.frame import DataFrame
 
-from maths.stochastic_processes.estimation import OLSEquation, OLSResults, ols_classic
+from maths.time_series.estimation import OLSEquation, OLSResults, ols_classic
 
 
 def deterministic_detrend(
@@ -28,9 +28,6 @@ def deterministic_detrend(
         resid = resid.T
 
     return resid
-
-
-# TODO: Write de-season function
 
 
 def build_harmonic_regression_equation(

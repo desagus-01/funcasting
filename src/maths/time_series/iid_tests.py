@@ -7,7 +7,7 @@ import scipy.stats as st
 from numpy.typing import NDArray
 
 from globals import ITERS, LAGS
-from maths.stochastic_processes.base import HypTestRes, format_hyp_test_result
+from maths.time_series.base import HypTestRes, format_hyp_test_result
 from models.types import ProbVector
 from utils.helpers import (
     build_lag_df,

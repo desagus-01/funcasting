@@ -5,8 +5,8 @@ from typing import Literal
 from polars.dataframe.frame import DataFrame
 
 from maths.helpers import add_detrend_columns_max, add_differenced_columns
-from maths.stochastic_processes.estimation import EquationTypes
-from maths.stochastic_processes.stationarity_tests import (
+from maths.time_series.estimation import EquationTypes
+from maths.time_series.stationarity_tests import (
     StationarityInference,
     stationarity_tests,
 )

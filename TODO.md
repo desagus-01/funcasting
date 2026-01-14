@@ -2,10 +2,10 @@
 > [!ATTENTION] Update data with ADJUSTED prices (yfinance for now)
 
 ## Break Down of Stochastic Process
-- [ ] Apply seasonality adjustment
+- [x] Apply seasonality adjustment ✅ 2026-01-14
     - [x] Identify/test for peaks ✅ 2026-01-13
-    - [ ] Run harmonic regression
-    - [ ] De-season from de-trended series
+    - [x] Run harmonic regression ✅ 2026-01-14
+    - [x] De-season from de-trended series ✅ 2026-01-14
 - [ ] Write Decision rule between stochastic and deterministic trend removal
 - [ ] Log-likelihood + FFP based log-likelihood implementation for estimating parameters 
 - [ ] FFT Algorithm to calculate increment distribution? (see 45.5.1) 

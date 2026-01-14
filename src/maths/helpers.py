@@ -1,7 +1,7 @@
 import polars as pl
 import polars.selectors as cs
 
-from maths.stochastic_processes.operations import deterministic_detrend
+from maths.time_series.operations import deterministic_detrend
 
 
 def add_detrend_column(

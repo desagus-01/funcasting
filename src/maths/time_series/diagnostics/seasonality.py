@@ -8,7 +8,7 @@ from polars.dataframe.frame import DataFrame
 from scipy.stats import f as f_dist
 from typing_extensions import Literal
 
-from maths.stochastic_processes.base import HypTestRes, format_hyp_test_result
+from maths.time_series.base import HypTestRes, format_hyp_test_result
 from utils.helpers import get_assets_names
 
 SEASONAL_PERIODS = Literal["weekly", "monthly", "quarterly", "semi-annual", "annual"]

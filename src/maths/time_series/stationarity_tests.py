@@ -14,11 +14,11 @@ from globals import (
     MACKIN_TAU_CUTOFFS,
     MACKIN_TAU_PVALS,
 )
-from maths.stochastic_processes.base import (
+from maths.time_series.base import (
     HypTestRes,
     format_hyp_test_result,
 )
-from maths.stochastic_processes.estimation import (
+from maths.time_series.estimation import (
     EquationTypes,
     OLSEquation,
     add_deterministics_to_eq,
