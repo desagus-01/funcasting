@@ -107,8 +107,8 @@ def autocorrelation_pair_test(
     cov_t_lag = cov[0, 1]
 
     corr = float(cov_t_lag / np.sqrt(var_t * var_lag))
-    Z = abs(corr) * np.sqrt(pair_df.height)
-    p_val = float(2 * (1 - st.norm.cdf(Z)))
+    test_statistic = abs(corr) * np.sqrt(pair_df.height)
+    p_val = float(2 * (1 - st.norm.cdf(test_statistic)))
 
     return format_hyp_test_result(stat=corr, p_val=p_val, null="Independence")
 

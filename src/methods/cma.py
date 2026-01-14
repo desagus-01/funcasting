@@ -6,6 +6,7 @@ from typing import Literal, Self
 from numpy import interp
 from polars import DataFrame
 
+from maths.distributions import uniform_probs
 from maths.sampling import sample_copula, sample_marginal
 from models.types import ProbVector
 from utils.helpers import compute_cdf_and_pobs
@@ -20,6 +21,39 @@ class CopulaMarginalModel:
     dates: DataFrame | None
 
     @classmethod
+    def from_data_and_prob(
+        cls, data: DataFrame, prob: ProbVector | None
+    ) -> CopulaMarginalModel:
+        if prob is None:
+            prob = uniform_probs(data.height)
+
+        if "date" in data:
+            dates = data.select("date")
+            data = data.drop("date")
+        else:
+            dates = None
+
+        cdf_cols = {}
+        copula_cols = {}
+        sorted_marginals = {}
+
+        for col in data.iter_columns():
+            asset = col.name
+            temp = compute_cdf_and_pobs(data, asset, prob)
+
+            cdf_cols[asset] = temp["cdf"]
+            copula_cols[asset] = temp["pobs"]
+            sorted_marginals[asset] = temp[asset]
+
+        return CopulaMarginalModel(
+            marginals=DataFrame(sorted_marginals),
+            cdfs=DataFrame(cdf_cols),
+            copula=DataFrame(copula_cols),
+            prob=prob,
+            dates=dates,
+        )
+
+    @classmethod
     def from_scenario_dist(
         cls, scenarios: DataFrame, prob: ProbVector, dates: DataFrame | None
     ) -> CopulaMarginalModel:
@@ -31,12 +65,12 @@ class CopulaMarginalModel:
         sorted_marginals = {}
 
         for col in scenarios.iter_columns():
-            name = col.name
-            temp = compute_cdf_and_pobs(scenarios, name, prob)
+            asset = col.name
+            temp = compute_cdf_and_pobs(scenarios, asset, prob)
 
-            cdf_cols[name] = temp["cdf"]
-            copula_cols[name] = temp["pobs"]
-            sorted_marginals[name] = temp[name]
+            cdf_cols[asset] = temp["cdf"]
+            copula_cols[asset] = temp["pobs"]
+            sorted_marginals[asset] = temp[asset]
 
         return CopulaMarginalModel(
             marginals=DataFrame(sorted_marginals),
