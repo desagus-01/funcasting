@@ -1,14 +1,18 @@
 # TODO: Initial pipeline
 # 1. Test for white noise (done)
 # 2. If false test/detrend
+
 # 3. Test again for wh
 # 4. If false test/deseason
 # 5. test again for wh
+
+from typing import Literal
 
 from polars.dataframe.frame import DataFrame
 
 from globals import LAGS
 from maths.distributions import uniform_probs
+from maths.time_series.diagnostics.trends import trend_diagnostic
 from maths.time_series.iid_tests import (
     TestResultByAsset,
     copula_lag_independence_test,
@@ -77,3 +81,24 @@ def check_white_noise(
         results[asset] = not failed
 
     return results
+
+
+def check_detrend(
+    data: DataFrame,
+    assets: list[str] | None = None,
+    order_max: int = 3,
+    threshold_order: int = 2,
+    *,
+    trend_type: Literal["deterministic", "stochastic", "both"] = "both",
+):
+    """
+    Runs Stationarity tests on both deterministic (polynomial) and stochastic (differences) series to check if a transformation is needed to make series stationary.
+
+    Decision rule is to go with lowest order one.
+    """
+    if assets is None:
+        assets = get_assets_names(df=data, assets=assets)
+
+    return trend_diagnostic(
+        data, assets, order_max, threshold_order, trend_type=trend_type
+    )
