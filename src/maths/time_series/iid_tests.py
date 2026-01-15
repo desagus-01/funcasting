@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Callable, TypedDict
+from typing import Any, Callable, NamedTuple
 
 import numpy as np
 import polars as pl
@@ -19,12 +19,12 @@ from utils.helpers import (
 StatFunc = Callable[[np.ndarray, ProbVector, np.random.Generator | None], float]
 
 
-class PerAssetLagResult(TypedDict):
+class PerAssetTestResult(NamedTuple):
     results: dict[str, HypTestRes]
-    rejected_lags: list[str]
+    rejected: list[str]
 
 
-LagTestResult = dict[str, PerAssetLagResult]
+TestResultByAsset = dict[str, PerAssetTestResult]
 PairTest = Callable[..., HypTestRes]
 
 
@@ -42,9 +42,9 @@ def run_lagged_tests(
     test_fn: PairTest,
     lags: int = LAGS["testing"],
     **test_kwargs: Any,
-) -> LagTestResult:
+) -> TestResultByAsset:
     sel_assets = get_assets_names(data, assets)
-    results: LagTestResult = {}
+    results: TestResultByAsset = {}
     for asset in sel_assets:
         df_lagged = build_lag_df(data=data, asset=asset, lags=lags)
         per_lag: dict[str, HypTestRes] = {}
@@ -68,10 +68,10 @@ def run_lagged_tests(
 
         rejected_lags = [k for k, res in per_lag.items() if res.reject_null]
 
-        results[asset] = {
-            "results": per_lag,
-            "rejected_lags": rejected_lags,
-        }
+        results[asset] = PerAssetTestResult(
+            results=per_lag,
+            rejected=rejected_lags,
+        )
 
     return results
 
@@ -118,7 +118,7 @@ def ellipsoid_lag_test(
     prob: ProbVector,
     lags: int = LAGS["testing"],
     assets: list[str] | None = None,
-) -> LagTestResult:
+) -> TestResultByAsset:
     """
     Ellipsoidal (Gaussian) autocorrelation test per asset and lag.
 
@@ -211,7 +211,7 @@ def copula_lag_independence_test(
     prob: ProbVector,
     lags: int = LAGS["testing"],
     assets: list[str] | None = None,
-) -> LagTestResult:
+) -> TestResultByAsset:
     return run_lagged_tests(
         data=copula,
         prob=prob,
@@ -238,19 +238,20 @@ def kolmogrov_smirnov_2stest(
 
 def univariate_kolmogrov_smirnov_test(
     data: pl.DataFrame, assets: list[str] | None = None
-) -> dict[str, dict[str, HypTestRes] | list[str]]:
+) -> TestResultByAsset:
     sel_assets = get_assets_names(data, assets)
+    out: TestResultByAsset = {}
 
-    ks_res: dict[str, HypTestRes] = {}
     for asset in sel_assets:
-        data_asset = data.select(asset)
-        split = split_df_in_half(data_asset)
-        split_1, split_2 = (
-            split.first_half.to_numpy().ravel(),
-            split.second_half.to_numpy().ravel(),
+        split = split_df_in_half(data.select(asset))
+        split_1 = split.first_half.to_numpy().ravel()
+        split_2 = split.second_half.to_numpy().ravel()
+
+        res = kolmogrov_smirnov_2stest(split_1, split_2)
+
+        out[asset] = PerAssetTestResult(
+            results={"split": res},
+            rejected=(["split"] if res.reject_null else []),
         )
-        ks_res[asset] = kolmogrov_smirnov_2stest(split_1, split_2)
 
-    rejected = [k for k, res in ks_res.items() if res.reject_null]
-
-    return {"results": ks_res, "rejected": rejected}
+    return out
