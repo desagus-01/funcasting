@@ -44,11 +44,16 @@ def add_detrend_columns_max(
 
 
 def add_differenced_columns(
-    data: pl.DataFrame, assets: list[str], difference: int = 1
+    data: pl.DataFrame,
+    assets: list[str],
+    difference: int = 1,
+    keep_all: bool = True,
 ) -> pl.DataFrame:
+    if difference < 1:
+        raise ValueError("difference must be >= 1")
+
+    diffs = range(1, difference + 1) if keep_all else [difference]
+
     return data.with_columns(
-        [
-            pl.col(assets).diff(d).name.suffix(f"_diff_{d}")
-            for d in range(1, difference + 1)
-        ]
+        [pl.col(assets).diff(d).name.suffix(f"_diff_{d}") for d in diffs]
     )

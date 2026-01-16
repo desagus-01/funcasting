@@ -38,7 +38,7 @@ class TrendTest:
     def transformation_needed(self) -> bool:
         return (
             self.transformation_order_needed is not None
-            and self.transformation_needed <= self.lowest_order_threshold
+            and self.transformation_order_needed <= self.lowest_order_threshold
         )
 
     @property
