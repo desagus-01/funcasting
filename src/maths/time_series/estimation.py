@@ -99,7 +99,7 @@ def least_squares_fit(
     residuals = dependent_var - dependent_est
 
     if sum_of_squared_residuals.size == 0:
-        sum_of_squared_residuals = float(residuals.T @ residuals)
+        sum_of_squared_residuals = float((residuals.T @ residuals).item())
     else:
         sum_of_squared_residuals = float(res[1].item())
 

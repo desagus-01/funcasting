@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Literal
 
 from polars.dataframe.frame import DataFrame
@@ -5,6 +6,7 @@ from polars.dataframe.frame import DataFrame
 from globals import LAGS
 from maths.distributions import uniform_probs
 from maths.helpers import add_detrend_column, add_differenced_columns
+from maths.time_series.diagnostics.seasonality import SeasonalityPeriodTest
 from maths.time_series.diagnostics.trends import TrendTest, trend_diagnostic
 from maths.time_series.iid_tests import (
     TestResultByAsset,
@@ -12,11 +14,20 @@ from maths.time_series.iid_tests import (
     ellipsoid_lag_test,
     univariate_kolmogrov_smirnov_test,
 )
+from maths.time_series.operations import deterministic_deseasoning
 from methods.cma import CopulaMarginalModel
 from models.types import ProbVector
 from utils.helpers import (
     get_assets_names,
 )
+
+
+@dataclass(frozen=True)
+class PipelineOutcome:
+    type: str
+    decision: dict[str, tuple[str, int]]
+    updated_data: DataFrame
+    all_tests: dict[str, dict[str, TrendTest]]
 
 
 def run_all_iid_tests(
@@ -88,7 +99,7 @@ def detrend_decision_rule(
 
         candidates = []
 
-        if deterministic_res is not None and deterministic_res > 0:
+        if deterministic_res is not None:
             candidates.append(("polynomial", deterministic_res))
 
         if stochastic_res:
@@ -143,9 +154,10 @@ def detrend_pipeline(
     assets: list[str] | None = None,
     order_max: int = 3,
     threshold_order: int = 2,
+    include_diagnostics: bool = False,
     *,
     trend_type: Literal["deterministic", "stochastic", "both"] = "both",
-) -> DataFrame:
+) -> DataFrame | PipelineOutcome:
     """
     Runs Stationarity tests on both deterministic (polynomial) and stochastic (differences) series to check if a transformation is needed to make series stationary.
 
@@ -160,4 +172,39 @@ def detrend_pipeline(
 
     detrends_needed = detrend_decision_rule(detrend_res=assets_trend_res, assets=assets)
 
-    return apply_detrend(data=data, detrend_needed=detrends_needed)
+    updated_df = apply_detrend(data=data, detrend_needed=detrends_needed)
+
+    if include_diagnostics:
+        return PipelineOutcome(
+            type="trend",
+            decision=detrends_needed,
+            updated_data=updated_df,
+            all_tests=assets_trend_res,
+        )
+    return updated_df
+
+
+def deseason_decision_rule(
+    seasonality_diagnostic: dict[str, list[SeasonalityPeriodTest]],
+) -> dict[str, list[tuple[str, float]]]:
+    return {
+        asset: [
+            (period.seasonal_period, period.seasonal_frequency_radian)
+            for period in res
+            if period.evidence_of_seasonality
+        ]
+        for asset, res in seasonality_diagnostic.items()
+    }
+
+
+# TODO: Finish the deseason apply func below (check what did with detrend)
+def deseason_apply(data: DataFrame, deseason_rule: dict[str, list[tuple[str, float]]]):
+    return {
+        asset: deterministic_deseasoning(
+            data,
+            asset=asset,
+            frequency_radians=[rad for _, rad in seasons],
+        )[asset]
+        for asset, seasons in deseason_rule.items()
+        if seasons
+    }

@@ -25,6 +25,7 @@ SEASONAL_MAP = {
 class SeasonalityPeriodTest(NamedTuple):
     seasonal_period: str
     seasonal_frequency_radian: float
+    evidence_of_seasonality: bool
     res: HypTestRes
 
 
@@ -222,6 +223,7 @@ def periodogram_seasonality_test(
     return SeasonalityPeriodTest(
         seasonal_period=seasonal_period,
         seasonal_frequency_radian=2 * np.pi * SEASONAL_MAP[seasonal_period],
+        evidence_of_seasonality=hypothesis_test_res.reject_null,
         res=hypothesis_test_res,
     )
 

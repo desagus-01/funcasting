@@ -11,6 +11,7 @@ from polars import DataFrame
 from pydantic import BaseModel, ConfigDict
 
 from maths.distributions import uniform_probs
+from maths.time_series.diagnostics.seasonality import SEASONAL_MAP
 
 
 class Assets(BaseModel):
@@ -72,6 +73,36 @@ class TestTemplateResult:
     increms_np: np.ndarray
     increms_n: int
     uniform_prior: np.ndarray
+
+
+def synthetic_series(n: int) -> np.ndarray:
+    """
+    Construct a signal containing all requested seasonalities on the Fourier grid,
+    plus AR(1)-flavored noise. Length LCM(5,21,63,126,252)=1260.
+    """
+    t = np.arange(n, dtype=float)
+    rng = np.random.default_rng(20250112)
+
+    # amplitudes and phases (tuned so all are detectable and not collinear)
+    comps = {
+        "weekly": (8.0, SEASONAL_MAP["weekly"], 0.35),
+        "monthly": (6.0, SEASONAL_MAP["monthly"], -1.10),
+        "quarterly": (5.0, SEASONAL_MAP["quarterly"], 2.00),
+        "semi-annual": (4.5, SEASONAL_MAP["semi-annual"], 0.75),
+        "annual": (3.5, SEASONAL_MAP["annual"], -2.20),
+    }
+
+    x = np.zeros(n, dtype=float)
+    for amp, period, phase in comps.values():
+        x += amp * np.sin(2.0 * np.pi * t / period + phase)
+
+    # AR(1) noise with moderate variance
+    e = rng.normal(0.0, 2.0, size=n)
+    for i in range(1, n):
+        e[i] += 0.35 * e[i - 1]
+
+    y = x + e
+    return y
 
 
 def get_template():
