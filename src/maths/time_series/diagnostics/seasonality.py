@@ -9,7 +9,6 @@ from scipy.stats import f as f_dist
 from typing_extensions import Literal
 
 from maths.time_series.base import HypTestRes, format_hyp_test_result
-from utils.helpers import get_assets_names
 
 SEASONAL_PERIODS = Literal["weekly", "monthly", "quarterly", "semi-annual", "annual"]
 
@@ -231,11 +230,9 @@ def periodogram_seasonality_test(
 def seasonality_diagnostic(
     *,
     data: DataFrame,
-    assets: list[str] | None = None,
+    assets: list[str],
     seasonal_periods: Sequence[SEASONAL_PERIODS] | None = None,
 ) -> dict[str, list[SeasonalityPeriodTest]]:
-    if assets is None:
-        assets = get_assets_names(df=data, assets=assets)
     if seasonal_periods is None:
         seasonal_periods = ["weekly", "monthly", "quarterly", "semi-annual", "annual"]
 

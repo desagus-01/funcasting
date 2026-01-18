@@ -69,9 +69,9 @@ def run_harmonic_regression(
 
 def deterministic_deseasoning(
     data: DataFrame, asset: str, frequency_radians: list[float]
-) -> dict[str, NDArray[np.floating]]:
+) -> dict[str, list[float]]:
     harmonic_residuals = run_harmonic_regression(
         data=data, asset=asset, frequency_radians=frequency_radians
-    ).residuals
+    ).residuals.ravel()
 
-    return {asset: harmonic_residuals}
+    return {asset: harmonic_residuals.tolist()}

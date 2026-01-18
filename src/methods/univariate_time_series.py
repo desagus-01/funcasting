@@ -1,12 +1,16 @@
 from dataclasses import dataclass
 from typing import Literal
 
+from polars import Series
 from polars.dataframe.frame import DataFrame
 
 from globals import LAGS
 from maths.distributions import uniform_probs
 from maths.helpers import add_detrend_column, add_differenced_columns
-from maths.time_series.diagnostics.seasonality import SeasonalityPeriodTest
+from maths.time_series.diagnostics.seasonality import (
+    SeasonalityPeriodTest,
+    seasonality_diagnostic,
+)
 from maths.time_series.diagnostics.trends import TrendTest, trend_diagnostic
 from maths.time_series.iid_tests import (
     TestResultByAsset,
@@ -198,8 +202,10 @@ def deseason_decision_rule(
 
 
 # TODO: Finish the deseason apply func below (check what did with detrend)
-def deseason_apply(data: DataFrame, deseason_rule: dict[str, list[tuple[str, float]]]):
-    return {
+def deseason_apply(
+    data: DataFrame, deseason_rule: dict[str, list[tuple[str, float]]]
+) -> DataFrame:
+    deseasoned_assets = {
         asset: deterministic_deseasoning(
             data,
             asset=asset,
@@ -208,3 +214,17 @@ def deseason_apply(data: DataFrame, deseason_rule: dict[str, list[tuple[str, flo
         for asset, seasons in deseason_rule.items()
         if seasons
     }
+    return data.with_columns(
+        [Series(name, values) for name, values in deseasoned_assets.items()]
+    )
+
+
+def deseason_pipeline(data: DataFrame, assets: list[str] | None = None) -> DataFrame:
+    if assets is None:
+        assets = get_assets_names(df=data, assets=assets)
+
+    seasonality_res = seasonality_diagnostic(data=data, assets=assets)
+
+    decision_rule = deseason_decision_rule(seasonality_res)
+
+    return deseason_apply(data, decision_rule)
