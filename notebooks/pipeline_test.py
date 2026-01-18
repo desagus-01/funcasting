@@ -27,4 +27,4 @@ data_2 = detrend_pipeline(data=data, include_diagnostics=True).updated_data.drop
 data_2
 
 # %%
-deseason_pipeline(data=data_2)
+deseason_pipeline(data=data_2, include_diagnostics=True)

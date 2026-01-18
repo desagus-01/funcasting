@@ -29,9 +29,9 @@ from utils.helpers import (
 @dataclass(frozen=True)
 class PipelineOutcome:
     type: str
-    decision: dict[str, tuple[str, int]]
+    decision: dict[str, tuple[str, int]] | dict[str, list[tuple[str, float]]]
     updated_data: DataFrame
-    all_tests: dict[str, dict[str, TrendTest]]
+    all_tests: dict[str, dict[str, TrendTest]] | dict[str, list[SeasonalityPeriodTest]]
 
 
 def run_all_iid_tests(
@@ -219,7 +219,9 @@ def deseason_apply(
     )
 
 
-def deseason_pipeline(data: DataFrame, assets: list[str] | None = None) -> DataFrame:
+def deseason_pipeline(
+    data: DataFrame, assets: list[str] | None = None, include_diagnostics: bool = False
+) -> PipelineOutcome | DataFrame:
     if assets is None:
         assets = get_assets_names(df=data, assets=assets)
 
@@ -227,4 +229,13 @@ def deseason_pipeline(data: DataFrame, assets: list[str] | None = None) -> DataF
 
     decision_rule = deseason_decision_rule(seasonality_res)
 
-    return deseason_apply(data, decision_rule)
+    updated_df = deseason_apply(data, decision_rule)
+
+    if include_diagnostics:
+        return PipelineOutcome(
+            type="seasonality",
+            decision=decision_rule,
+            updated_data=updated_df,
+            all_tests=seasonality_res,
+        )
+    return updated_df
