@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Literal
+from typing import Callable, Literal
 
 from polars import Series
 from polars.dataframe.frame import DataFrame
@@ -28,10 +28,50 @@ from utils.helpers import (
 
 @dataclass(frozen=True)
 class PipelineOutcome:
-    type: str
+    type: Literal["trend", "seasonality"]
     decision: dict[str, tuple[str, int]] | dict[str, list[tuple[str, float]]]
     updated_data: DataFrame
-    all_tests: dict[str, dict[str, TrendTest]] | dict[str, list[SeasonalityPeriodTest]]
+    all_tests: (
+        dict[str, dict[str, TrendTest]] | dict[str, list[SeasonalityPeriodTest]] | None
+    )
+
+
+DiagnosticFun = Callable[..., dict]
+DecisionFun = Callable[..., dict]
+ApplyFun = Callable[..., DataFrame]
+
+
+def _run_pipeline(
+    *,
+    data: DataFrame,
+    assets: list[str] | None,
+    type_label: Literal["trend", "seasonality"],
+    diagnostic_fn: DiagnosticFun,
+    decision_rule: DecisionFun,
+    apply_fn: ApplyFun,
+    include_diagnostics: bool,
+    **diag_kwargs,
+) -> PipelineOutcome:
+    # Resolve assets once; keep consistent with your helpers
+    if assets is None:
+        assets = get_assets_names(df=data, assets=assets)
+
+    # 1) diagnose
+    diagnostic = diagnostic_fn(data=data, assets=assets, **diag_kwargs)
+
+    # 2) decide
+    # (Trend decision often needs assets order; seasonality doesn’t—this signature stays flexible)
+    decision = decision_rule(diagnostic, assets=assets)
+
+    # 3) apply — let your apply_* do the batching/fusing
+    updated = apply_fn(data=data, decision=decision)
+
+    return PipelineOutcome(
+        type=type_label,
+        decision=decision,
+        updated_data=updated,
+        all_tests=(diagnostic if include_diagnostics else None),
+    )
 
 
 def run_all_iid_tests(
@@ -64,7 +104,7 @@ def check_white_noise(
     prob: ProbVector | None = None,
     assets: list[str] | None = None,
     lags: int = LAGS["testing"],
-):
+) -> dict[str, bool]:
     """
     Runs 3 tests:
     1.Copula independence test on lags
@@ -81,14 +121,10 @@ def check_white_noise(
         assets = get_assets_names(df=data, assets=assets)
 
     wn_tests = run_all_iid_tests(data=data, prob=prob, assets=assets, lags=lags)
-    results = {}
-    for asset in assets:
-        failed = any(
-            wn_tests[test][asset].rejected for test in ("ellipsoid", "copula", "ks")
-        )
-        results[asset] = not failed
-
-    return results
+    return {
+        a: not any(wn_tests[t][a].rejected for t in ("ellipsoid", "copula", "ks"))
+        for a in assets
+    }
 
 
 def detrend_decision_rule(
@@ -120,72 +156,43 @@ def detrend_decision_rule(
     return trend_trans
 
 
-def apply_detrend(
-    data: DataFrame, detrend_needed: dict[str, tuple[str, int]]
-) -> DataFrame:
-    """
-    Applies the chosen detrend transform per asset, then renames the resulting
-    transformed column back to the original asset name (so downstream code
-    always refers to the same column name).
-    """
-    for asset, (transform, order) in detrend_needed.items():
+def apply_detrend(data: DataFrame, decision: dict[str, tuple[str, int]]) -> DataFrame:
+    if not decision:
+        return data
+
+    # will group assets by transform
+    by_group: dict[tuple[str, int], list[str]] = {}
+    for asset, (transform, order) in decision.items():
+        by_group.setdefault((transform, order), []).append(asset)
+
+    for (transform, order), assets in by_group.items():
         if transform == "difference":
-            transformed_col = f"{asset}_diff_{order}"
             data = add_differenced_columns(
-                data=data, assets=[asset], difference=order, keep_all=True
+                data=data, assets=assets, difference=order, keep_all=True
             )
         elif transform == "polynomial":
-            transformed_col = f"{asset}_detrended_p{order}"
             data = add_detrend_column(
-                data=data, assets=[asset], polynomial_orders=[order]
+                data=data, assets=assets, polynomial_orders=[order]
             )
         else:
-            raise ValueError(f"Unknown transform '{transform}' for asset '{asset}'")
+            raise ValueError(f"Unknown transform '{transform}' for assets {assets}")
 
-        if transformed_col not in data.columns:
+    # renames to original cols
+    rename_map = {}
+    for asset, (transform, order) in decision.items():
+        col = (
+            f"{asset}_diff_{order}"
+            if transform == "difference"
+            else f"{asset}_detrended_p{order}"
+        )
+        if col not in data.columns:
             raise ValueError(
-                f"Expected transformed column '{transformed_col}' not found. "
+                f"Expected transformed column '{col}' not found. "
                 f"Available columns: {data.columns}"
             )
+        rename_map[col] = asset
 
-        data = data.drop(asset).rename({transformed_col: asset})
-
-    return data
-
-
-def detrend_pipeline(
-    data: DataFrame,
-    assets: list[str] | None = None,
-    order_max: int = 3,
-    threshold_order: int = 2,
-    include_diagnostics: bool = False,
-    *,
-    trend_type: Literal["deterministic", "stochastic", "both"] = "both",
-) -> DataFrame | PipelineOutcome:
-    """
-    Runs Stationarity tests on both deterministic (polynomial) and stochastic (differences) series to check if a transformation is needed to make series stationary.
-
-    Decision rule is to go with lowest order one.
-    """
-    if assets is None:
-        assets = get_assets_names(df=data, assets=assets)
-
-    assets_trend_res = trend_diagnostic(
-        data, assets, order_max, threshold_order, trend_type=trend_type
-    )
-
-    detrends_needed = detrend_decision_rule(detrend_res=assets_trend_res, assets=assets)
-
-    updated_df = apply_detrend(data=data, detrend_needed=detrends_needed)
-
-    if include_diagnostics:
-        return PipelineOutcome(
-            type="trend",
-            decision=detrends_needed,
-            updated_data=updated_df,
-            all_tests=assets_trend_res,
-        )
-    return updated_df
+    return data.drop(list(decision.keys())).rename(rename_map)
 
 
 def deseason_decision_rule(
@@ -201,17 +208,18 @@ def deseason_decision_rule(
     }
 
 
-# TODO: Finish the deseason apply func below (check what did with detrend)
 def deseason_apply(
-    data: DataFrame, deseason_rule: dict[str, list[tuple[str, float]]]
+    data: DataFrame, decision: dict[str, list[tuple[str, float]]]
 ) -> DataFrame:
+    if not any(decision.values()):
+        return data
     deseasoned_assets = {
         asset: deterministic_deseasoning(
             data,
             asset=asset,
             frequency_radians=[rad for _, rad in seasons],
         )[asset]
-        for asset, seasons in deseason_rule.items()
+        for asset, seasons in decision.items()
         if seasons
     }
     return data.with_columns(
@@ -220,22 +228,49 @@ def deseason_apply(
 
 
 def deseason_pipeline(
-    data: DataFrame, assets: list[str] | None = None, include_diagnostics: bool = False
-) -> PipelineOutcome | DataFrame:
-    if assets is None:
-        assets = get_assets_names(df=data, assets=assets)
+    data: DataFrame,
+    assets: list[str] | None = None,
+    include_diagnostics: bool = False,
+) -> PipelineOutcome:
+    return _run_pipeline(
+        data=data,
+        assets=assets,
+        type_label="seasonality",
+        diagnostic_fn=lambda **kw: seasonality_diagnostic(
+            data=kw["data"],
+            assets=kw["assets"],
+        ),
+        decision_rule=lambda tests, assets=None: deseason_decision_rule(tests),
+        # adapt to your current signature: deseason_apply(data=..., deseason_rule=...)
+        apply_fn=lambda *, data, decision: deseason_apply(data=data, decision=decision),
+        include_diagnostics=include_diagnostics,
+    )
 
-    seasonality_res = seasonality_diagnostic(data=data, assets=assets)
 
-    decision_rule = deseason_decision_rule(seasonality_res)
-
-    updated_df = deseason_apply(data, decision_rule)
-
-    if include_diagnostics:
-        return PipelineOutcome(
-            type="seasonality",
-            decision=decision_rule,
-            updated_data=updated_df,
-            all_tests=seasonality_res,
-        )
-    return updated_df
+def detrend_pipeline(
+    data: DataFrame,
+    assets: list[str] | None = None,
+    order_max: int = 3,
+    threshold_order: int = 2,
+    include_diagnostics: bool = False,
+    *,
+    trend_type: Literal["deterministic", "stochastic", "both"] = "both",
+) -> PipelineOutcome:
+    return _run_pipeline(
+        data=data,
+        assets=assets,
+        type_label="trend",
+        diagnostic_fn=lambda **kw: trend_diagnostic(
+            data=kw["data"],
+            assets=kw["assets"],
+            order_max=order_max,
+            threshold_order=threshold_order,
+            trend_type=trend_type,
+        ),
+        decision_rule=lambda tests, assets=None: detrend_decision_rule(
+            detrend_res=tests, assets=(assets or [])
+        ),
+        # adapt to your current signature: apply_detrend(data=..., detrend_needed=...)
+        apply_fn=lambda *, data, decision: apply_detrend(data=data, decision=decision),
+        include_diagnostics=include_diagnostics,
+    )
