@@ -77,7 +77,8 @@ def _build_constraints(
     """
     Compiles constraint equations to list of constraints used in EP.
     """
-    base: list[CvxConstraint] = [cp.sum(posterior) == 1]  # ensures we get probabilities
+
+    base = [cp.sum(posterior) == 1, posterior >= 0]
     constraints: list[CvxConstraint] = []
     for view in views:
         constraints.append(_assign_constraint_equation(view, posterior, prior))
