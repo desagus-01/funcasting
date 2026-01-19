@@ -26,20 +26,20 @@ aapl_stats = data.select(
 
 aapl_mean, aapl_std = aapl_stats
 
-print(f"""
-AAPL mean: {aapl_mean}
-AAPL std" {aapl_std}"
-""")
 
 # Example, view that AAPL will perform lower than its historical average AND be more volatile
 personal_views = (
     ViewBuilder(data=data)
     .mean(target_means={"AAPL": aapl_mean - 0.01}, sign_type=["equal_less"])
-    .std(target_std={"AAPL": aapl_std + 0.001}, sign_type=["equal_greater"])
+    .std(
+        target_std={"AAPL": aapl_std + 0.01},
+        sign_type=["equal_greater"],
+        mean_ref=aapl_mean - 0.01,
+    )
     .build()
 )
 
-
+personal_views
 # %% Add views to model and apply them
 scenarios_updated = scenarios.add_views(personal_views).apply_views()
 scenarios_updated
