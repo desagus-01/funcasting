@@ -39,6 +39,15 @@ class PipelineOutcome:
     )
 
 
+@dataclass(frozen=True)
+class UnivariatePreprocess:
+    post_data: DataFrame
+    pipeline_decisions: dict[  # TODO: Make datastructs here as too complicated
+        str, dict[str, list[tuple[str, float]]] | dict[str, tuple[str, int]]
+    ]
+    needs_further_modelling: list[str]
+
+
 DiagnosticFun = Callable[..., dict]
 DecisionFun = Callable[..., dict]
 ApplyFun = Callable[..., DataFrame]
@@ -411,13 +420,8 @@ def _find_nonwhite_noise_assets(
     return [a for a, ok in wn.items() if not ok]
 
 
-@dataclass(frozen=True)
-class UnivariatePreprocess:
-    post_data: DataFrame
-    pipeline_decisions: dict[str, tuple[str, int]]
-    needs_further_modelling: list[str]
-
-
+# TODO: Make sure date is also returned
+# TODO: Review dropping nulls blankly - prob is a better way
 def run_univariate_preprocess(
     data: pl.DataFrame,
     assets: list[str] | None = None,
@@ -429,7 +433,7 @@ def run_univariate_preprocess(
       3) Deseason selected assets
       4) Re-check increments white-noise on the transformed data
     Returns:
-      (updated_data, pipeline_decisions, assets_still_nonwhite_noise)
+      UnivariatePreprocess
     """
     if assets is None:
         assets = get_assets_names(df=data, assets=assets)
@@ -440,7 +444,7 @@ def run_univariate_preprocess(
     # Stage 1: cheap screen (optionally only ellipsoid+KS),
     assets_need_preprocess = _find_nonwhite_noise_assets(increments_df, assets)
     if not assets_need_preprocess:
-        return data, {"trend": {}, "deseason": {}}, []
+        return UnivariatePreprocess(data, {"trend": {}, "deseason": {}}, [])
 
     # Trend
     detrend = detrend_pipeline(
