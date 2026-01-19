@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable, Literal
 
+import polars as pl
 from polars import Series
 from polars.dataframe.frame import DataFrame
 
@@ -392,3 +393,76 @@ def detrend_pipeline(
         apply_fn=lambda *, data, decision: _apply_detrend(data=data, decision=decision),
         include_diagnostics=include_diagnostics,
     )
+
+
+def _diff_assets(data: DataFrame, assets: list[str]) -> DataFrame:
+    """First-difference selected asset columns; drop the leading null via slice."""
+    df = data.select(list(assets)).with_columns(
+        [pl.col(a).diff().alias(a) for a in assets]
+    )
+    return df.slice(1)  # removes the first null introduced by diff
+
+
+def _find_nonwhite_noise_assets(
+    increments_df: pl.DataFrame, assets: list[str]
+) -> list[str]:
+    """Return assets whose increments fail white-noise tests."""
+    wn = check_white_noise(data=increments_df.select(assets))
+    return [a for a, ok in wn.items() if not ok]
+
+
+@dataclass(frozen=True)
+class UnivariatePreprocess:
+    post_data: DataFrame
+    pipeline_decisions: dict[str, tuple[str, int]]
+    needs_further_modelling: list[str]
+
+
+def run_univariate_preprocess(
+    data: pl.DataFrame,
+    assets: list[str] | None = None,
+) -> UnivariatePreprocess:
+    """
+    Pipeline:
+      1) Screen assets by increments white-noise
+      2) Detrend selected assets
+      3) Deseason selected assets
+      4) Re-check increments white-noise on the transformed data
+    Returns:
+      (updated_data, pipeline_decisions, assets_still_nonwhite_noise)
+    """
+    if assets is None:
+        assets = get_assets_names(df=data, assets=assets)
+
+    # Compute increments once and reuse
+    increments_df = _diff_assets(data, assets)
+
+    # Stage 1: cheap screen (optionally only ellipsoid+KS),
+    assets_need_preprocess = _find_nonwhite_noise_assets(increments_df, assets)
+    if not assets_need_preprocess:
+        return data, {"trend": {}, "deseason": {}}, []
+
+    # Trend
+    detrend = detrend_pipeline(
+        data=data.select(assets),
+        assets=assets_need_preprocess,
+        include_diagnostics=False,
+    )
+    detrended = detrend.updated_data.drop_nulls()
+
+    # Deseason
+    deseason = deseason_pipeline(
+        data=detrended,
+        assets=assets_need_preprocess,
+        include_diagnostics=False,
+    )
+    transformed = deseason.updated_data
+
+    # Post-check (reuse function but pass fresh increments for transformed data)
+    post_increments = _diff_assets(transformed, assets=assets_need_preprocess)
+    assets_still_nonwhite = _find_nonwhite_noise_assets(
+        post_increments, assets=assets_need_preprocess
+    )
+
+    pipeline_decisions = {"trend": detrend.decision, "deseason": deseason.decision}
+    return UnivariatePreprocess(transformed, pipeline_decisions, assets_still_nonwhite)
