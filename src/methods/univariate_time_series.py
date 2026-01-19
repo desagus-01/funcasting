@@ -28,6 +28,8 @@ from utils.helpers import (
 
 @dataclass(frozen=True)
 class PipelineOutcome:
+    """Result of a univariate preprocessing pipeline run."""
+
     type: Literal["trend", "seasonality"]
     decision: dict[str, tuple[str, int]] | dict[str, list[tuple[str, float]]]
     updated_data: DataFrame
@@ -52,6 +54,21 @@ def _run_pipeline(
     include_diagnostics: bool,
     **diag_kwargs,
 ) -> PipelineOutcome:
+    """Orchestrate diagnose → decide → apply for a univariate pipeline.
+
+    Args:
+        data: Input DataFrame containing asset columns.
+        assets: Subset of asset column names to process. If None, inferred.
+        type_label: "trend" or "seasonality" (tags the outcome).
+        diagnostic_fn: Callable that returns per-asset diagnostics dict.
+        decision_rule: Callable that converts diagnostics -> decision dict.
+        apply_fn: Callable that applies the decision to the DataFrame.
+        include_diagnostics: If True, include diagnostics in the outcome.
+        **diag_kwargs: Extra keyword args forwarded to `diagnostic_fn`.
+
+    Returns:
+        PipelineOutcome with applied data, decision, and optional diagnostics.
+    """
     # Resolve assets once; keep consistent with your helpers
     if assets is None:
         assets = get_assets_names(df=data, assets=assets)
@@ -74,12 +91,27 @@ def _run_pipeline(
     )
 
 
-def run_all_iid_tests(
+def _run_all_iid_tests(
     data: DataFrame,
     prob: ProbVector,
     assets: list[str],
     lags: int = LAGS["testing"],
 ) -> dict[str, TestResultByAsset]:
+    """Execute all IID tests and return raw per-test, per-asset results.
+
+    Args:
+        data: Input DataFrame with asset columns.
+        prob: Probability vector aligned to rows.
+        assets: Asset column names to test.
+        lags: Max lag to evaluate.
+
+    Returns:
+        {
+          "ellipsoid": {asset -> TestResultByAsset},
+          "copula":    {asset -> TestResultByAsset},
+          "ks":        {asset -> TestResultByAsset},
+        }
+    """
     ellipsoid_test = ellipsoid_lag_test(data=data, prob=prob, lags=lags, assets=assets)
     copula_marginal_model = CopulaMarginalModel.from_data_and_prob(data=data, prob=prob)
 
@@ -105,14 +137,21 @@ def check_white_noise(
     assets: list[str] | None = None,
     lags: int = LAGS["testing"],
 ) -> dict[str, bool]:
-    """
-    Runs 3 tests:
-    1.Copula independence test on lags
-    2.Kolmogrov Smirnov Test
-    3.Ellipsoid test on lags
+    """Run three IID tests and summarize white-noise by asset.
 
-    Per asset, if any fails (in any lag) then returns as False, else True
+    Tests:
+        1) Copula-based lag independence
+        2) Kolmogorov–Smirnov (two-sample, split)
+        3) Ellipsoid (Gaussian) lag test
 
+    Args:
+        data: Input DataFrame with asset columns.
+        prob: Optional probability vector aligned to rows. If None, uniform.
+        assets: Asset columns to test; inferred if None.
+        lags: Max lag to test for the lag-based tests.
+
+    Returns:
+        Mapping {asset -> True if all tests pass across all lags, else False}.
     """
     if prob is None:
         prob = uniform_probs(data.height)
@@ -120,16 +159,28 @@ def check_white_noise(
     if assets is None:
         assets = get_assets_names(df=data, assets=assets)
 
-    wn_tests = run_all_iid_tests(data=data, prob=prob, assets=assets, lags=lags)
+    wn_tests = _run_all_iid_tests(data=data, prob=prob, assets=assets, lags=lags)
     return {
         a: not any(wn_tests[t][a].rejected for t in ("ellipsoid", "copula", "ks"))
         for a in assets
     }
 
 
-def detrend_decision_rule(
+def _detrend_decision_rule(
     detrend_res: dict[str, dict[str, TrendTest]], assets: list[str]
 ) -> dict[str, tuple[str, int]]:
+    """Choose the lowest-order winning trend transform per asset.
+
+    Strategy:
+        Prefer the smallest order; tie-break in favor of "polynomial".
+
+    Args:
+        detrend_res: {"deterministic" | "stochastic" -> {asset -> TrendTest}}.
+        assets: Ordered list of asset names to consider.
+
+    Returns:
+        {asset -> ("polynomial" | "difference", order:int)} for decided assets.
+    """
     trend_trans = {}
     for asset in assets:
         deterministic_res = detrend_res["deterministic"][
@@ -156,7 +207,23 @@ def detrend_decision_rule(
     return trend_trans
 
 
-def apply_detrend(data: DataFrame, decision: dict[str, tuple[str, int]]) -> DataFrame:
+def _apply_detrend(data: DataFrame, decision: dict[str, tuple[str, int]]) -> DataFrame:
+    """Apply per-asset trend decisions in batched passes.
+
+    Batches:
+        - Group by (transform, order) to minimize frame materializations.
+        - Compute all diffs of the same order together; same for polynomials.
+
+    Args:
+        data: Input DataFrame with asset columns.
+        decision: {asset -> ("polynomial" | "difference", order:int)}.
+
+    Returns:
+        DataFrame where selected assets are replaced with transformed series.
+
+    Raises:
+        ValueError: If an expected transformed column is not found.
+    """
     if not decision:
         return data
 
@@ -195,9 +262,18 @@ def apply_detrend(data: DataFrame, decision: dict[str, tuple[str, int]]) -> Data
     return data.drop(list(decision.keys())).rename(rename_map)
 
 
-def deseason_decision_rule(
+def _deseason_decision_rule(
     seasonality_diagnostic: dict[str, list[SeasonalityPeriodTest]],
 ) -> dict[str, list[tuple[str, float]]]:
+    """Extract significant seasonal periods and angular frequencies per asset.
+
+    Args:
+        seasonality_diagnostic: {asset -> [SeasonalityPeriodTest, ...]}.
+
+    Returns:
+        {asset -> [(period_label:str, omega_radians:float), ...]} with only
+        periods that show evidence of seasonality.
+    """
     return {
         asset: [
             (period.seasonal_period, period.seasonal_frequency_radian)
@@ -208,9 +284,21 @@ def deseason_decision_rule(
     }
 
 
-def deseason_apply(
+def _deseason_apply(
     data: DataFrame, decision: dict[str, list[tuple[str, float]]]
 ) -> DataFrame:
+    """Deterministically remove seasonality via harmonic regression.
+
+    For each asset with detected periods, fit sin/cos harmonics at the chosen
+    angular frequencies and replace the asset column with residuals.
+
+    Args:
+        data: Input DataFrame.
+        decision: {asset -> [(period_label, omega_radians), ...]}.
+
+    Returns:
+        DataFrame with deseasoned asset columns; no-op if `decision` is empty.
+    """
     if not any(decision.values()):
         return data
     deseasoned_assets = {
@@ -232,6 +320,19 @@ def deseason_pipeline(
     assets: list[str] | None = None,
     include_diagnostics: bool = False,
 ) -> PipelineOutcome:
+    """Detect and remove seasonality for selected assets.
+
+    Steps:
+        diagnose -> select significant periods -> deseason (harmonic residuals).
+
+    Args:
+        data: Input DataFrame with asset columns.
+        assets: Asset names; if None, inferred.
+        include_diagnostics: If True, include per-asset period tests.
+
+    Returns:
+        PipelineOutcome tagged as "seasonality".
+    """
     return _run_pipeline(
         data=data,
         assets=assets,
@@ -240,9 +341,11 @@ def deseason_pipeline(
             data=kw["data"],
             assets=kw["assets"],
         ),
-        decision_rule=lambda tests, assets=None: deseason_decision_rule(tests),
+        decision_rule=lambda tests, assets=None: _deseason_decision_rule(tests),
         # adapt to your current signature: deseason_apply(data=..., deseason_rule=...)
-        apply_fn=lambda *, data, decision: deseason_apply(data=data, decision=decision),
+        apply_fn=lambda *, data, decision: _deseason_apply(
+            data=data, decision=decision
+        ),
         include_diagnostics=include_diagnostics,
     )
 
@@ -256,6 +359,22 @@ def detrend_pipeline(
     *,
     trend_type: Literal["deterministic", "stochastic", "both"] = "both",
 ) -> PipelineOutcome:
+    """Select and apply the minimal trend transform per asset.
+
+    Steps:
+        diagnose (deterministic/stochastic) -> pick lowest order -> apply.
+
+    Args:
+        data: Input DataFrame with asset columns.
+        assets: Asset names; if None, inferred.
+        order_max: Maximum order to test for each trend family.
+        threshold_order: Evidence threshold for accepting a transform.
+        include_diagnostics: If True, include per-asset TrendTest results.
+        trend_type: Which family to consider ("deterministic", "stochastic", "both").
+
+    Returns:
+        PipelineOutcome tagged as "trend".
+    """
     return _run_pipeline(
         data=data,
         assets=assets,
@@ -267,10 +386,9 @@ def detrend_pipeline(
             threshold_order=threshold_order,
             trend_type=trend_type,
         ),
-        decision_rule=lambda tests, assets=None: detrend_decision_rule(
+        decision_rule=lambda tests, assets=None: _detrend_decision_rule(
             detrend_res=tests, assets=(assets or [])
         ),
-        # adapt to your current signature: apply_detrend(data=..., detrend_needed=...)
-        apply_fn=lambda *, data, decision: apply_detrend(data=data, decision=decision),
+        apply_fn=lambda *, data, decision: _apply_detrend(data=data, decision=decision),
         include_diagnostics=include_diagnostics,
     )
