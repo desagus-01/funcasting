@@ -1,7 +1,7 @@
 # %%
 
 from maths.time_series import stationarity_tests
-from methods.univariate_time_series import (
+from methods.preprocess_pipeline import (
     deseason_pipeline,
     detrend_pipeline,
 )
