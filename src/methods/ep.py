@@ -1,6 +1,7 @@
 import cvxpy as cp
 import numpy as np
 from cvxpy.constraints.constraint import Constraint as CvxConstraint
+from numpy._typing import NDArray
 from pydantic import validate_call
 
 from globals import model_cfg
@@ -37,6 +38,9 @@ def _assign_constraint_equation(views: View, posterior: cp.Variable, prior: Prob
 
     match views.type:
         case "quantile":
+            if views.views_target is None:
+                raise ValueError("Your views_target cannot be None")
+
             constraint = operator_used(views.data @ posterior, views.views_target)
 
         case "sorting":
@@ -45,12 +49,16 @@ def _assign_constraint_equation(views: View, posterior: cp.Variable, prior: Prob
             )
 
         case "std":
+            if views.views_target is None:
+                raise ValueError("Your views_target cannot be None")
             mu_ref = views.data @ prior if views.mean_ref is None else views.mean_ref
             constraint = operator_used(
                 views.data**2 @ posterior, views.views_target**2 + mu_ref**2
             )
 
         case "mean":
+            if views.views_target is None:
+                raise ValueError("Your views_target cannot be None")
             constraint = operator_used(views.data @ posterior, views.views_target)
 
         case "corr":
@@ -78,7 +86,7 @@ def _build_constraints(
     Compiles constraint equations to list of constraints used in EP.
     """
 
-    base = [cp.sum(posterior) == 1, posterior >= 0]
+    base: list[CvxConstraint] = [cp.sum(posterior) == 1, posterior >= 0]
     constraints: list[CvxConstraint] = []
     for view in views:
         constraints.append(_assign_constraint_equation(view, posterior, prior))
@@ -134,6 +142,21 @@ def get_constraints_diags(
     return info
 
 
+# TODO: Consider whether this is the best way (maybe instead of clipping give a v small value)
+def clip_normalise_probs(prob: NDArray[np.floating]) -> ProbVector:
+    """
+    Clips any values below 0 (as solver might get these out due to tolerance) and normalises
+    """
+    prob[prob < 0] = 0.0
+
+    s = prob.sum()
+    if s <= 0:
+        raise RuntimeError("posterior collapsed after clipping (unexpected).")
+
+    prob /= s
+    return np.asarray(prob, dtype=float)
+
+
 def entropy_pooling(
     prior: ProbVector,
     views: list[View],
@@ -152,14 +175,22 @@ def entropy_pooling(
     obj = cp.Minimize(cp.sum(cp.kl_div(posterior, prior)))
     prob = cp.Problem(obj, constraints)
     _ = prob.solve(solver, **solver_kwargs)
+    posterior_res = posterior.value
 
-    if posterior.value is None:
+    if prob.status not in ("optimal", "optimal_inaccurate"):
+        raise RuntimeError(f"EP did not solve optimally. status={prob.status}")
+    if posterior_res is None:
         raise RuntimeError("Optimization failed or returned no solution!")
-
+    if posterior_res.min() < -1e-6:
+        raise RuntimeError(
+            f"Materially negative posterior probability: min={posterior_res.min()}"
+        )
+    elif posterior_res.min() < 0:
+        posterior_res = clip_normalise_probs(posterior_res)
     if include_diags:
-        print(get_constraints_diags(views, constraints, posterior.value))
+        print(get_constraints_diags(views, constraints, posterior_res))
 
-    return np.asarray(posterior.value, dtype=float)
+    return posterior_res
 
 
 @validate_call(config=model_cfg, validate_return=True)
