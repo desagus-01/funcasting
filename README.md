@@ -25,7 +25,7 @@
 git clone https://github.com/desagus-01/funcasting.git
 cd funcasting
 uv sync
-
+uv pip install -e .
 ```
 ---
 
