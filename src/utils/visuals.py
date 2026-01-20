@@ -1,3 +1,4 @@
+# INFO: Below made with AI, cba with visuals - hate it
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
