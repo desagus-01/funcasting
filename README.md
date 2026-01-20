@@ -20,10 +20,11 @@
 ---
 
 ## Installation
-git clone https://github.com/desagus-01/funcasting.git
+
+`git clone https://github.com/desagus-01/funcasting.git
 cd funcasting
 uv sync
-
+`
 ---
 
 ## Roadmap

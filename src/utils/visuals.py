@@ -181,3 +181,33 @@ def plt_prob_shift(
 
     plt.tight_layout()
     plt.show()
+
+
+def plot_hist_compare(base, cma, column):
+    plt.figure(figsize=(7, 4))
+
+    plt.hist(base[column].to_numpy(), bins=40, alpha=0.5, density=True, label="Base")
+    plt.hist(cma[column].to_numpy(), bins=40, alpha=0.5, density=True, label="CMA")
+
+    plt.title(f"Distribution Comparison: {column}")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+def scatter_compare(base, cma, x, y):
+    fig, axs = plt.subplots(1, 2, figsize=(10, 4))
+
+    axs[0].scatter(base[x], base[y], s=5, alpha=0.3)
+    axs[0].set_title("Base")
+    axs[0].set_xlabel(x)
+    axs[0].set_ylabel(y)
+
+    axs[1].scatter(cma[x], cma[y], s=5, alpha=0.3)
+    axs[1].set_title("CMA")
+    axs[1].set_xlabel(x)
+    axs[1].set_ylabel(y)
+
+    plt.suptitle(f"Dependence Structure: {x} vs {y}")
+    plt.tight_layout()
+    plt.show()
