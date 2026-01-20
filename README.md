@@ -19,8 +19,22 @@
 
 ---
 
+## Examples
+
+The best way to see current capabilities is through the example notebooks.
+
+Examples include:
+- Applying **Copula Marginal Approximation (CMA)** to generate joint scenarios  
+- Using **entropy pooling** to impose subjective market views  
+- Building probability-adjusted forecasts from historical data (still not done!)
+
+can be found in: notebooks/examples/
+
+---
+
 ## Installation
 
+Make sure you have [uv](https://github.com/astral-sh/uv) installed, then run:
 ```bash
 git clone https://github.com/desagus-01/funcasting.git
 cd funcasting
