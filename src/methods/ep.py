@@ -174,7 +174,7 @@ def entropy_pooling(
     constraints = _build_constraints(views=views, posterior=posterior, prior=prior)
     obj = cp.Minimize(cp.sum(cp.kl_div(posterior, prior)))
     prob = cp.Problem(obj, constraints)
-    _ = prob.solve(solver, **solver_kwargs)
+    _ = prob.solve(solver=solver, **solver_kwargs)
     posterior_res = posterior.value
 
     if prob.status not in ("optimal", "optimal_inaccurate"):

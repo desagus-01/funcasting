@@ -22,11 +22,32 @@ class ViewBuilder:
     data: DataFrame
     views: list[View] = field(default_factory=list)
 
+    def _match_mean_ref(self, views: list[View]) -> list[View]:
+        means = {}
+        pending_std = {}
+
+        for v in views:
+            rd = v.risk_driver
+
+            if v.type == "mean":
+                means[rd] = v.views_target
+                # attach mean to any std views we saw earlier for this driver
+                for sv in pending_std.pop(rd, []):
+                    sv.mean_ref = v.views_target
+
+            elif v.type == "std":
+                if rd in means:
+                    v.mean_ref = means[rd]
+                else:
+                    pending_std.setdefault(rd, []).append(v)
+
+        return views
+
     def build(self) -> list[View]:
         """
         Returns all created views
         """
-        return self.views
+        return self._match_mean_ref(self.views)
 
     # TODO: Review the below, think math might be wrong
     def quantile(self, quant: float, quant_prob: float) -> Self:
@@ -101,7 +122,6 @@ class ViewBuilder:
         self,
         target_std: dict[str, float],
         sign_type: list[ConstraintSignLike],
-        mean_ref: float | None = None,
     ) -> Self:
         # Checks we have equal amounts of self.data, constraints, and targets
         if not (len(target_std.keys()) == len(sign_type)):
@@ -116,7 +136,7 @@ class ViewBuilder:
                     data=self.data[key].to_numpy().T,
                     views_target=np.array(target_std[key]),
                     sign_type=sign_type[i],
-                    mean_ref=None if mean_ref is None else np.array(mean_ref),
+                    mean_ref=None,
                 )
                 for i, key in enumerate(target_std.keys())
             ]

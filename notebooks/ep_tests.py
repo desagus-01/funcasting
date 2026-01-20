@@ -34,12 +34,28 @@ personal_views = (
     .std(
         target_std={"AAPL": aapl_std + 0.01},
         sign_type=["equal_greater"],
-        mean_ref=aapl_mean - 0.01,
+        # mean_ref=aapl_mean - 0.01,
     )
-    .build()
+    # .build()
 )
 
-personal_views
 # %% Add views to model and apply them
-scenarios_updated = scenarios.add_views(personal_views).apply_views()
-scenarios_updated
+views = personal_views.views
+
+means = {}  # risk_driver -> views_target (mean)
+pending_std = {}  # risk_driver -> list of std views waiting for a mean
+
+for v in views:
+    rd = v.risk_driver
+
+    if v.type == "mean":
+        means[rd] = v.views_target
+        # attach mean to any std views we saw earlier for this driver
+        for sv in pending_std.pop(rd, []):
+            sv.mean_ref = v.views_target
+
+    elif v.type == "std":
+        if rd in means:
+            v.mean_ref = means[rd]
+        else:
+            pending_std.setdefault(rd, []).append(v)
