@@ -21,10 +21,12 @@
 
 ## Installation
 
-`git clone https://github.com/desagus-01/funcasting.git
+```bash
+git clone https://github.com/desagus-01/funcasting.git
 cd funcasting
 uv sync
-`
+
+```
 ---
 
 ## Roadmap
@@ -38,5 +40,4 @@ In general:
 4. Work on optimization approach(es) based on forecasted model
 5. Add risk factor implementation
 6. Add visuals etc.
- 
 
