@@ -10,6 +10,14 @@ from statsmodels.compat.python import lzip
 from maths.time_series.operations import deterministic_detrend
 
 
+@dataclass(frozen=True)
+class AutoCorrelation:
+    lower: float
+    value: float
+    upper: float
+    p_value: float
+
+
 def add_detrend_column(
     data: pl.DataFrame,
     assets: list[str] | None = None,
@@ -69,6 +77,8 @@ def add_differenced_columns(
 def autocovariance(
     data: NDArray[np.floating], lag_length: int = 10, use_fft: bool = True
 ) -> dict[str, float]:
+    if np.isnan(data).any():
+        raise ValueError("Your array contains Nans, please fix")
     # basic 1-d check
     if data.ndim != 1:
         raise ValueError(f"Data must be 1D, currently {data.ndim}")
@@ -96,8 +106,7 @@ def autocovariance(
     return {f"lag_{i}": float(cov) for i, cov in enumerate(auto_covariance)}
 
 
-def _autocorr_confint(autocorr_vals: NDArray[np.floating], alpha: float = 0.05):
-    n = autocorr_vals.shape[0]
+def _autocorr_confint(autocorr_vals: NDArray[np.floating], n: int, alpha: float = 0.05):
     varacf = np.ones_like(autocorr_vals) / n
     varacf[0] = 0
     varacf[1] = 1.0 / n
@@ -107,11 +116,20 @@ def _autocorr_confint(autocorr_vals: NDArray[np.floating], alpha: float = 0.05):
     return confint
 
 
-@dataclass(frozen=True)
-class AutoCorrelation:
-    lower: float
-    value: float
-    upper: float
+def _ljung_box_stat(acf: NDArray[np.floating], n: int) -> tuple[float, float]:
+    """
+    acf: array of autocorrelations for lags 1..m (NO lag 0)
+    n: sample size of the original series
+    """
+    m = len(acf)
+    if m == 0:
+        return 0.0, 1.0
+
+    k = np.arange(1, m + 1)
+    stat_seq = n * (n + 2) * np.cumsum((acf**2) / (n - k))
+    stat = stat_seq[-1]
+    p_val = stats.chi2.sf(stat, m)
+    return float(stat), float(p_val)
 
 
 def autocorrelation(
@@ -120,17 +138,21 @@ def autocorrelation(
     use_fft: bool = True,
     confint_alpha: float = 0.05,
 ) -> dict[str, AutoCorrelation]:
+    if np.isnan(data).any():
+        raise ValueError("Your array contains Nans, please fix")
     if confint_alpha <= 0:
-        raise ValueError("Your choosen alpha must be between 0 and 1")
+        raise ValueError("Your chosen alpha must be between 0 and 1")
     autocovariances = autocovariance(data=data, lag_length=lag_length, use_fft=use_fft)
     acov_vals = np.asarray(list(autocovariances.values()))
     autocorr_vals = acov_vals[: lag_length + 1] / acov_vals[0]
-    confint = _autocorr_confint(autocorr_vals=autocorr_vals, alpha=confint_alpha)
+    n = len(data)
+    confint = _autocorr_confint(autocorr_vals=autocorr_vals, n=n, alpha=confint_alpha)
     return {
         f"lag_{lag}": AutoCorrelation(
             lower=float(confint[lag, 0]),
             value=float(autocorr_vals[lag]),
             upper=float(confint[lag, 1]),
+            p_value=_ljung_box_stat(autocorr_vals[1 : lag + 1], n=n)[1],
         )
         for lag in range(lag_length + 1)
     }

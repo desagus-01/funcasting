@@ -216,10 +216,14 @@ def scatter_compare(base, cma, x, y):
 
 
 def plot_acf_simple(
-    data: pl.DataFrame, asset: str, lag_length=10, use_fft=True, alpha=0.05, ax=None
+    data: pl.DataFrame,
+    asset: str,
+    lag_length=10,
+    use_fft=True,
+    alpha=0.05,
+    ax=None,
 ) -> None:
     x = data.select(asset).to_numpy().ravel()
-    # your function returns dict["lag_k"] -> AutoCorrelation(lower,value,upper)
     acf_dict = autocorrelation(
         x, lag_length=lag_length, use_fft=use_fft, confint_alpha=alpha
     )
@@ -232,23 +236,33 @@ def plot_acf_simple(
     conf_lo = np.array([v.lower for _, v in items], dtype=float)
     conf_hi = np.array([v.upper for _, v in items], dtype=float)
 
-    # statsmodels-style band centered at 0:
+    # band centered at 0
     band_lo = conf_lo - acf_vals
     band_hi = conf_hi - acf_vals
 
     if ax is None:
-        fig, ax = plt.subplots()
-    else:
-        _ = ax.figure
+        _, ax = plt.subplots()
 
     ax.axhline(0)
-    ax.vlines(lags, 0, acf_vals)
-    ax.plot(lags, acf_vals, "o")
 
-    # skip lag 0 shading (optional)
-    ax.fill_between(lags[1:], band_lo[1:], band_hi[1:], alpha=0.25)
+    # --- draw the CI band (skip lag 0 if you want)
+    if len(lags) > 1:
+        ax.fill_between(lags[1:], band_lo[1:], band_hi[1:], alpha=0.25)
 
-    ax.set_title("Autocorrelation")
+    # --- determine which spikes are significant (outside the band)
+    sig = (acf_vals < band_lo) | (acf_vals > band_hi)
+    sig[0] = False  # ignore lag 0
+
+    # --- draw all spikes (baseline)
+    ax.vlines(lags, 0, acf_vals, linewidth=1, color="C0")
+    ax.plot(lags, acf_vals, "o", markersize=4, color="C0")
+
+    # --- highlight significant spikes in red
+    if np.any(sig):
+        ax.vlines(lags[sig], 0, acf_vals[sig], linewidth=1.5, color="red")
+        ax.plot(lags[sig], acf_vals[sig], "o", markersize=5, color="red")
+
+    ax.set_title(f"{asset} - Autocorrelation")
     ax.set_xlabel("Lag")
     ax.set_ylabel("ACF")
     ax.set_ylim(-1.05, 1.05)
