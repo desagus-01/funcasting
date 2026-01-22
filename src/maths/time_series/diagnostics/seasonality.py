@@ -3,6 +3,7 @@ from typing import NamedTuple, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.axes import Axes
 from numpy._typing._array_like import NDArray
 from polars.dataframe.frame import DataFrame
 from scipy.stats import f as f_dist
@@ -54,7 +55,7 @@ def plot_periodogram(
     max_period: int = 260,
     seasonal_map: dict[str, int] = SEASONAL_MAP,
     show_labels: bool = True,
-):
+) -> Axes:
     periodo = periodogram(data=data)
     mask = periodo.freq_cycles > 0
     periods = 1.0 / periodo.freq_cycles[mask]

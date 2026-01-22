@@ -1,5 +1,11 @@
+from dataclasses import dataclass
+
+import numpy as np
 import polars as pl
 import polars.selectors as cs
+from numpy._typing import NDArray
+from scipy import fft, stats
+from statsmodels.compat.python import lzip
 
 from maths.time_series.operations import deterministic_detrend
 
@@ -57,3 +63,74 @@ def add_differenced_columns(
     return data.with_columns(
         [pl.col(assets).diff(d).name.suffix(f"_diff_{d}") for d in diffs]
     )
+
+
+# INFO: inspired by statsmodels (especially FFT part)
+def autocovariance(
+    data: NDArray[np.floating], lag_length: int = 10, use_fft: bool = True
+) -> dict[str, float]:
+    # basic 1-d check
+    if data.ndim != 1:
+        raise ValueError(f"Data must be 1D, currently {data.ndim}")
+    # demean by default
+    demeaned_array: NDArray[np.floating] = data - data.mean()
+    n = demeaned_array.shape[0]
+
+    if not use_fft:
+        auto_covariance = np.empty(lag_length + 1)
+        auto_covariance[0] = demeaned_array @ demeaned_array  # lag 0
+        for lag in range(lag_length):
+            auto_covariance[lag + 1] = (
+                demeaned_array[lag + 1 :] @ demeaned_array[: -(lag + 1)]
+            )
+    else:
+        n_fft = fft.next_fast_len(target=2 * n - 1, real=True)
+        fourier_transform = np.fft.fft(demeaned_array, n=n_fft)
+        auto_covariance = np.fft.ifft(
+            fourier_transform * np.conjugate(fourier_transform)
+        ).real
+        auto_covariance = auto_covariance[: lag_length + 1].copy()
+
+    auto_covariance /= n - np.arange(lag_length + 1)  # adjustment
+
+    return {f"lag_{i}": float(cov) for i, cov in enumerate(auto_covariance)}
+
+
+def _autocorr_confint(autocorr_vals: NDArray[np.floating], alpha: float = 0.05):
+    n = autocorr_vals.shape[0]
+    varacf = np.ones_like(autocorr_vals) / n
+    varacf[0] = 0
+    varacf[1] = 1.0 / n
+    varacf[2:] *= 1 + 2 * np.cumsum(autocorr_vals[1:-1] ** 2)
+    interval = stats.norm.ppf(1 - alpha / 2.0) * np.sqrt(varacf)
+    confint = np.array(lzip(autocorr_vals - interval, autocorr_vals + interval))
+    return confint
+
+
+@dataclass(frozen=True)
+class AutoCorrelation:
+    lower: float
+    value: float
+    upper: float
+
+
+def autocorrelation(
+    data: NDArray[np.floating],
+    lag_length: int = 10,
+    use_fft: bool = True,
+    confint_alpha: float = 0.05,
+) -> dict[str, AutoCorrelation]:
+    if confint_alpha <= 0:
+        raise ValueError("Your choosen alpha must be between 0 and 1")
+    autocovariances = autocovariance(data=data, lag_length=lag_length, use_fft=use_fft)
+    acov_vals = np.asarray(list(autocovariances.values()))
+    autocorr_vals = acov_vals[: lag_length + 1] / acov_vals[0]
+    confint = _autocorr_confint(autocorr_vals=autocorr_vals, alpha=confint_alpha)
+    return {
+        f"lag_{lag}": AutoCorrelation(
+            lower=float(confint[lag, 0]),
+            value=float(autocorr_vals[lag]),
+            upper=float(confint[lag, 1]),
+        )
+        for lag in range(lag_length + 1)
+    }

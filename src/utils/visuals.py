@@ -5,6 +5,8 @@ import matplotlib.ticker as mtick
 import numpy as np
 import polars as pl
 
+from maths.helpers import autocorrelation
+
 
 def _unique_dates_np(dates: pl.DataFrame) -> np.ndarray:
     return dates.select(pl.col("date")).unique(maintain_order=True).to_numpy().ravel()
@@ -211,3 +213,40 @@ def scatter_compare(base, cma, x, y):
     plt.suptitle(f"Dependence Structure: {x} vs {y}")
     plt.tight_layout()
     plt.show()
+
+
+def plot_acf_simple(x, lag_length=10, use_fft=True, alpha=0.05, ax=None):
+    # your function returns dict["lag_k"] -> AutoCorrelation(lower,value,upper)
+    acf_dict = autocorrelation(
+        x, lag_length=lag_length, use_fft=use_fft, confint_alpha=alpha
+    )
+
+    # order by lag
+    items = sorted(acf_dict.items(), key=lambda kv: int(kv[0].split("_")[1]))
+    lags = np.array([int(k.split("_")[1]) for k, _ in items])
+    acf_vals = np.array([v.value for _, v in items], dtype=float)
+
+    conf_lo = np.array([v.lower for _, v in items], dtype=float)
+    conf_hi = np.array([v.upper for _, v in items], dtype=float)
+
+    # statsmodels-style band centered at 0:
+    band_lo = conf_lo - acf_vals
+    band_hi = conf_hi - acf_vals
+
+    if ax is None:
+        fig, ax = plt.subplots()
+    else:
+        fig = ax.figure
+
+    ax.axhline(0)
+    ax.vlines(lags, 0, acf_vals)
+    ax.plot(lags, acf_vals, "o")
+
+    # skip lag 0 shading (optional)
+    ax.fill_between(lags[1:], band_lo[1:], band_hi[1:], alpha=0.25)
+
+    ax.set_title("Autocorrelation")
+    ax.set_xlabel("Lag")
+    ax.set_ylabel("ACF")
+    ax.set_ylim(-1.05, 1.05)
+    return fig

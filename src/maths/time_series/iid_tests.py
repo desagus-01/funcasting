@@ -16,6 +16,7 @@ from utils.helpers import (
     split_df_in_half,
 )
 
+# TODO: Should add Ljung-box test as more robust
 StatFunc = Callable[[np.ndarray, ProbVector, np.random.Generator | None], float]
 
 
@@ -84,7 +85,9 @@ def _sample_meancov(
     data_np = data.select(assets).to_numpy()
 
     weighted_mean = prob @ data_np
-    weighted_cov = ((data_np - weighted_mean).T * prob) @ (data_np - weighted_mean)
+    weighted_cov = ((data_np - weighted_mean).T * prob) @ (
+        data_np - weighted_mean
+    )  # TODO: check if this is right autocov function
 
     return MeanCovRes(
         assets=assets,
