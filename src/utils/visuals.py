@@ -215,7 +215,10 @@ def scatter_compare(base, cma, x, y):
     plt.show()
 
 
-def plot_acf_simple(x, lag_length=10, use_fft=True, alpha=0.05, ax=None):
+def plot_acf_simple(
+    data: pl.DataFrame, asset: str, lag_length=10, use_fft=True, alpha=0.05, ax=None
+) -> None:
+    x = data.select(asset).to_numpy().ravel()
     # your function returns dict["lag_k"] -> AutoCorrelation(lower,value,upper)
     acf_dict = autocorrelation(
         x, lag_length=lag_length, use_fft=use_fft, confint_alpha=alpha
@@ -236,7 +239,7 @@ def plot_acf_simple(x, lag_length=10, use_fft=True, alpha=0.05, ax=None):
     if ax is None:
         fig, ax = plt.subplots()
     else:
-        fig = ax.figure
+        _ = ax.figure
 
     ax.axhline(0)
     ax.vlines(lags, 0, acf_vals)
@@ -249,4 +252,4 @@ def plot_acf_simple(x, lag_length=10, use_fft=True, alpha=0.05, ax=None):
     ax.set_xlabel("Lag")
     ax.set_ylabel("ACF")
     ax.set_ylim(-1.05, 1.05)
-    return fig
+    plt.show()
