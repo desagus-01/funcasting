@@ -9,9 +9,7 @@ series = synthetic_series(data.height)
 data = data.with_columns(fake=series)
 
 series = data.select("AAPL").to_numpy().ravel()
-
 # %%
-
 
 autocovariance(series, lag_length=5, use_fft=True)
 
@@ -19,4 +17,4 @@ autocovariance(series, lag_length=5, use_fft=True)
 acf = autocorrelation(series, confint_alpha=0.1)
 acf
 # %%
-plot_acf_simple(series)
+plot_acf_simple(data, "AAPL", lag_length=15)
