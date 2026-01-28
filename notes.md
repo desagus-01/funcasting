@@ -36,6 +36,21 @@ Apply Meucci's approach of using a simpler harmonic regression which only identi
 - Test both stochastic and deterministic trend IN parallel.
 - Determinstic/polynomial trend takes precedence as there is a smaller chance of it affecting later seasonality removal.
 
+## Models (AR,MA,ARMA)
+
+Could of things needed:
+1. Estimation of parameters
+2. Auto selection of p,q for models
+3. Forecasting
+
+**Estimation**
+Best/most accurate would be to use a state space model/kalman filter, this is 'quick' and accurate. 
+Def **NOT** using MLE as it is very very slow and mathematically intractible.
+Another good option would be to instead use Hannan–Rissanen or a variation of it. This would still be an approximation, main downside is no hyp testing, p-vals etc.
+
+**Decision**:
+For now, lets do the HR variation based on [pyspectrum](https://pyspectrum.readthedocs.io/en/latest/ref_param.html) but use something other than yule walker
+    - Look at possibly bootstrapping for p-vals etc?
 
 ## Possible pipeline
 **Possible Univariate Pipeline**

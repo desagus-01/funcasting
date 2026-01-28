@@ -4,6 +4,8 @@ from typing import Literal, NamedTuple
 import numpy as np
 from numpy.typing import NDArray
 
+from maths.helpers import get_aic, get_bic
+
 EquationTypes = Literal["nc", "c", "ct", "ctt"]
 
 
@@ -68,14 +70,6 @@ def ols_log_likelihood(sum_of_squared_residuals: float, n_obs: int) -> float:
         * n_obs
         * (np.log(2 * np.pi) + 1.0 + np.log(sum_of_squared_residuals / n_obs))
     )
-
-
-def get_aic(log_likelihood: float, n_parameters: int) -> float:
-    return -2 * log_likelihood + 2 * n_parameters
-
-
-def get_bic(log_likelihood: float, n_obs: int, n_parameters: int) -> float:
-    return -2 * log_likelihood + np.log(n_obs) * n_parameters
 
 
 def get_aic_bic(

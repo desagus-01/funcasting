@@ -156,3 +156,11 @@ def autocorrelation(
         )
         for lag in range(lag_length + 1)
     }
+
+
+def get_aic(log_likelihood: float, n_parameters: int) -> float:
+    return -2 * log_likelihood + 2 * n_parameters
+
+
+def get_bic(log_likelihood: float, n_obs: int, n_parameters: int) -> float:
+    return -2 * log_likelihood + np.log(n_obs) * n_parameters
