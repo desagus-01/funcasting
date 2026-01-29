@@ -441,7 +441,6 @@ def run_univariate_preprocess(
     # Compute increments once and reuse
     increments_df = _diff_assets(data, assets)
 
-    # Stage 1: cheap screen (optionally only ellipsoid+KS),
     assets_need_preprocess = _find_nonwhite_noise_assets(increments_df, assets)
     if not assets_need_preprocess:
         return UnivariatePreprocess(data, {"trend": {}, "deseason": {}}, [])
@@ -462,7 +461,6 @@ def run_univariate_preprocess(
     )
     transformed = deseason.updated_data
 
-    # Post-check (reuse function but pass fresh increments for transformed data)
     post_increments = _diff_assets(transformed, assets=assets_need_preprocess)
     assets_still_nonwhite = _find_nonwhite_noise_assets(
         post_increments, assets=assets_need_preprocess

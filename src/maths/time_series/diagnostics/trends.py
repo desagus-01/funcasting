@@ -5,7 +5,6 @@ from typing import Literal
 from polars.dataframe.frame import DataFrame
 
 from maths.helpers import add_detrend_columns_max, add_differenced_columns
-from maths.time_series.estimation import EquationTypes
 from maths.time_series.stationarity_tests import (
     StationarityInference,
     stationarity_tests,
@@ -63,19 +62,17 @@ class TrendTest:
 @dataclass(frozen=True)
 class StationarityRunner:
     lags: int
-    eq_type: EquationTypes
 
     def __call__(self, df: DataFrame, col: str) -> StationarityInference:
         return stationarity_tests(
             data=df.select(col).drop_nulls(),
             asset=col,
             lags=self.lags,
-            eq_type=self.eq_type,
         )
 
     @classmethod
     def trend(cls) -> "StationarityRunner":
-        return cls(lags=10, eq_type="c")
+        return cls(lags=10)
 
 
 TRANSFORMS: dict[TrendTypes, dict] = {

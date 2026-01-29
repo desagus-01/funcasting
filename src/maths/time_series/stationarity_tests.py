@@ -44,7 +44,8 @@ class StationarityInference:
     label: InferenceLabel
     sign_lvl: float
     details: str
-    adf: HypTestRes
+    adf_c: HypTestRes
+    adf_ct: HypTestRes
     kpss_level: HypTestRes
     kpss_trend: HypTestRes
 
@@ -52,54 +53,58 @@ class StationarityInference:
 @dataclass(frozen=True)
 class Rule:
     label: InferenceLabel
-    when: Callable[[bool, bool, bool], bool]
+    when: Callable[[bool, bool, bool, bool], bool]
     details: str
 
 
 RULES: tuple[Rule, ...] = (
     Rule(
         "stationary",
-        lambda A, L, T: A and (not L),
-        "ADF rejects unit root; KPSS(level) fails to reject level stationarity.",
-    ),
-    Rule(
-        "unit-root/non-stationary",
-        lambda A, L, T: (not A) and L,
-        "ADF fails to reject unit root; KPSS(level) rejects level stationarity.",
+        lambda A_c, A_ct, L, T: A_c and (not L),
+        "ADF(c) rejects unit root; KPSS(level) fails to reject level stationarity.",
     ),
     Rule(
         "trend-stationary",
-        lambda A, L, T: A and L and (not T),
-        "ADF rejects unit root; KPSS(level) rejects; KPSS(trend) fails to reject trend stationarity.",
+        lambda A_c, A_ct, L, T: A_ct and (not T),
+        "ADF(ct) rejects unit root; KPSS(trend) fails to reject trend stationarity.",
+    ),
+    Rule(
+        "unit-root/non-stationary",
+        lambda A_c, A_ct, L, T: (not A_c) and L,
+        "ADF(c) fails to reject unit root; KPSS(level) rejects level stationarity.",
     ),
 )
 
 
 def infer_stationarity(
-    adf: HypTestRes,
+    adf_c: HypTestRes,
+    adf_ct: HypTestRes,
     kpss_level: HypTestRes,
     kpss_trend: HypTestRes,
 ) -> StationarityInference:
-    A = adf.reject_null
+    A_c = adf_c.reject_null
+    A_ct = adf_ct.reject_null
     L = kpss_level.reject_null
     T = kpss_trend.reject_null
 
     for r in RULES:
-        if r.when(A, L, T):
+        if r.when(A_c, A_ct, L, T):
             return StationarityInference(
                 label=r.label,
-                sign_lvl=adf.sign_lvl,
+                sign_lvl=adf_c.sign_lvl,
                 details=r.details,
-                adf=adf,
+                adf_c=adf_c,
+                adf_ct=adf_ct,
                 kpss_level=kpss_level,
                 kpss_trend=kpss_trend,
             )
 
     return StationarityInference(
         label="inconclusive/conflict",
-        sign_lvl=adf.sign_lvl,
+        sign_lvl=adf_c.sign_lvl,
         details="No clean ADF/KPSS agreement pattern at this significance level.",
-        adf=adf,
+        adf_c=adf_c,
+        adf_ct=adf_ct,
         kpss_level=kpss_level,
         kpss_trend=kpss_trend,
     )
@@ -369,15 +374,18 @@ def stationarity_tests(
     asset: str,
     adf_metric: Literal["aic", "bic"] = "aic",
     lags: int | None = None,
-    eq_type: EquationTypes = "nc",
 ) -> StationarityInference:
-    adf_res = augmented_dickey_fuller_test(
-        data=data, asset=asset, metric=adf_metric, lags=lags, eq_type=eq_type
+    adf_c = augmented_dickey_fuller_test(
+        data=data, asset=asset, metric=adf_metric, lags=lags, eq_type="c"
     )
+    adf_ct = augmented_dickey_fuller_test(
+        data=data, asset=asset, metric=adf_metric, lags=lags, eq_type="ct"
+    )
+
     kpss_res_lvl = kpss_test(data=data, asset=asset, null_type_stationarity="level")
 
     kpss_res_trend = kpss_test(data=data, asset=asset, null_type_stationarity="trend")
 
     return infer_stationarity(
-        adf=adf_res, kpss_level=kpss_res_lvl, kpss_trend=kpss_res_trend
+        adf_c=adf_c, adf_ct=adf_ct, kpss_level=kpss_res_lvl, kpss_trend=kpss_res_trend
     )

@@ -49,9 +49,8 @@ Def **NOT** using MLE as it is very very slow and mathematically intractible.
 Another good option would be to instead use Hannan–Rissanen or a variation of it. This would still be an approximation, main downside is no hyp testing, p-vals etc.
 
 **Decision**:
-For now, lets do the HR variation based on [pyspectrum](https://pyspectrum.readthedocs.io/en/latest/ref_param.html) but use something other than yule walker
-    - Look at possibly bootstrapping for p-vals etc?
-
+~For now, lets do the HR variation based on [pyspectrum](https://pyspectrum.readthedocs.io/en/latest/ref_param.html) but use something other than yule walker~
+- Fuck it, using statsmodels, too much work
 ## Possible pipeline
 **Possible Univariate Pipeline**
 1. Test Efficiency

@@ -76,7 +76,7 @@ def _update_prediction_errors(
     return updated_forward_error, updated_backward_error
 
 
-def burg_ar(
+def autoregressive_burg(
     data: NDArray[np.floating], order: int, auto_order: bool = False
 ) -> NDArray[np.floating]:
     """
@@ -88,7 +88,8 @@ def burg_ar(
         1D real or complex-valued time series data.
     order : int
         Desired AR model order (p).
-
+    aut_order: bool
+        Automatically chooses best lag based on the AKICc criteria.
     Returns:
     --------
     ar_coeffs : ndarray
@@ -125,11 +126,6 @@ def burg_ar(
         criteria_score.append(
             get_akicc(signal_length, float(total_signal_power), current_order + 1)
         )
-        print(f"""
-        Info:
-        current order: {current_order}
-        crit score: {criteria_score}
-        """)
         if auto_order and len(criteria_score) > 1:
             if criteria_score[-1] > criteria_score[-2]:
                 return ar_coefficients[:current_order]
@@ -147,3 +143,19 @@ def burg_ar(
         )
 
     return ar_coefficients
+
+
+def _long_autoregressive_model(moving_average_order: int) -> int:
+    """
+    Rule of thumb for long AR model order to use to calc MA model
+    """
+    return max(2 * moving_average_order, 20)
+
+
+def moving_average(data: NDArray[np.floating], order: int):
+    ar_long_order = _long_autoregressive_model(order)
+    ar_coefficients = autoregressive_burg(data=data, order=ar_long_order)
+    # add unity?
+    ar_coefficients = np.insert(ar_coefficients, 0, 1)
+
+    return autoregressive_burg(data=ar_coefficients, order=order)
