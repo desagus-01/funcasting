@@ -51,6 +51,17 @@ Another good option would be to instead use Hannan–Rissanen or a variation of 
 **Decision**:
 ~For now, lets do the HR variation based on [pyspectrum](https://pyspectrum.readthedocs.io/en/latest/ref_param.html) but use something other than yule walker~
 - Fuck it, using statsmodels, too much work
+
+
+### Models - mean dynamics
+Following the pre-processing from de-trend/season, we now must test our resulting model for possible mean dynamics (mean reverting? Short-term vs long-etc etc).
+
+Essentially, we are trying to answer: Have I removed all linear predictability from the mean?
+
+Working outline:
+1.Run [Ljung-box test](https://en.wikipedia.org/wiki/Ljung%E2%80%93Box_test) for asset
+
+
 ## Possible pipeline
 **Possible Univariate Pipeline**
 1. Test Efficiency

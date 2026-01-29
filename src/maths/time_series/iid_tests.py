@@ -5,6 +5,7 @@ import numpy as np
 import polars as pl
 import scipy.stats as st
 from numpy.typing import NDArray
+from statsmodels.stats.diagnostic import acorr_ljungbox
 
 from globals import ITERS, LAGS
 from maths.time_series.base import HypTestRes, format_hyp_test_result
@@ -16,7 +17,6 @@ from utils.helpers import (
     split_df_in_half,
 )
 
-# TODO: Should add Ljung-box test as more robust
 StatFunc = Callable[[np.ndarray, ProbVector, np.random.Generator | None], float]
 
 
@@ -258,3 +258,26 @@ def univariate_kolmogrov_smirnov_test(
         )
 
     return out
+
+
+# TODO: Write Ljung box test (use statsmodels for now)
+# INFO: Not really stataionarit test, please elsewhere
+def ljung_box_test(
+    data: pl.DataFrame, asset: str, lags: list[int] = [10, 20], degrees_of_reedom=0
+) -> PerAssetTestResult:
+    array = data.select(asset).to_numpy().ravel()
+    lb = acorr_ljungbox(x=array, lags=lags, boxpierce=False, model_df=degrees_of_reedom)
+    per_lag = {}
+    for k in lb.index:
+        stat = lb.loc[k, "lb_stat"]
+        pval = lb.loc[k, "lb_pvalue"]
+
+        label = f"lag_{int(k)}"  # matches your existing naming
+        per_lag[label] = format_hyp_test_result(
+            stat=stat,
+            p_val=pval,
+            null=f"No autocorrelation up to lag {int(k)}",
+        )
+    rejected = [k for k, res in per_lag.items() if res.reject_null]
+
+    return PerAssetTestResult(results=per_lag, rejected=rejected)
