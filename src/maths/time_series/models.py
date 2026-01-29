@@ -1,6 +1,8 @@
 import numpy as np
 from numpy._typing import NDArray
 
+from maths.helpers import get_akicc
+
 
 def _compute_reflection_coefficient(
     forward_error: NDArray[np.floating],
@@ -9,7 +11,7 @@ def _compute_reflection_coefficient(
     signal_length: int,
     prediction_error_scaling: float,
     total_denominator: float,
-) -> float:
+) -> tuple[float, float]:
     numerator = np.sum(
         [
             forward_error[j] * backward_error[j - 1]
@@ -23,7 +25,7 @@ def _compute_reflection_coefficient(
         - backward_error[signal_length - 1] ** 2
     )
 
-    return -2.0 * numerator / denominator
+    return -2.0 * numerator / denominator, denominator
 
 
 def _update_ar_coefficients(
@@ -38,7 +40,7 @@ def _update_ar_coefficients(
 
     previous_coefficients = current_ar_coefficients[:current_order].copy()
 
-    for j in range((current_order // 2) + 1):
+    for j in range((current_order + 1) // 2):
         updated_coefficients[j] = (
             previous_coefficients[j]
             + reflection_coefficient * previous_coefficients[current_order - j - 1]
@@ -74,7 +76,9 @@ def _update_prediction_errors(
     return updated_forward_error, updated_backward_error
 
 
-def burg_ar(data: NDArray[np.floating], order: int) -> NDArray[np.floating]:
+def burg_ar(
+    data: NDArray[np.floating], order: int, auto_order: bool = False
+) -> NDArray[np.floating]:
     """
     Estimate AR coefficients using the Burg method.
 
@@ -103,8 +107,9 @@ def burg_ar(data: NDArray[np.floating], order: int) -> NDArray[np.floating]:
     total_denominator = float(2.0 * signal_length * total_signal_power)
     prediction_error_scaling = 1.0
 
+    criteria_score = []
     for current_order in range(order):
-        reflection_coefficient = _compute_reflection_coefficient(
+        reflection_coefficient, total_denominator = _compute_reflection_coefficient(
             forward_error,
             backward_error,
             current_order,
@@ -112,6 +117,22 @@ def burg_ar(data: NDArray[np.floating], order: int) -> NDArray[np.floating]:
             prediction_error_scaling,
             total_denominator,
         )
+
+        temp = 1.0 - reflection_coefficient**2
+        total_signal_power *= temp
+        prediction_error_scaling *= temp
+
+        criteria_score.append(
+            get_akicc(signal_length, float(total_signal_power), current_order + 1)
+        )
+        print(f"""
+        Info:
+        current order: {current_order}
+        crit score: {criteria_score}
+        """)
+        if auto_order and len(criteria_score) > 1:
+            if criteria_score[-1] > criteria_score[-2]:
+                return ar_coefficients[:current_order]
 
         ar_coefficients = _update_ar_coefficients(
             ar_coefficients, reflection_coefficient, current_order
@@ -124,7 +145,5 @@ def burg_ar(data: NDArray[np.floating], order: int) -> NDArray[np.floating]:
             current_order,
             signal_length,
         )
-
-        prediction_error_scaling = 1.0 - reflection_coefficient**2
 
     return ar_coefficients

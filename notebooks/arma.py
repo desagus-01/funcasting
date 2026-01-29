@@ -1,4 +1,5 @@
 # %%
+
 from maths.helpers import add_differenced_columns
 from maths.time_series.models import burg_ar
 from methods.preprocess_pipeline import (
@@ -35,4 +36,7 @@ plot_acf_simple(
     add_differenced_columns(data_to_model, ["AAPL"]).drop_nulls(), "AAPL_diff_1", 15
 )
 # %%
-burg_ar(aapl, 2)
+burg_ar(aapl, 3, True)
+
+
+# %%

@@ -7,8 +7,6 @@ from numpy._typing import NDArray
 from scipy import fft, stats
 from statsmodels.compat.python import lzip
 
-from maths.time_series.operations import deterministic_detrend
-
 
 @dataclass(frozen=True)
 class AutoCorrelation:
@@ -16,6 +14,30 @@ class AutoCorrelation:
     value: float
     upper: float
     p_value: float
+
+
+def deterministic_detrend(
+    data: NDArray[np.floating], polynomial_order: int = 1, axis: int = 0
+) -> NDArray[np.floating]:
+    """
+    Fits a deterministic polynomial trend and then subtracts it from the data
+    """
+    if data.ndim == 2 and int(axis) == 1:
+        data = data.T
+    elif data.ndim > 2:
+        raise NotImplementedError("data.ndim > 2 is not implemented until it is needed")
+
+    if polynomial_order == 0:  # Special case, just de-mean
+        resid = data - data.mean(axis=0)
+    else:
+        trends = np.vander(np.arange(float(data.shape[0])), N=polynomial_order + 1)
+        beta = np.linalg.pinv(trends).dot(data)
+        resid = data - np.dot(trends, beta)
+
+    if data.ndim == 2 and int(axis) == 1:
+        resid = resid.T
+
+    return resid
 
 
 def add_detrend_column(
@@ -164,3 +186,16 @@ def get_aic(log_likelihood: float, n_parameters: int) -> float:
 
 def get_bic(log_likelihood: float, n_obs: int, n_parameters: int) -> float:
     return -2 * log_likelihood + np.log(n_obs) * n_parameters
+
+
+def get_akicc(sample_size: int, rho: float, n_parameters: int) -> float:
+    """Approximate Corrected Kullback Information Criterion (AKICc), Spectrum-compatible."""
+    if n_parameters >= sample_size - 2:
+        # denominator (N-k-2) would be <= 0
+        return np.inf
+    return (
+        np.log(rho)
+        + n_parameters / (sample_size * (sample_size - n_parameters))
+        + (3.0 - (n_parameters + 2.0) / sample_size)
+        * ((n_parameters + 1.0) / (sample_size - n_parameters - 2.0))
+    )
