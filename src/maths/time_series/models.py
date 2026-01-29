@@ -145,17 +145,14 @@ def autoregressive_burg(
     return ar_coefficients
 
 
-def _long_autoregressive_model(moving_average_order: int) -> int:
-    """
-    Rule of thumb for long AR model order to use to calc MA model
-    """
-    return max(2 * moving_average_order, 20)
-
-
-def moving_average(data: NDArray[np.floating], order: int):
-    ar_long_order = _long_autoregressive_model(order)
-    ar_coefficients = autoregressive_burg(data=data, order=ar_long_order)
-    # add unity?
-    ar_coefficients = np.insert(ar_coefficients, 0, 1)
-
-    return autoregressive_burg(data=ar_coefficients, order=order)
+# TODO: Create autoarima function now
+def get_start_and_max_orders(
+    data_length: int,
+    initial_max: int = 3,
+    start_order: int = 0,
+) -> tuple[int, int]:
+    max_order = min(
+        initial_max, np.floor(data_length / 3)
+    )  # we assume that both goes to max of 5
+    print(max_order)
+    return min(start_order, max_order), max(start_order, max_order)

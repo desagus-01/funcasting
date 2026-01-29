@@ -10,6 +10,3 @@ def assets_need_mean_modelling(data: DataFrame, assets_to_test: list[str]) -> li
         if len(lj.rejected) != 0:
             needs_mean_modelling.append(asset)
     return needs_mean_modelling
-
-
-# TODO: Create autoarima function now
