@@ -165,6 +165,12 @@ def _arma_top_candidates(
         int,
     ]
 ]:
+    """
+    Identify the top ARMA (p, q) orders with the lowest information criterion.
+
+    Uses a fast, approximate estimation method to evaluate candidate ARMA
+    models and returns the p and q orders of the best-performing models.
+    """
     # Get top n model orders with lowest information criteria
     best_order = arma_order_select_ic(
         y=asset_array,
@@ -181,6 +187,10 @@ def _arma_top_candidates(
 
 
 class AutoARMARes(NamedTuple):
+    """
+    Container for the results of a fitted ARMA model.
+    """
+
     model_order: tuple[int, int]
     criteria: Literal["aic", "bic"]
     criteria_res: float
@@ -188,6 +198,13 @@ class AutoARMARes(NamedTuple):
     ma_params: NDArray[np.floating]
     mean_squared_error: float
     residuals: NDArray[np.floating]
+
+
+def by_criteria(res: AutoARMARes) -> float:
+    """
+    Extract the information criterion value from an AutoARMARes object.
+    """
+    return res.criteria_res
 
 
 # TODO: Filter out p-vals?
@@ -198,6 +215,12 @@ def auto_arma(
     information_criteria: Literal["bic", "aic"] = "bic",
     top_n_models: int = 3,
 ) -> list[AutoARMARes]:
+    """
+    Fit ARMA models for the top candidate orders and collect their results.
+
+    Candidate model orders are selected using an information criterion,
+    then re-fitted using a more accurate estimation method.
+    """
     candidates_for_arma = _arma_top_candidates(
         asset_array,
         max_ar_order,
@@ -218,18 +241,14 @@ def auto_arma(
                 model_order=(ar_order, ma_order),
                 criteria=information_criteria,
                 criteria_res=float(getattr(res, information_criteria)),
-                ar_params=res.arparams,
-                ma_params=res.maparams,
-                mean_squared_error=float(res.mse),
-                residuals=res.resid,
+                ar_params=res.arparams,  # type: ignore[attr-defined]
+                ma_params=res.maparams,  # type: ignore[attr-defined]
+                mean_squared_error=float(res.mse),  # type: ignore[attr-defined]
+                residuals=res.resid,  # type: ignore[attr-defined]
             )
         )
 
     return arma_res
-
-
-def by_criteria(res: AutoARMARes) -> float:
-    return res.criteria_res
 
 
 def run_best_arma(
@@ -237,6 +256,9 @@ def run_best_arma(
     search_n_models: int = 3,
     information_criteria: Literal["bic", "aic"] = "bic",
 ) -> AutoARMARes:
+    """
+    Run an automated ARMA search and return the best model by information criterion.
+    """
     candidate_models_res = auto_arma(
         asset_array=asset_array,
         information_criteria=information_criteria,
