@@ -1,5 +1,10 @@
+from typing import NamedTuple
+
 import numpy as np
 from numpy._typing import NDArray
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.stattools import arma_order_select_ic
+from typing_extensions import Literal
 
 from maths.helpers import get_akicc
 
@@ -146,13 +151,97 @@ def autoregressive_burg(
 
 
 # TODO: Create autoarima function now
-def get_start_and_max_orders(
-    data_length: int,
-    initial_max: int = 3,
-    start_order: int = 0,
-) -> tuple[int, int]:
-    max_order = min(
-        initial_max, np.floor(data_length / 3)
-    )  # we assume that both goes to max of 5
-    print(max_order)
-    return min(start_order, max_order), max(start_order, max_order)
+
+
+def _arma_top_candidates(
+    asset_array: NDArray[np.floating],
+    max_ar_order: int = 3,
+    max_ma_order: int = 3,
+    information_criteria: Literal["bic", "aic"] = "bic",
+    top_n_models: int = 3,
+) -> list[
+    tuple[
+        int,
+        int,
+    ]
+]:
+    # Get top n model orders with lowest information criteria
+    best_order = arma_order_select_ic(
+        y=asset_array,
+        max_ar=max_ar_order,
+        max_ma=max_ma_order,
+        ic=information_criteria,
+        trend="n",
+        model_kw={"enforce_stationarity": False, "enforce_invertibility": False},
+        fit_kw={"method": "hannan_rissanen", "low_memory": True},
+    )["bic"]
+
+    top = best_order.stack().nsmallest(top_n_models)
+    return [(int(ar_order), int(ma_order)) for (ar_order, ma_order) in top.index]
+
+
+class AutoARMARes(NamedTuple):
+    model_order: tuple[int, int]
+    criteria: Literal["aic", "bic"]
+    criteria_res: float
+    ar_params: NDArray[np.floating]
+    ma_params: NDArray[np.floating]
+    mean_squared_error: float
+    residuals: NDArray[np.floating]
+
+
+# TODO: Filter out p-vals?
+def auto_arma(
+    asset_array: NDArray[np.floating],
+    max_ar_order: int = 3,
+    max_ma_order: int = 3,
+    information_criteria: Literal["bic", "aic"] = "bic",
+    top_n_models: int = 3,
+) -> list[AutoARMARes]:
+    candidates_for_arma = _arma_top_candidates(
+        asset_array,
+        max_ar_order,
+        max_ma_order,
+        information_criteria,
+        top_n_models,
+    )
+
+    arma_res = []
+
+    for ar_order, ma_order in candidates_for_arma:
+        res = ARIMA(asset_array, order=(ar_order, 0, ma_order), trend="n").fit(
+            method="statespace"
+        )  # keep middle as 0 as we only want ARMA
+
+        arma_res.append(
+            AutoARMARes(
+                model_order=(ar_order, ma_order),
+                criteria=information_criteria,
+                criteria_res=float(getattr(res, information_criteria)),
+                ar_params=res.arparams,
+                ma_params=res.maparams,
+                mean_squared_error=float(res.mse),
+                residuals=res.resid,
+            )
+        )
+
+    return arma_res
+
+
+def by_criteria(res: AutoARMARes) -> float:
+    return res.criteria_res
+
+
+def run_best_arma(
+    asset_array: NDArray[np.floating],
+    search_n_models: int = 3,
+    information_criteria: Literal["bic", "aic"] = "bic",
+) -> AutoARMARes:
+    candidate_models_res = auto_arma(
+        asset_array=asset_array,
+        information_criteria=information_criteria,
+        top_n_models=search_n_models,
+    )
+    if not candidate_models_res:
+        raise ValueError("No ARMA models were fitted")
+    return min(candidate_models_res, key=by_criteria)
