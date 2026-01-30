@@ -1,12 +1,15 @@
+import warnings
 from typing import NamedTuple
 
 import numpy as np
 from numpy._typing import NDArray
+from statsmodels.tools.sm_exceptions import ConvergenceWarning
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.stattools import arma_order_select_ic
 from typing_extensions import Literal
 
 from maths.helpers import get_akicc
+from utils.helpers import timeit
 
 
 def _compute_reflection_coefficient(
@@ -196,7 +199,7 @@ class AutoARMARes(NamedTuple):
     criteria_res: float
     ar_params: NDArray[np.floating]
     ma_params: NDArray[np.floating]
-    mean_squared_error: float
+    p_values: NDArray[np.floating]
     residuals: NDArray[np.floating]
 
 
@@ -208,12 +211,13 @@ def by_criteria(res: AutoARMARes) -> float:
 
 
 # TODO: Filter out p-vals?
+@timeit
 def auto_arma(
     asset_array: NDArray[np.floating],
-    max_ar_order: int = 3,
-    max_ma_order: int = 3,
-    information_criteria: Literal["bic", "aic"] = "bic",
-    top_n_models: int = 3,
+    max_ar_order: int,
+    max_ma_order: int,
+    top_n_models: int,
+    information_criteria: Literal["bic", "aic"],
 ) -> list[AutoARMARes]:
     """
     Fit ARMA models for the top candidate orders and collect their results.
@@ -232,9 +236,20 @@ def auto_arma(
     arma_res = []
 
     for ar_order, ma_order in candidates_for_arma:
-        res = ARIMA(asset_array, order=(ar_order, 0, ma_order), trend="n").fit(
-            method="statespace"
-        )  # keep middle as 0 as we only want ARMA
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("error", category=ConvergenceWarning)
+
+                res = ARIMA(asset_array, order=(ar_order, 0, ma_order), trend="n").fit(
+                    method="statespace"
+                )
+
+        except ConvergenceWarning:
+            # Skip models that fail to converge
+            print(
+                f"Model ({ar_order},{ma_order}) failed to converge. Will be dropped from candidates list"
+            )
+            continue
 
         arma_res.append(
             AutoARMARes(
@@ -243,17 +258,20 @@ def auto_arma(
                 criteria_res=float(getattr(res, information_criteria)),
                 ar_params=res.arparams,  # type: ignore[attr-defined]
                 ma_params=res.maparams,  # type: ignore[attr-defined]
-                mean_squared_error=float(res.mse),  # type: ignore[attr-defined]
+                p_values=res.pvalues,  # type: ignore[attr-defined]
                 residuals=res.resid,  # type: ignore[attr-defined]
             )
         )
+    if not arma_res:
+        raise ValueError("No ARMA models were fitted, likely due to failed convergence")
 
     return arma_res
 
 
+# TODO: Among all ARMA models whose residuals pass Ljung–Box, choose the one with the smallest (p+q).
 def run_best_arma(
     asset_array: NDArray[np.floating],
-    search_n_models: int = 3,
+    search_n_models: int = 5,
     information_criteria: Literal["bic", "aic"] = "bic",
 ) -> AutoARMARes:
     """
@@ -261,9 +279,10 @@ def run_best_arma(
     """
     candidate_models_res = auto_arma(
         asset_array=asset_array,
+        max_ar_order=3,
+        max_ma_order=3,
         information_criteria=information_criteria,
         top_n_models=search_n_models,
     )
-    if not candidate_models_res:
-        raise ValueError("No ARMA models were fitted")
+    print(candidate_models_res)
     return min(candidate_models_res, key=by_criteria)

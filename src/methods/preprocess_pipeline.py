@@ -24,6 +24,7 @@ from methods.cma import CopulaMarginalModel
 from models.types import ProbVector
 from utils.helpers import (
     get_assets_names,
+    timeit,
 )
 
 
@@ -422,6 +423,7 @@ def _find_nonwhite_noise_assets(
 
 # TODO: Make sure date is also returned
 # TODO: Review dropping nulls blankly - prob is a better way
+@timeit
 def run_univariate_preprocess(
     data: pl.DataFrame,
     assets: list[str] | None = None,
@@ -431,7 +433,6 @@ def run_univariate_preprocess(
       1) Screen assets by increments white-noise
       2) Detrend selected assets
       3) Deseason selected assets
-      4) Re-check increments white-noise on the transformed data
     Returns:
       UnivariatePreprocess
     """
@@ -461,10 +462,5 @@ def run_univariate_preprocess(
     )
     transformed = deseason.updated_data
 
-    post_increments = _diff_assets(transformed, assets=assets_need_preprocess)
-    assets_still_nonwhite = _find_nonwhite_noise_assets(
-        post_increments, assets=assets_need_preprocess
-    )
-
     pipeline_decisions = {"trend": detrend.decision, "deseason": deseason.decision}
-    return UnivariatePreprocess(transformed, pipeline_decisions, assets_still_nonwhite)
+    return UnivariatePreprocess(transformed, pipeline_decisions, assets_need_preprocess)

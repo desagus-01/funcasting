@@ -1,3 +1,5 @@
+import time
+from functools import wraps
 from typing import NamedTuple
 
 import numpy as np
@@ -135,3 +137,15 @@ def compensate_prob(prob: ProbVector, n_remove: int) -> ProbVector:
     diff_fac = removed_probs.sum() / (len(prob) - len(removed_probs))
 
     return prob[n_remove:] + diff_fac
+
+
+def timeit(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        result = func(*args, **kwargs)
+        elapsed = time.perf_counter() - start
+        print(f"{func.__name__} took {elapsed:.4f}s")
+        return result
+
+    return wrapper
