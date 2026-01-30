@@ -56,7 +56,7 @@ def plot_periodogram(
     seasonal_map: dict[str, int] = SEASONAL_MAP,
     show_labels: bool = True,
 ) -> Axes:
-    periodo = periodogram(data=data)
+    periodo = periodogram(data=data, need_demean=False)
     mask = periodo.freq_cycles > 0
     periods = 1.0 / periodo.freq_cycles[mask]
     spec = periodo.power[mask]
@@ -98,7 +98,9 @@ def _make_len_multiple_of_seasonal_period(
     return data[extra:]
 
 
-def periodogram(data: NDArray[np.floating]) -> Periodogram:
+def periodogram(data: NDArray[np.floating], need_demean: bool = False) -> Periodogram:
+    if need_demean:
+        data = data - data.mean()
     sample_count = data.size
 
     total_sum = data.sum()
@@ -211,7 +213,7 @@ def periodogram_seasonality_test(
     data = _make_len_multiple_of_seasonal_period(
         data=data, seasonal_period=seasonal_period_n
     )
-    period = periodogram(data=data)
+    period = periodogram(data=data, need_demean=False)
     stat, p_val = get_periodogram_p_val(
         periodogram=period, seasonal_period=seasonal_period_n
     )
@@ -222,7 +224,7 @@ def periodogram_seasonality_test(
 
     return SeasonalityPeriodTest(
         seasonal_period=seasonal_period,
-        seasonal_frequency_radian=2 * np.pi * SEASONAL_MAP[seasonal_period],
+        seasonal_frequency_radian=2 * np.pi / SEASONAL_MAP[seasonal_period],
         evidence_of_seasonality=hypothesis_test_res.reject_null,
         res=hypothesis_test_res,
     )

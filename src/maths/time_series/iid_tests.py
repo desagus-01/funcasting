@@ -263,10 +263,30 @@ def univariate_kolmogrov_smirnov_test(
 # TODO: Write Ljung box test (use statsmodels for now)
 # INFO: Not really stataionarit test, please elsewhere
 def ljung_box_test(
-    data: pl.DataFrame, asset: str, lags: list[int] = [10, 20], degrees_of_reedom=0
+    data: pl.DataFrame | NDArray[np.floating],
+    asset: str | None = None,
+    lags: list[int] = [10, 20],
+    degrees_of_freedom=0,
 ) -> PerAssetTestResult:
-    array = data.select(asset).to_numpy().ravel()
-    lb = acorr_ljungbox(x=array, lags=lags, boxpierce=False, model_df=degrees_of_reedom)
+    if isinstance(data, pl.DataFrame):
+        if asset is not None:
+            array = data.get_column(asset).to_numpy()  # 1D
+        else:
+            if data.width != 1:
+                raise ValueError(
+                    "asset must be provided when data has multiple columns."
+                )
+            array = data.to_series(0).to_numpy()  # 1D
+    else:
+        array = np.asarray(data)
+        if array.ndim != 1:
+            raise ValueError(
+                f"data must be 1D when not a Polars DataFrame; got ndim={array.ndim}"
+            )
+
+    lb = acorr_ljungbox(
+        x=array, lags=lags, boxpierce=False, model_df=degrees_of_freedom
+    )
     per_lag = {}
     for k in lb.index:
         stat = lb.loc[k, "lb_stat"]

@@ -1,9 +1,15 @@
 # INFO: Below made with AI, cba with visuals - hate it
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 import numpy as np
 import polars as pl
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 
 from maths.helpers import autocorrelation
 
@@ -267,3 +273,56 @@ def plot_acf_simple(
     ax.set_ylabel("ACF")
     ax.set_ylim(-1.05, 1.05)
     plt.show()
+
+
+def _to_1d_float_array(x: Any) -> np.ndarray:
+    arr = np.asarray(x, dtype=float).ravel()
+    return arr[np.isfinite(arr)]
+
+
+def plot_residual_acf_pacf(
+    asset: str,
+    residuals: Any,
+    *,
+    lags: int | None = 40,
+    alpha: float = 0.05,
+    pacf_method: str = "ywm",
+    save_path: str | Path | None = None,
+    show: bool = True,
+    title_suffix: str | None = None,
+) -> plt.Figure:
+    """
+    2x2 grid:
+      [ACF(resid),  PACF(resid)]
+      [ACF(resid²), PACF(resid²)]
+    """
+    resid = _to_1d_float_array(residuals)
+    resid2 = resid**2
+
+    base_title = asset if not title_suffix else f"{asset} | {title_suffix}"
+
+    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(12, 8))
+
+    plot_acf(resid, lags=lags, alpha=alpha, ax=axes[0, 0])
+    axes[0, 0].set_title(f"ACF: {base_title} | residuals")
+
+    plot_pacf(resid, lags=lags, alpha=alpha, method=pacf_method, ax=axes[0, 1])
+    axes[0, 1].set_title(f"PACF: {base_title} | residuals")
+
+    plot_acf(resid2, lags=lags, alpha=alpha, ax=axes[1, 0])
+    axes[1, 0].set_title(f"ACF: {base_title} | residuals**2")
+
+    plot_pacf(resid2, lags=lags, alpha=alpha, method=pacf_method, ax=axes[1, 1])
+    axes[1, 1].set_title(f"PACF: {base_title} | residuals**2")
+
+    fig.tight_layout()
+
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+
+    if show:
+        plt.show()
+
+    return fig

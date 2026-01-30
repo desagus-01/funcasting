@@ -32,5 +32,16 @@ def run_best_arma(
         information_criteria=information_criteria,
         top_n_models=search_n_models,
     )
-    print(candidate_models_res)
+
+    candidates_by_information_criteria = sorted(candidate_models_res, key=by_criteria)
+
+    for model in candidates_by_information_criteria:
+        ar_order, ma_order = model.model_order
+        lj_res = ljung_box_test(model.residuals, degrees_of_freedom=ar_order + ma_order)
+        if len(lj_res.rejected) == 0:  # if no lag has been rejected stop
+            return model
+    print(
+        "No model's residual has passed the ljung box test, please review your model, returning model with best information criteria for now."
+    )
+
     return min(candidate_models_res, key=by_criteria)

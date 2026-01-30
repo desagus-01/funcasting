@@ -9,7 +9,6 @@ from statsmodels.tsa.stattools import arma_order_select_ic
 from typing_extensions import Literal
 
 from maths.helpers import get_akicc
-from utils.helpers import timeit
 
 
 def _compute_reflection_coefficient(
@@ -211,7 +210,6 @@ def by_criteria(res: AutoARMARes) -> float:
 
 
 # TODO: Filter out p-vals?
-@timeit
 def auto_arma(
     asset_array: NDArray[np.floating],
     max_ar_order: int,
@@ -266,23 +264,3 @@ def auto_arma(
         raise ValueError("No ARMA models were fitted, likely due to failed convergence")
 
     return arma_res
-
-
-# TODO: Among all ARMA models whose residuals pass Ljung–Box, choose the one with the smallest (p+q).
-def run_best_arma(
-    asset_array: NDArray[np.floating],
-    search_n_models: int = 5,
-    information_criteria: Literal["bic", "aic"] = "bic",
-) -> AutoARMARes:
-    """
-    Run an automated ARMA search and return the best model by information criterion.
-    """
-    candidate_models_res = auto_arma(
-        asset_array=asset_array,
-        max_ar_order=3,
-        max_ma_order=3,
-        information_criteria=information_criteria,
-        top_n_models=search_n_models,
-    )
-    print(candidate_models_res)
-    return min(candidate_models_res, key=by_criteria)
