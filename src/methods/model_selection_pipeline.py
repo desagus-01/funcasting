@@ -8,6 +8,11 @@ from maths.time_series.models import AutoARMARes, auto_arma, by_criteria
 
 
 def assets_need_mean_modelling(data: DataFrame, assets_to_test: list[str]) -> list[str]:
+    """
+    Identifies assets with significant autocorrelation in returns using the Ljung–Box test.
+
+    Returns a list of asset names that fail the test and require mean modeling.
+    """
     needs_mean_modelling = []
     for asset in assets_to_test:
         lj = ljung_box_test(data=data, asset=asset)
@@ -23,8 +28,12 @@ def run_best_arma(
     information_criteria: Literal["bic", "aic"] = "bic",
 ) -> AutoARMARes:
     """
-    Run an automated ARMA search and return the best model by information criterion.
+    Selects the best ARMA model by information criterion (AIC/BIC) among those
+    whose residuals pass the Ljung–Box test for no autocorrelation.
+
+    Falls back to the best information criterion model if none pass.
     """
+
     candidate_models_res = auto_arma(
         asset_array=asset_array,
         max_ar_order=3,
@@ -45,3 +54,20 @@ def run_best_arma(
     )
 
     return min(candidate_models_res, key=by_criteria)
+
+
+def mean_modelling_pipeline(
+    data: DataFrame, assets: list[str]
+) -> dict[str, AutoARMARes]:
+    """
+    Full pipeline to detect and model mean dependence in asset returns.
+
+    Applies the Ljung–Box test to detect autocorrelation and fits ARMA models
+    where needed.
+    """
+    assets_to_model = assets_need_mean_modelling(data=data, assets_to_test=assets)
+    asset_mean_model_res = {}
+    for asset in assets_to_model:
+        array = data.select(asset).to_numpy().ravel()
+        asset_mean_model_res[asset] = run_best_arma(array)
+    return asset_mean_model_res

@@ -24,7 +24,6 @@ from methods.cma import CopulaMarginalModel
 from models.types import ProbVector
 from utils.helpers import (
     get_assets_names,
-    timeit,
 )
 
 
@@ -423,7 +422,6 @@ def _find_nonwhite_noise_assets(
 
 # TODO: Make sure date is also returned
 # TODO: Review dropping nulls blankly - prob is a better way
-@timeit
 def run_univariate_preprocess(
     data: pl.DataFrame,
     assets: list[str] | None = None,
