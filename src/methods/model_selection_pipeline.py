@@ -7,24 +7,44 @@ from maths.time_series.iid_tests import arch_test, ljung_box_test
 from maths.time_series.models import AutoARMARes, auto_arma, by_criteria
 
 
-# TODO: Add return type
-def needs_volatility_modelling(
+def asset_needs_volatility_model(
     residual: NDArray[np.floating],
+    degrees_of_freedom: int,
     ljung_box_lags: list[int],
     arch_lags: list[int],
-    degrees_of_freedom: int,
-):
+    min_ljung_box_rejections: int = 2,
+    min_arch_rejections: int = 1,
+) -> bool:
     residual_sq = residual**2
-    ljung_box_res = ljung_box_test(
+    ljung_box_rejected = ljung_box_test(
         residual_sq, lags=ljung_box_lags, degrees_of_freedom=degrees_of_freedom
-    )
-    arch_res = arch_test(
+    ).rejected
+    arch_rejected = arch_test(
         residual, lags_to_test=arch_lags, degrees_of_freedom=degrees_of_freedom
+    ).rejected
+
+    return (len(ljung_box_rejected) >= min_ljung_box_rejections) or (
+        len(arch_rejected) >= min_arch_rejections
     )
-    return ljung_box_res, arch_res
 
 
-def assets_need_mean_modelling(data: DataFrame, assets_to_test: list[str]) -> list[str]:
+def needs_volatility_modelling(
+    data: DataFrame, assets_to_test: list[str], degrees_of_freedom: int
+) -> list[str]:
+    needs_vol_modelling = []
+    for asset in assets_to_test:
+        residual = data.select(asset).to_numpy().ravel()
+        if asset_needs_volatility_model(
+            residual,
+            degrees_of_freedom=degrees_of_freedom,
+            ljung_box_lags=[10, 20],
+            arch_lags=[5, 10, 15],
+        ):
+            needs_vol_modelling.append(asset)
+    return needs_vol_modelling
+
+
+def needs_mean_modelling(data: DataFrame, assets_to_test: list[str]) -> list[str]:
     """
     Identifies assets with significant autocorrelation in series using the Ljung–Box test.
 
@@ -84,7 +104,7 @@ def mean_modelling_pipeline(
     Applies the Ljung–Box test to detect autocorrelation and fits ARMA models
     where needed.
     """
-    assets_to_model = assets_need_mean_modelling(data=data, assets_to_test=assets)
+    assets_to_model = needs_mean_modelling(data=data, assets_to_test=assets)
     asset_mean_model_res = {}
     for asset in assets_to_model:
         array = data.select(asset).to_numpy().ravel()

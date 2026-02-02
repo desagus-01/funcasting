@@ -6,7 +6,6 @@ from methods.model_selection_pipeline import (
 )
 from methods.preprocess_pipeline import run_univariate_preprocess
 from utils.template import get_template, synthetic_series
-from utils.visuals import plot_residual_acf_pacf
 
 # %%
 
@@ -28,17 +27,22 @@ a = data_2.post_data
 # %%
 for asset in data_2.needs_further_modelling:
     if asset in u_res.keys():
-        print(f"{asset} which has done mean modelling")
+        # print(f"{asset} which has done mean modelling")
         raw = u_res[asset].residuals
         df = sum(u_res[asset].model_order)
     else:
-        print(f"{asset} no mean modelling, therefore constant")
+        # print(f"{asset} no mean modelling, therefore constant")
         raw = data_2.post_data.select(asset).to_numpy().ravel()
         raw = raw - raw.mean()  # constant mean residuals
         df = 0
-    array = raw**2
     a = needs_volatility_modelling(
-        raw, ljung_box_lags=[10, 20], arch_lags=[5, 10, 15], degrees_of_freedom=df
+        raw,
+        asset,
+        ljung_box_lags=[10, 20],
+        arch_lags=[5, 10, 15],
+        degrees_of_freedom=df,
     )
-    print(a)
-    plot_residual_acf_pacf(asset=f"{asset}", residuals=raw)
+    lj_res_rej = a[0].rejected
+    arch_rej = a[1].rejected
+    if (len(lj_res_rej) >= 1) or (len(arch_rej) >= 2):
+        print("model")

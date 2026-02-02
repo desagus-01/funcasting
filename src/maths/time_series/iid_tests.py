@@ -260,9 +260,8 @@ def univariate_kolmogrov_smirnov_test(
     return out
 
 
+# TODO: Below is generally the same, abstract as some point
 # TODO: Write Ljung box test (use statsmodels for now)
-
-
 def ljung_box_test(
     data: pl.DataFrame | NDArray[np.floating],
     asset: str | None = None,
@@ -311,7 +310,7 @@ def arch_test(
         arch_lag_res[f"{lag}"] = format_hyp_test_result(
             stat=arch_res[0],
             p_val=arch_res[1],
-            null=f"No autocorrelation up to lag {int(lag)}",
+            null=f"no ARCH effects up to lag {int(lag)}",
         )
     rejected = [k for k, res in arch_lag_res.items() if res.reject_null]
 
