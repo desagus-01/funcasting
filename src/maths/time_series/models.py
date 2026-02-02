@@ -11,6 +11,23 @@ from typing_extensions import Literal
 from maths.helpers import get_akicc
 
 
+class AutoARMARes(NamedTuple):
+    model_order: tuple[int, int]
+    degrees_of_freedom: int
+    criteria: Literal["aic", "bic"]
+    criteria_res: float
+    ar_params: NDArray[np.floating]
+    ma_params: NDArray[np.floating]
+    p_values: NDArray[np.floating]
+    residuals: NDArray[np.floating]
+
+
+class DemeanRes(NamedTuple):
+    degrees_of_freedom: int
+    mean_: float
+    residuals: NDArray[np.floating]
+
+
 def _compute_reflection_coefficient(
     forward_error: NDArray[np.floating],
     backward_error: NDArray[np.floating],
@@ -152,9 +169,6 @@ def autoregressive_burg(
     return ar_coefficients
 
 
-# TODO: Create autoarima function now
-
-
 def _arma_top_candidates(
     asset_array: NDArray[np.floating],
     max_ar_order: int = 3,
@@ -186,20 +200,6 @@ def _arma_top_candidates(
 
     top = best_order.stack().nsmallest(top_n_models)
     return [(int(ar_order), int(ma_order)) for (ar_order, ma_order) in top.index]
-
-
-class AutoARMARes(NamedTuple):
-    """
-    Container for the results of a fitted ARMA model.
-    """
-
-    model_order: tuple[int, int]
-    criteria: Literal["aic", "bic"]
-    criteria_res: float
-    ar_params: NDArray[np.floating]
-    ma_params: NDArray[np.floating]
-    p_values: NDArray[np.floating]
-    residuals: NDArray[np.floating]
 
 
 def by_criteria(res: AutoARMARes) -> float:
@@ -252,6 +252,7 @@ def auto_arma(
         arma_res.append(
             AutoARMARes(
                 model_order=(ar_order, ma_order),
+                degrees_of_freedom=ar_order + ma_order,
                 criteria=information_criteria,
                 criteria_res=float(getattr(res, information_criteria)),
                 ar_params=res.arparams,  # type: ignore[attr-defined]

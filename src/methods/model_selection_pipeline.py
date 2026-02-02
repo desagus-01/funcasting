@@ -1,10 +1,14 @@
+from typing import Mapping
+
 import numpy as np
 from numpy._typing import NDArray
 from polars import DataFrame
 from typing_extensions import Literal
 
 from maths.time_series.iid_tests import arch_test, ljung_box_test
-from maths.time_series.models import AutoARMARes, auto_arma, by_criteria
+from maths.time_series.models import AutoARMARes, DemeanRes, auto_arma, by_criteria
+
+MeanModelRes = AutoARMARes | DemeanRes
 
 
 def asset_needs_volatility_model(
@@ -28,23 +32,31 @@ def asset_needs_volatility_model(
     )
 
 
+# TODO: Don't love this Mapping thing -> should change?
 def needs_volatility_modelling(
-    data: DataFrame, assets_to_test: list[str], degrees_of_freedom: int
+    mean_model_res: Mapping[str, MeanModelRes],
+    ljung_box_lags: list[int] = [10, 20],
+    arch_lags: list[int] = [5, 10, 15],
+    min_ljung_box_rejections: int = 2,
+    min_arch_rejections: int = 1,
 ) -> list[str]:
-    needs_vol_modelling = []
-    for asset in assets_to_test:
-        residual = data.select(asset).to_numpy().ravel()
+    needs: list[str] = []
+
+    for asset, res in mean_model_res.items():
         if asset_needs_volatility_model(
-            residual,
-            degrees_of_freedom=degrees_of_freedom,
-            ljung_box_lags=[10, 20],
-            arch_lags=[5, 10, 15],
+            residual=res.residuals,
+            degrees_of_freedom=res.degrees_of_freedom,
+            ljung_box_lags=ljung_box_lags,
+            arch_lags=arch_lags,
+            min_ljung_box_rejections=min_ljung_box_rejections,
+            min_arch_rejections=min_arch_rejections,
         ):
-            needs_vol_modelling.append(asset)
-    return needs_vol_modelling
+            needs.append(asset)
+
+    return needs
 
 
-def needs_mean_modelling(data: DataFrame, assets_to_test: list[str]) -> list[str]:
+def needs_arma_modelling(data: DataFrame, assets_to_test: list[str]) -> list[str]:
     """
     Identifies assets with significant autocorrelation in series using the Ljung–Box test.
 
@@ -97,16 +109,23 @@ def run_best_arma(
 
 def mean_modelling_pipeline(
     data: DataFrame, assets: list[str]
-) -> dict[str, AutoARMARes]:
+) -> dict[str, MeanModelRes]:
     """
-    Full pipeline to detect and model mean dependence in asset returns.
-
-    Applies the Ljung–Box test to detect autocorrelation and fits ARMA models
-    where needed.
+    Return a mean-modelling result for every asset:
+    - AutoARMARes if Ljung–Box suggests mean dependence
+    - DemeanRes otherwise
     """
-    assets_to_model = needs_mean_modelling(data=data, assets_to_test=assets)
-    asset_mean_model_res = {}
-    for asset in assets_to_model:
+    assets_needing_arma = needs_arma_modelling(data=data, assets_to_test=assets)
+    asset_mean_model_res: dict[str, MeanModelRes] = {}
+    for asset in assets:
         array = data.select(asset).to_numpy().ravel()
-        asset_mean_model_res[asset] = run_best_arma(array)
+        if asset in assets_needing_arma:
+            asset_mean_model_res[asset] = run_best_arma(array)
+        else:
+            mean = array.mean()
+            asset_mean_model_res[asset] = DemeanRes(
+                degrees_of_freedom=0,
+                mean_=mean,
+                residuals=array - mean,
+            )
     return asset_mean_model_res
