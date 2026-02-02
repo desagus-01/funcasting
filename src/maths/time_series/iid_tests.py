@@ -5,7 +5,7 @@ import numpy as np
 import polars as pl
 import scipy.stats as st
 from numpy.typing import NDArray
-from statsmodels.stats.diagnostic import acorr_ljungbox
+from statsmodels.stats.diagnostic import acorr_ljungbox, het_arch
 
 from globals import ITERS, LAGS
 from maths.time_series.base import HypTestRes, format_hyp_test_result
@@ -261,7 +261,8 @@ def univariate_kolmogrov_smirnov_test(
 
 
 # TODO: Write Ljung box test (use statsmodels for now)
-# INFO: Not really stataionarit test, please elsewhere
+
+
 def ljung_box_test(
     data: pl.DataFrame | NDArray[np.floating],
     asset: str | None = None,
@@ -288,16 +289,30 @@ def ljung_box_test(
         x=array, lags=lags, boxpierce=False, model_df=degrees_of_freedom
     )
     per_lag = {}
-    for k in lb.index:
-        stat = lb.loc[k, "lb_stat"]
-        pval = lb.loc[k, "lb_pvalue"]
-
-        label = f"lag_{int(k)}"  # matches your existing naming
-        per_lag[label] = format_hyp_test_result(
-            stat=stat,
-            p_val=pval,
-            null=f"No autocorrelation up to lag {int(k)}",
+    for lag in lb.index:
+        per_lag[f"lag_{int(lag)}"] = format_hyp_test_result(
+            stat=lb.loc[lag, "lb_stat"],
+            p_val=lb.loc[lag, "lb_pvalue"],
+            null=f"No autocorrelation up to lag {int(lag)}",
         )
     rejected = [k for k, res in per_lag.items() if res.reject_null]
 
     return PerAssetTestResult(results=per_lag, rejected=rejected)
+
+
+def arch_test(
+    residual_array: NDArray[np.floating],
+    lags_to_test: list[int],
+    degrees_of_freedom: int,
+):
+    arch_lag_res = {}
+    for lag in lags_to_test:
+        arch_res = het_arch(residual_array, nlags=lag, ddof=degrees_of_freedom)
+        arch_lag_res[f"{lag}"] = format_hyp_test_result(
+            stat=arch_res[0],
+            p_val=arch_res[1],
+            null=f"No autocorrelation up to lag {int(lag)}",
+        )
+    rejected = [k for k, res in arch_lag_res.items() if res.reject_null]
+
+    return PerAssetTestResult(results=arch_lag_res, rejected=rejected)

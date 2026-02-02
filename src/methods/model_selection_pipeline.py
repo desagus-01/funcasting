@@ -3,13 +3,32 @@ from numpy._typing import NDArray
 from polars import DataFrame
 from typing_extensions import Literal
 
-from maths.time_series.iid_tests import ljung_box_test
+from maths.time_series.iid_tests import arch_test, ljung_box_test
 from maths.time_series.models import AutoARMARes, auto_arma, by_criteria
+
+
+# TODO: Add return type
+def needs_volatility_modelling(
+    residual: NDArray[np.floating],
+    ljung_box_lags: list[int],
+    arch_lags: list[int],
+    degrees_of_freedom: int,
+):
+    residual_sq = residual**2
+    ljung_box_res = ljung_box_test(
+        residual_sq, lags=ljung_box_lags, degrees_of_freedom=degrees_of_freedom
+    )
+    arch_res = arch_test(
+        residual, lags_to_test=arch_lags, degrees_of_freedom=degrees_of_freedom
+    )
+    return ljung_box_res, arch_res
 
 
 def assets_need_mean_modelling(data: DataFrame, assets_to_test: list[str]) -> list[str]:
     """
-    Identifies assets with significant autocorrelation in returns using the Ljung–Box test.
+    Identifies assets with significant autocorrelation in series using the Ljung–Box test.
+
+    Note: Test to be run on series at this stage, not residuals.
 
     Returns a list of asset names that fail the test and require mean modeling.
     """

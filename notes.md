@@ -1,6 +1,5 @@
 # General Notes
 
-
 [Excellent general resource](https://python-advanced.quantecon.org/arma.html)
 
 [Seasonality tests performed by Belgium](https://jdemetradocumentation.github.io/JDemetra-documentation/pages/theory/Tests_peaks.html)
@@ -38,6 +37,10 @@ Apply Meucci's approach of using a simpler harmonic regression which only identi
 
 ## Models (AR,MA,ARMA)
 
+
+> [!IMPORTANT] Will use OOB packages (statsmodels + arch) for estimation and testing
+> At some point, will want to implement CUSTOM method for this.
+
 Could of things needed:
 1. Estimation of parameters
 2. Auto selection of p,q for models
@@ -59,8 +62,13 @@ Following the pre-processing from de-trend/season, we now must test our resultin
 Essentially, we are trying to answer: Have I removed all linear predictability from the mean?
 
 Working outline:
-1.Run [Ljung-box test](https://en.wikipedia.org/wiki/Ljung%E2%80%93Box_test) for asset
+1. Run [Ljung-box test](https://en.wikipedia.org/wiki/Ljung%E2%80%93Box_test) for asset
+2. If asset is flagged run auto-arma pipeline created
 
+### Models - Volatility dynamics
+- Very few options to joint model mean + volatility dynamics
+- Can do a standard two step approach, main downside here will be non-sable standard errors (whatever, won't use them anyway)
+- Will use `arch` package for fiting, finding etc.
 
 ## Possible pipeline
 **Possible Univariate Pipeline**
