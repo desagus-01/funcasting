@@ -1,4 +1,5 @@
 # %%
+from arch import arch_model
 
 from methods.model_selection_pipeline import (
     mean_modelling_pipeline,
@@ -20,5 +21,12 @@ u_res = mean_modelling_pipeline(data_2.post_data, assets=data_2.needs_further_mo
 
 u_res
 # %%
-
 assets_vol = needs_volatility_modelling(u_res)
+assets_vol
+
+# %%
+x = u_res["AAPL"].residuals
+model = arch_model(x, mean="zero", vol="constant", dist="normal", rescale=True)
+res = model.fit()
+print(res.summary())
+res.plot()
