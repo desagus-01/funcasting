@@ -26,7 +26,7 @@ assets_vol
 
 # %%
 x = u_res["AAPL"].residuals
-model = arch_model(x, mean="zero", vol="constant", dist="normal", rescale=False)
+model = arch_model(x, mean="zero", vol="GARCH", dist="t", rescale=False)
 res = model.fit()
 print(res.summary())
 res.plot()

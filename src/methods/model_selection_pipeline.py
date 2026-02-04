@@ -49,10 +49,13 @@ def asset_needs_volatility_model(
 
 def asset_needs_mean_modelling(
     data: NDArray[np.floating],
+    degrees_of_freedom: int,
     ljung_box_lags: list[int] = [10, 15, 20],
     min_ljung_box_rejections: int = 1,
 ) -> bool:
-    ljung_box = ljung_box_test(data=data, lags=ljung_box_lags)
+    ljung_box = ljung_box_test(
+        data=data, lags=ljung_box_lags, degrees_of_freedom=degrees_of_freedom
+    )
     ljung_box_rejected = multiple_tests_rejected(ljung_box.p_vals)
     return sum(ljung_box_rejected) >= min_ljung_box_rejections
 
@@ -84,6 +87,7 @@ def needs_volatility_modelling(
 def needs_mean_modelling(
     data: DataFrame,
     assets_to_test: list[str],
+    degrees_of_freedom: int,
     ljung_box_lags: list[int] = [10, 15, 20],
     min_ljung_box_rejections: int = 1,
 ) -> list[str]:
@@ -100,6 +104,7 @@ def needs_mean_modelling(
         if asset_needs_mean_modelling(
             array,
             ljung_box_lags=ljung_box_lags,
+            degrees_of_freedom=degrees_of_freedom,
             min_ljung_box_rejections=min_ljung_box_rejections,
         ):
             needs_mean_modelling.append(asset)
@@ -110,6 +115,7 @@ def run_best_arma(
     asset_array: NDArray[np.floating],
     search_n_models: int = 5,
     information_criteria: Literal["bic", "aic"] = "bic",
+    asset_name: str | None = None,
 ) -> AutoARMARes:
     """
     Selects the best ARMA model by information criterion (AIC/BIC) among those
@@ -129,12 +135,12 @@ def run_best_arma(
     candidates_by_information_criteria = sorted(candidate_models_res, key=by_criteria)
 
     for model in candidates_by_information_criteria:
-        ar_order, ma_order = model.model_order
-        lj_res = ljung_box_test(model.residuals, degrees_of_freedom=ar_order + ma_order)
-        if len(lj_res.rejected) == 0:  # if no lag has been rejected stop
+        if not asset_needs_mean_modelling(
+            model.residuals, degrees_of_freedom=model.degrees_of_freedom
+        ):
             return model
     print(
-        "No model's residual has passed the ljung box test, please review your model, returning model with best information criteria for now."
+        f"For {asset_name} No model's residual has passed the ljung box test, please review your model, returning model with best information criteria for now."
     )
 
     return min(candidate_models_res, key=by_criteria)
@@ -148,12 +154,14 @@ def mean_modelling_pipeline(
     - AutoARMARes if Ljung–Box suggests mean dependence
     - DemeanRes otherwise
     """
-    assets_needing_arma = needs_mean_modelling(data=data, assets_to_test=assets)
+    assets_needing_arma = needs_mean_modelling(
+        data=data, assets_to_test=assets, degrees_of_freedom=0
+    )  # At this point DOF is 0
     asset_mean_model_res: dict[str, MeanModelRes] = {}
     for asset in assets:
         array = data.select(asset).to_numpy().ravel()
         if asset in assets_needing_arma:
-            asset_mean_model_res[asset] = run_best_arma(array)
+            asset_mean_model_res[asset] = run_best_arma(array, asset_name=asset)
         else:
             mean = array.mean()
             asset_mean_model_res[asset] = DemeanRes(
