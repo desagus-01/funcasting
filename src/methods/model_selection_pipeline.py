@@ -6,20 +6,20 @@ from polars import DataFrame
 from statsmodels.stats.multitest import multipletests
 from typing_extensions import Literal
 
-from maths.time_series.iid_tests import PerAssetTestResult, arch_test, ljung_box_test
+from maths.time_series.iid_tests import arch_test, ljung_box_test
 from maths.time_series.models import AutoARMARes, DemeanRes, auto_arma, by_criteria
 
 MeanModelRes = AutoARMARes | DemeanRes
 
 
+# TODO: Move to a more appropriate place
 def multiple_tests_rejected(
-    arch_res: PerAssetTestResult, significance_level: float = 0.05
+    p_values: list[float], significance_level: float = 0.05
 ) -> list[bool]:
     """
     Adjusts p-values for multiple tests then compares to alpha to determine rejection
     """
-    p_vals = [res.p_val for res in arch_res.results.values()]
-    return multipletests(p_vals, alpha=significance_level, method="holm-sidak")[
+    return multipletests(p_values, alpha=significance_level, method="holm-sidak")[
         0
     ].tolist()
 
@@ -33,16 +33,28 @@ def asset_needs_volatility_model(
     min_arch_rejections: int = 1,
 ) -> bool:
     residual_sq = residual**2
-    ljung_box_rejected = ljung_box_test(  # This is effectively the McLeod- Li test
+    ljung_box_pvals = ljung_box_test(  # This is effectively the McLeod- Li test
         residual_sq, lags=ljung_box_lags, degrees_of_freedom=degrees_of_freedom
-    ).rejected
-    arch = arch_test(
+    ).p_vals
+    arch_vals = arch_test(
         residual, lags_to_test=arch_lags, degrees_of_freedom=degrees_of_freedom
-    )
-    arch_rejected = multiple_tests_rejected(arch)
-    return (len(ljung_box_rejected) >= min_ljung_box_rejections) or (
+    ).p_vals
+
+    ljung_box_rejected = multiple_tests_rejected(ljung_box_pvals)
+    arch_rejected = multiple_tests_rejected(arch_vals)
+    return (sum(ljung_box_rejected) >= min_ljung_box_rejections) or (
         sum(arch_rejected) >= min_arch_rejections
     )
+
+
+def asset_needs_mean_modelling(
+    data: NDArray[np.floating],
+    ljung_box_lags: list[int] = [10, 15, 20],
+    min_ljung_box_rejections: int = 1,
+) -> bool:
+    ljung_box = ljung_box_test(data=data, lags=ljung_box_lags)
+    ljung_box_rejected = multiple_tests_rejected(ljung_box.p_vals)
+    return sum(ljung_box_rejected) >= min_ljung_box_rejections
 
 
 # TODO: Don't love this Mapping thing -> should change?
@@ -69,7 +81,12 @@ def needs_volatility_modelling(
     return needs
 
 
-def needs_arma_modelling(data: DataFrame, assets_to_test: list[str]) -> list[str]:
+def needs_mean_modelling(
+    data: DataFrame,
+    assets_to_test: list[str],
+    ljung_box_lags: list[int] = [10, 15, 20],
+    min_ljung_box_rejections: int = 1,
+) -> list[str]:
     """
     Identifies assets with significant autocorrelation in series using the Ljung–Box test.
 
@@ -79,13 +96,16 @@ def needs_arma_modelling(data: DataFrame, assets_to_test: list[str]) -> list[str
     """
     needs_mean_modelling = []
     for asset in assets_to_test:
-        lj = ljung_box_test(data=data, asset=asset)
-        if len(lj.rejected) != 0:
+        array = data.select(asset).to_numpy().ravel()
+        if asset_needs_mean_modelling(
+            array,
+            ljung_box_lags=ljung_box_lags,
+            min_ljung_box_rejections=min_ljung_box_rejections,
+        ):
             needs_mean_modelling.append(asset)
     return needs_mean_modelling
 
 
-# TODO: Among all ARMA models whose residuals pass Ljung–Box, choose the one with the smallest (p+q).
 def run_best_arma(
     asset_array: NDArray[np.floating],
     search_n_models: int = 5,
@@ -128,7 +148,7 @@ def mean_modelling_pipeline(
     - AutoARMARes if Ljung–Box suggests mean dependence
     - DemeanRes otherwise
     """
-    assets_needing_arma = needs_arma_modelling(data=data, assets_to_test=assets)
+    assets_needing_arma = needs_mean_modelling(data=data, assets_to_test=assets)
     asset_mean_model_res: dict[str, MeanModelRes] = {}
     for asset in assets:
         array = data.select(asset).to_numpy().ravel()

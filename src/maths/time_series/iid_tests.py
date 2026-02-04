@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Callable, NamedTuple
+from typing import Any, Callable
 
 import numpy as np
 import polars as pl
@@ -20,9 +20,14 @@ from utils.helpers import (
 StatFunc = Callable[[np.ndarray, ProbVector, np.random.Generator | None], float]
 
 
-class PerAssetTestResult(NamedTuple):
+@dataclass
+class PerAssetTestResult:
     results: dict[str, HypTestRes]
     rejected: list[str]
+
+    @property
+    def p_vals(self) -> list[float]:
+        return [res.p_val for res in self.results.values()]
 
 
 TestResultByAsset = dict[str, PerAssetTestResult]
