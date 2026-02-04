@@ -3,12 +3,25 @@ from typing import Mapping
 import numpy as np
 from numpy._typing import NDArray
 from polars import DataFrame
+from statsmodels.stats.multitest import multipletests
 from typing_extensions import Literal
 
-from maths.time_series.iid_tests import arch_test, ljung_box_test
+from maths.time_series.iid_tests import PerAssetTestResult, arch_test, ljung_box_test
 from maths.time_series.models import AutoARMARes, DemeanRes, auto_arma, by_criteria
 
 MeanModelRes = AutoARMARes | DemeanRes
+
+
+def multiple_tests_rejected(
+    arch_res: PerAssetTestResult, significance_level: float = 0.05
+) -> list[bool]:
+    """
+    Adjusts p-values for multiple tests then compares to alpha to determine rejection
+    """
+    p_vals = [res.p_val for res in arch_res.results.values()]
+    return multipletests(p_vals, alpha=significance_level, method="holm-sidak")[
+        0
+    ].tolist()
 
 
 def asset_needs_volatility_model(
@@ -20,15 +33,15 @@ def asset_needs_volatility_model(
     min_arch_rejections: int = 1,
 ) -> bool:
     residual_sq = residual**2
-    ljung_box_rejected = ljung_box_test(
+    ljung_box_rejected = ljung_box_test(  # This is effectively the McLeod- Li test
         residual_sq, lags=ljung_box_lags, degrees_of_freedom=degrees_of_freedom
     ).rejected
-    arch_rejected = arch_test(
+    arch = arch_test(
         residual, lags_to_test=arch_lags, degrees_of_freedom=degrees_of_freedom
-    ).rejected
-
+    )
+    arch_rejected = multiple_tests_rejected(arch)
     return (len(ljung_box_rejected) >= min_ljung_box_rejections) or (
-        len(arch_rejected) >= min_arch_rejections
+        sum(arch_rejected) >= min_arch_rejections
     )
 
 

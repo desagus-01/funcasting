@@ -2,7 +2,12 @@ import numpy as np
 import polars as pl
 from polars.dataframe.frame import DataFrame
 
-from maths.time_series.estimation import OLSEquation, OLSResults, ols_classic
+from maths.time_series.estimation import (
+    OLSEquation,
+    OLSResults,
+    add_deterministics_to_eq,
+    ols_classic,
+)
 
 
 def build_harmonic_regression_equation(
@@ -26,6 +31,9 @@ def build_harmonic_regression_equation(
     ]
 
     independent_variables = time_index_df.select(cos_cols + sin_cols).to_numpy()
+    independent_variables = add_deterministics_to_eq(
+        independent_vars=independent_variables, eq_type="c"
+    )
 
     return OLSEquation(ind_var=independent_variables, dep_vars=dependent_variable)
 
@@ -42,7 +50,7 @@ def run_harmonic_regression(
     )
 
 
-def deterministic_deseasoning(
+def deterministic_seasonal_adjustment(
     data: DataFrame, asset: str, frequency_radians: list[float]
 ) -> dict[str, list[float]]:
     harmonic_residuals = run_harmonic_regression(

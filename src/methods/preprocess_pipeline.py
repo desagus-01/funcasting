@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable, Literal
 
+import numpy as np
 import polars as pl
 from polars import Series
 from polars.dataframe.frame import DataFrame
@@ -9,6 +10,7 @@ from globals import LAGS
 from maths.distributions import uniform_probs
 from maths.helpers import add_detrend_column, add_differenced_columns
 from maths.time_series.diagnostics.seasonality import (
+    SEASONAL_MAP,
     SeasonalityPeriodTest,
     seasonality_diagnostic,
 )
@@ -19,7 +21,7 @@ from maths.time_series.iid_tests import (
     ellipsoid_lag_test,
     univariate_kolmogrov_smirnov_test,
 )
-from maths.time_series.operations import deterministic_deseasoning
+from maths.time_series.operations import deterministic_seasonal_adjustment
 from methods.cma import CopulaMarginalModel
 from models.types import ProbVector
 from utils.helpers import (
@@ -272,26 +274,53 @@ def _apply_detrend(data: DataFrame, decision: dict[str, tuple[str, int]]) -> Dat
     return data.drop(list(decision.keys())).rename(rename_map)
 
 
+def _expand_period_to_harmonics(period_label: str) -> list[tuple[str, float]]:
+    """
+    Given a period label ('weekly', 'monthly', ...), return a list of
+    (label_for_harmonic, omega_radians) covering the full harmonic set.
+    The label is augmented (e.g., 'monthly_h2'); _deseason_apply ignores labels anyway.
+    """
+    P = SEASONAL_MAP[period_label]
+    base = 2 * np.pi / P
+
+    out: list[tuple[str, float]] = []
+    H = (P - 1) // 2
+    for h in range(1, H + 1):
+        out.append((f"{period_label}_h{h}", h * base))
+
+    if P % 2 == 0:
+        out.append((f"{period_label}_nyq", np.pi))  # Nyquist cosine
+
+    return out
+
+
 def _deseason_decision_rule(
     seasonality_diagnostic: dict[str, list[SeasonalityPeriodTest]],
 ) -> dict[str, list[tuple[str, float]]]:
-    """Extract significant seasonal periods and angular frequencies per asset.
-
-    Args:
-        seasonality_diagnostic: {asset -> [SeasonalityPeriodTest, ...]}.
-
-    Returns:
-        {asset -> [(period_label:str, omega_radians:float), ...]} with only
-        periods that show evidence of seasonality.
     """
-    return {
-        asset: [
-            (period.seasonal_period, period.seasonal_frequency_radian)
-            for period in res
-            if period.evidence_of_seasonality
-        ]
-        for asset, res in seasonality_diagnostic.items()
-    }
+    Extract significant seasonal periods and expand each to its harmonic set.
+    Returns {asset -> [(label, omega_radians), ...]}.
+    """
+    decision: dict[str, list[tuple[str, float]]] = {}
+
+    for asset, tests in seasonality_diagnostic.items():
+        freqs: list[tuple[str, float]] = []
+        for t in tests:
+            if t.evidence_of_seasonality:
+                freqs.extend(_expand_period_to_harmonics(t.seasonal_period))
+
+        #  deduplicate angular frequencies if multiple periods collide
+        if freqs:
+            freqs_sorted = sorted(freqs, key=lambda kv: kv[1])
+            dedup: list[tuple[str, float]] = []
+            for lab, w in freqs_sorted:
+                if not dedup or not np.isclose(w, dedup[-1][1], rtol=0, atol=1e-12):
+                    dedup.append((lab, w))
+            decision[asset] = dedup
+        else:
+            decision[asset] = []
+
+    return decision
 
 
 def _deseason_apply(
@@ -312,7 +341,7 @@ def _deseason_apply(
     if not any(decision.values()):
         return data
     deseasoned_assets = {
-        asset: deterministic_deseasoning(
+        asset: deterministic_seasonal_adjustment(
             data,
             asset=asset,
             frequency_radians=[rad for _, rad in seasons],
@@ -352,7 +381,6 @@ def deseason_pipeline(
             assets=kw["assets"],
         ),
         decision_rule=lambda tests, assets=None: _deseason_decision_rule(tests),
-        # adapt to your current signature: deseason_apply(data=..., deseason_rule=...)
         apply_fn=lambda *, data, decision: _deseason_apply(
             data=data, decision=decision
         ),
@@ -437,7 +465,6 @@ def run_univariate_preprocess(
     if assets is None:
         assets = get_assets_names(df=data, assets=assets)
 
-    # Compute increments once and reuse
     increments_df = _diff_assets(data, assets)
 
     assets_need_preprocess = _find_nonwhite_noise_assets(increments_df, assets)
