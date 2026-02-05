@@ -7,7 +7,14 @@ from statsmodels.stats.multitest import multipletests
 from typing_extensions import Literal
 
 from maths.time_series.iid_tests import arch_test, ljung_box_test
-from maths.time_series.models import AutoARMARes, DemeanRes, auto_arma, by_criteria
+from maths.time_series.models import (
+    AutoARMARes,
+    AutoGARCHRes,
+    DemeanRes,
+    auto_arma,
+    auto_garch,
+    by_criteria,
+)
 
 MeanModelRes = AutoARMARes | DemeanRes
 
@@ -137,6 +144,34 @@ def run_best_arma(
     for model in candidates_by_information_criteria:
         if not asset_needs_mean_modelling(
             model.residuals, degrees_of_freedom=model.degrees_of_freedom
+        ):
+            return model
+    print(
+        f"For {asset_name} No model's residual has passed the ljung box test, please review your model, returning model with best information criteria for now."
+    )
+
+    return min(candidate_models_res, key=by_criteria)
+
+
+def run_best_garch(
+    asset_array: NDArray[np.floating],
+    asset_name: str | None = None,
+) -> AutoGARCHRes:
+    candidate_models_res = auto_garch(
+        asset_array=asset_array,
+        max_p_order=2,
+        max_o_order=1,
+        max_q_order=2,
+    )
+
+    candidates_by_information_criteria = sorted(candidate_models_res, key=by_criteria)
+
+    for model in candidates_by_information_criteria:
+        if not asset_needs_volatility_model(
+            residual=model.residuals,
+            degrees_of_freedom=model.degrees_of_freedom,
+            ljung_box_lags=[10, 20],
+            arch_lags=[5, 10, 15],
         ):
             return model
     print(

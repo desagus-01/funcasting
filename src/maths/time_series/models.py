@@ -14,6 +14,16 @@ from typing_extensions import Literal
 from maths.helpers import get_akicc
 
 
+class AutoGARCHRes(NamedTuple):
+    model_order: tuple[int, int, int]
+    degrees_of_freedom: int
+    criteria: Literal["aic", "bic"]
+    criteria_res: float
+    params: NDArray[np.floating]
+    p_values: NDArray[np.floating]
+    residuals: NDArray[np.floating]
+
+
 class AutoARMARes(NamedTuple):
     model_order: tuple[int, int]
     degrees_of_freedom: int
@@ -205,7 +215,7 @@ def _arma_top_candidates(
     return [(int(ar_order), int(ma_order)) for (ar_order, ma_order) in top.index]
 
 
-def by_criteria(res: AutoARMARes) -> float:
+def by_criteria(res: AutoARMARes | AutoGARCHRes) -> float:
     """
     Extract the information criterion value from an AutoARMARes object.
     """
@@ -279,7 +289,7 @@ def _garch_base_model(
     p_order: int = 1,
     o_order: int = 0,
     q_order: int = 1,
-):
+) -> ARCHModelResult:
     base_model = arch_model(
         y=asset_array,
         mean="zero",
@@ -292,37 +302,18 @@ def _garch_base_model(
     return base_model
 
 
-def _compare_proposed_garch_to_base(
-    base_res: ARCHModelResult,
-    proposed_res: ARCHModelResult,
-    p_vals_significant_level: float = 0.05,
-) -> bool:
-    good_p_vals = (proposed_res.pvalues.array <= p_vals_significant_level).all()
-    return good_p_vals and (proposed_res.bic < base_res.bic)
-
-
-class AutoGARCHRes(NamedTuple):
-    model_order: tuple[int, int, int]
-    degrees_of_freedom: int
-    criteria: Literal["aic", "bic"]
-    criteria_res: float
-    params: NDArray[np.floating]
-    p_values: NDArray[np.floating]
-    residuals: NDArray[np.floating]
-
-
 def auto_garch(
     asset_array: NDArray[np.floating],
     max_p_order: int = 2,
     max_o_order: int = 1,
-    ma_q_order: int = 2,
-):
+    max_q_order: int = 2,
+) -> list[AutoGARCHRes]:
     base_model = _garch_base_model(asset_array=asset_array)
     dists: tuple[Dist, Dist] = ("t", "normal")
-    garch_res = []
+    garch_candidates = []
     for p, q, o, distribution in product(
         range(1, max_p_order + 1),
-        range(1, ma_q_order + 1),
+        range(1, max_q_order + 1),
         range(0, max_o_order + 1),
         dists,
     ):
@@ -343,33 +334,29 @@ def auto_garch(
             )
             continue
 
-        if _compare_proposed_garch_to_base(base_model, proposed_model):
-            garch_res.append(
+        if proposed_model.bic < base_model.bic:
+            garch_candidates.append(
                 AutoGARCHRes(
                     model_order=key,
-                    degrees_of_freedom=len(base_model.params),
+                    degrees_of_freedom=len(proposed_model.params),
                     criteria="bic",
                     criteria_res=proposed_model.bic,
                     params=proposed_model.params,  # type: ignore[attr-defined]
                     p_values=proposed_model.pvalues,  # type: ignore[attr-defined]
-                    residuals=proposed_model.resid,  # type: ignore[attr-defined]
+                    residuals=proposed_model.std_resid,  # type: ignore[attr-defined]
                 )
             )
-    if len(garch_res) == 0:
-        print("No model better than the base, will use that instead")
 
-        base_key = (1, 0, 1)
-
-        garch_res.append(
-            AutoGARCHRes(
-                model_order=base_key,
-                degrees_of_freedom=len(base_model.params),
-                criteria="bic",
-                criteria_res=base_model.bic,
-                params=base_model.params,  # type: ignore[attr-defined]
-                p_values=base_model.pvalues,  # type: ignore[attr-defined]
-                residuals=base_model.resid,  # type: ignore[attr-defined]
-            )
+    garch_candidates.append(
+        AutoGARCHRes(
+            model_order=(1, 0, 1),
+            degrees_of_freedom=len(base_model.params),
+            criteria="bic",
+            criteria_res=base_model.bic,
+            params=base_model.params,  # type: ignore[attr-defined]
+            p_values=base_model.pvalues,  # type: ignore[attr-defined]
+            residuals=base_model.std_resid,  # type: ignore[attr-defined]
         )
+    )
 
-    return garch_res
+    return garch_candidates
