@@ -205,3 +205,14 @@ def mean_modelling_pipeline(
                 residuals=array - mean,
             )
     return asset_mean_model_res
+
+
+def volatility_modelling_pipeline(
+    mean_model_res: Mapping[str, MeanModelRes],
+):
+    assets_needing_arma = needs_volatility_modelling(mean_model_res)
+    asset_vol_model_res = {}
+    for asset in assets_needing_arma:
+        asset_vol_model_res[asset] = run_best_garch(mean_model_res[asset].residuals)
+
+    return asset_vol_model_res
