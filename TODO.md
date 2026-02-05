@@ -7,7 +7,7 @@
     - [x] Run harmonic regression ✅ 2026-01-14
     - [x] De-season from de-trended series ✅ 2026-01-14
 - [x] Write Decision rule between stochastic and deterministic trend removal ✅ 2026-01-19
-- [ ] Initial pre-processing pipeline
+- [x] Initial pre-processing pipeline ✅ 2026-02-05
 - [ ] Log-likelihood + FFP based log-likelihood implementation for estimating parameters 
 - [ ] FFT Algorithm to calculate increment distribution? (see 45.5.1) 
 - [ ] Bootstrapping methods with FFP (see 47.1.3)

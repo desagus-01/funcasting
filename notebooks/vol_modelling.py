@@ -1,6 +1,7 @@
 # %%
-from arch import arch_model
 
+
+from maths.time_series.models import auto_garch
 from methods.model_selection_pipeline import (
     mean_modelling_pipeline,
     needs_volatility_modelling,
@@ -17,7 +18,6 @@ data_2 = run_univariate_preprocess(data=data)
 
 # %%
 u_res = mean_modelling_pipeline(data_2.post_data, assets=data_2.needs_further_modelling)
-
 u_res
 # %%
 
@@ -26,7 +26,6 @@ assets_vol
 
 # %%
 x = u_res["AAPL"].residuals
-model = arch_model(x, mean="zero", vol="GARCH", dist="t", rescale=False)
-res = model.fit()
-print(res.summary())
-res.plot()
+
+y = auto_garch(x)
+y

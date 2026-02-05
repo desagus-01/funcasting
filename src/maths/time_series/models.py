@@ -1,7 +1,10 @@
 import warnings
+from itertools import product
 from typing import NamedTuple
 
 import numpy as np
+from arch import arch_model
+from arch.univariate.base import ARCHModelResult
 from numpy._typing import NDArray
 from statsmodels.tools.sm_exceptions import ConvergenceWarning
 from statsmodels.tsa.arima.model import ARIMA
@@ -240,7 +243,7 @@ def auto_arma(
 
                 res = ARIMA(asset_array, order=(ar_order, 0, ma_order), trend="n").fit(
                     method="statespace"
-                )
+                )  # no integration order needed as we have done that in pre-processing
 
         except ConvergenceWarning:
             # Skip models that fail to converge
@@ -265,3 +268,108 @@ def auto_arma(
         raise ValueError("No ARMA models were fitted, likely due to failed convergence")
 
     return arma_res
+
+
+Dist = Literal["t", "normal"]
+
+
+def _garch_base_model(
+    asset_array: NDArray[np.floating],
+    innovation_distribution: Dist = "t",
+    p_order: int = 1,
+    o_order: int = 0,
+    q_order: int = 1,
+):
+    base_model = arch_model(
+        y=asset_array,
+        mean="zero",
+        p=p_order,
+        o=o_order,
+        q=q_order,
+        dist=innovation_distribution,
+        rescale=False,
+    ).fit(disp=False)
+    return base_model
+
+
+def _compare_proposed_garch_to_base(
+    base_res: ARCHModelResult,
+    proposed_res: ARCHModelResult,
+    p_vals_significant_level: float = 0.05,
+) -> bool:
+    good_p_vals = (proposed_res.pvalues.array <= p_vals_significant_level).all()
+    return good_p_vals and (proposed_res.bic < base_res.bic)
+
+
+class AutoGARCHRes(NamedTuple):
+    model_order: tuple[int, int, int]
+    degrees_of_freedom: int
+    criteria: Literal["aic", "bic"]
+    criteria_res: float
+    params: NDArray[np.floating]
+    p_values: NDArray[np.floating]
+    residuals: NDArray[np.floating]
+
+
+def auto_garch(
+    asset_array: NDArray[np.floating],
+    max_p_order: int = 2,
+    max_o_order: int = 1,
+    ma_q_order: int = 2,
+):
+    base_model = _garch_base_model(asset_array=asset_array)
+    dists: tuple[Dist, Dist] = ("t", "normal")
+    garch_res = []
+    for p, q, o, distribution in product(
+        range(1, max_p_order + 1),
+        range(1, ma_q_order + 1),
+        range(0, max_o_order + 1),
+        dists,
+    ):
+        key = (p, o, q)
+        if (key == (1, 0, 1)) and (distribution == "t"):
+            continue
+
+        proposed_model = arch_model(
+            asset_array, mean="zero", p=p, o=o, q=q, dist=distribution, rescale=False
+        ).fit(disp="off")
+        if proposed_model.convergence_flag != 0:
+            print(
+                "NO CONVERGE",
+                key,
+                distribution,
+                "flag",
+                proposed_model.convergence_flag,
+            )
+            continue
+
+        if _compare_proposed_garch_to_base(base_model, proposed_model):
+            garch_res.append(
+                AutoGARCHRes(
+                    model_order=key,
+                    degrees_of_freedom=len(base_model.params),
+                    criteria="bic",
+                    criteria_res=proposed_model.bic,
+                    params=proposed_model.params,  # type: ignore[attr-defined]
+                    p_values=proposed_model.pvalues,  # type: ignore[attr-defined]
+                    residuals=proposed_model.resid,  # type: ignore[attr-defined]
+                )
+            )
+    if len(garch_res) == 0:
+        print("No model better than the base, will use that instead")
+
+        base_key = (1, 0, 1)
+
+        garch_res.append(
+            AutoGARCHRes(
+                model_order=base_key,
+                degrees_of_freedom=len(base_model.params),
+                criteria="bic",
+                criteria_res=base_model.bic,
+                params=base_model.params,  # type: ignore[attr-defined]
+                p_values=base_model.pvalues,  # type: ignore[attr-defined]
+                residuals=base_model.resid,  # type: ignore[attr-defined]
+            )
+        )
+
+    return garch_res
