@@ -3,7 +3,6 @@ from typing import Callable, Literal
 
 import numpy as np
 import polars as pl
-from polars import Series
 from polars.dataframe.frame import DataFrame
 
 from globals import LAGS
@@ -237,7 +236,7 @@ def _apply_detrend(data: DataFrame, decision: dict[str, tuple[str, int]]) -> Dat
         ValueError: If an expected transformed column is not found.
     """
     if not decision:
-        return data
+        return data.select(["date"])  # ie return an empty df
 
     # will group assets by transform
     by_group: dict[tuple[str, int], list[str]] = {}
@@ -257,6 +256,7 @@ def _apply_detrend(data: DataFrame, decision: dict[str, tuple[str, int]]) -> Dat
             raise ValueError(f"Unknown transform '{transform}' for assets {assets}")
 
     # renames to original cols
+    transformed_cols: list[str] = []
     rename_map = {}
     for asset, (transform, order) in decision.items():
         col = (
@@ -270,8 +270,9 @@ def _apply_detrend(data: DataFrame, decision: dict[str, tuple[str, int]]) -> Dat
                 f"Available columns: {data.columns}"
             )
         rename_map[col] = asset
-
-    return data.drop(list(decision.keys())).rename(rename_map)
+        transformed_cols.append(col)
+    return data.select(["date", *transformed_cols]).rename(rename_map)
+    # return data.drop(list(decision.keys())).rename(rename_map)
 
 
 def _expand_period_to_harmonics(period_label: str) -> list[tuple[str, float]]:
@@ -299,7 +300,6 @@ def _deseason_decision_rule(
 ) -> dict[str, list[tuple[str, float]]]:
     """
     Extract significant seasonal periods and expand each to its harmonic set.
-    Returns {asset -> [(label, omega_radians), ...]}.
     """
     decision: dict[str, list[tuple[str, float]]] = {}
 
@@ -324,34 +324,22 @@ def _deseason_decision_rule(
 
 
 def _deseason_apply(
-    data: DataFrame, decision: dict[str, list[tuple[str, float]]]
-) -> DataFrame:
-    """Deterministically remove seasonality via harmonic regression.
+    data: pl.DataFrame, decision: dict[str, list[tuple[str, float]]]
+) -> pl.DataFrame:
+    assets = [asset for asset, seasons in decision.items() if seasons]
+    if not assets:
+        return data.select(["date"])
 
-    For each asset with detected periods, fit sin/cos harmonics at the chosen
-    angular frequencies and replace the asset column with residuals.
-
-    Args:
-        data: Input DataFrame.
-        decision: {asset -> [(period_label, omega_radians), ...]}.
-
-    Returns:
-        DataFrame with deseasoned asset columns; no-op if `decision` is empty.
-    """
-    if not any(decision.values()):
-        return data
-    deseasoned_assets = {
-        asset: deterministic_seasonal_adjustment(
-            data,
-            asset=asset,
-            frequency_radians=[rad for _, rad in seasons],
+    deseasoned = {}
+    for asset in assets:
+        seasons = decision[asset]
+        omega = [rad for _, rad in seasons]
+        deseasoned[asset] = deterministic_seasonal_adjustment(
+            data, asset=asset, frequency_radians=omega
         )[asset]
-        for asset, seasons in decision.items()
-        if seasons
-    }
-    return data.with_columns(
-        [Series(name, values) for name, values in deseasoned_assets.items()]
-    )
+
+    return data.select(["date"]).hstack(pl.DataFrame(deseasoned))
+    # return pl.DataFrame(deseasoned)
 
 
 def deseason_pipeline(
@@ -448,6 +436,29 @@ def _find_nonwhite_noise_assets(
     return [a for a, ok in wn.items() if not ok]
 
 
+def overwrite_with_transforms(
+    base: pl.DataFrame,
+    patch: pl.DataFrame,
+    assets: list[str],
+    suffix: str,
+) -> pl.DataFrame:
+    # Join patch, keeping patch columns accessible with a suffix
+    j = base.join(patch, on="date", how="left", suffix=suffix)
+
+    exprs: list[pl.Expr] = []
+    drop_cols: list[str] = []
+
+    for a in assets:
+        pa = f"{a}{suffix}"
+        if pa in j.columns:
+            exprs.append(pl.col(pa).alias(a))
+            drop_cols.append(pa)
+        else:
+            exprs.append(pl.col(a))
+
+    return j.with_columns(exprs).drop(drop_cols)
+
+
 # TODO: Make sure date is also returned
 # TODO: Review dropping nulls blankly - prob is a better way
 def run_univariate_preprocess(
@@ -473,19 +484,25 @@ def run_univariate_preprocess(
 
     # Trend
     detrend = detrend_pipeline(
-        data=data.select(assets),
+        data=data.select(["date", *assets]),
         assets=assets_need_preprocess,
         include_diagnostics=False,
     )
-    detrended = detrend.updated_data.drop_nulls()
+    after_detrend = overwrite_with_transforms(
+        base=data, patch=detrend.updated_data, assets=assets, suffix="_detrend"
+    )
 
-    # Deseason
     deseason = deseason_pipeline(
-        data=detrended,
+        data=detrend.updated_data,
         assets=assets_need_preprocess,
         include_diagnostics=False,
     )
-    transformed = deseason.updated_data
+    final = overwrite_with_transforms(
+        base=after_detrend,
+        patch=deseason.updated_data,
+        assets=assets,
+        suffix="_deseason",
+    )
 
     pipeline_decisions = {"trend": detrend.decision, "deseason": deseason.decision}
-    return UnivariatePreprocess(transformed, pipeline_decisions, assets_need_preprocess)
+    return UnivariatePreprocess(final, pipeline_decisions, assets_need_preprocess)

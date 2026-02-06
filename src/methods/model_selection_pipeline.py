@@ -107,7 +107,9 @@ def needs_mean_modelling(
     """
     needs_mean_modelling = []
     for asset in assets_to_test:
-        array = data.select(asset).to_numpy().ravel()
+        array = (
+            data.select(asset).drop_nulls().to_numpy().ravel()
+        )  # remove null if asset has any
         if asset_needs_mean_modelling(
             array,
             ljung_box_lags=ljung_box_lags,
@@ -194,7 +196,9 @@ def mean_modelling_pipeline(
     )  # At this point DOF is 0
     asset_mean_model_res: dict[str, MeanModelRes] = {}
     for asset in assets:
-        array = data.select(asset).to_numpy().ravel()
+        array = (
+            data.select(asset).drop_nulls().to_numpy().ravel()
+        )  # drop null if asset contains any
         if asset in assets_needing_arma:
             asset_mean_model_res[asset] = run_best_arma(array, asset_name=asset)
         else:

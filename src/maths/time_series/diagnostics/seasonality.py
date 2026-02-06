@@ -231,9 +231,9 @@ def periodogram_seasonality_test(
 
 
 def seasonality_diagnostic(
-    *,
     data: DataFrame,
     assets: list[str],
+    *,
     seasonal_periods: Sequence[SEASONAL_PERIODS] | None = None,
 ) -> dict[str, list[SeasonalityPeriodTest]]:
     if seasonal_periods is None:
@@ -241,7 +241,9 @@ def seasonality_diagnostic(
 
     asset_seasonality_res = {}
     for asset in assets:
-        data_array = data.select(asset).to_numpy().flatten()
+        data_array = (
+            data.select(asset).drop_nulls().to_numpy().flatten()
+        )  # we drop any nulls if there are any for that asset
         seasonal_res = [
             periodogram_seasonality_test(
                 data=data_array, seasonal_period=seasonal_period

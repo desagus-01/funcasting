@@ -9,5 +9,7 @@ data = data.with_columns(fake=series)
 
 
 # %%
+x = fit_best_univariate_model(data)
 
-x = fit_best_univariate_model(data, assets=["AAPL"])
+
+# %%
