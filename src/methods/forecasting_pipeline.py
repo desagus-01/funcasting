@@ -8,6 +8,14 @@ from methods.model_selection_pipeline import (
 from methods.preprocess_pipeline import run_univariate_preprocess
 
 
+# TODO: Finish writing the Forecast model below, to include conditional mean and conditional vol
+class ForecastModel:
+    def __init__(
+        self,
+    ):
+        pass
+
+
 def build_innovations_df(
     post: DataFrame,
     mean_map: dict,
@@ -48,8 +56,10 @@ def fit_best_univariate_model(data: DataFrame, assets: list[str] | None = None):
         data=post_process.post_data, assets=post_process.needs_further_modelling
     )
     volatility_modelling = volatility_modelling_pipeline(mean_model_res=mean_modelling)
-    return build_innovations_df(
+    innovs = build_innovations_df(
         post=post_process.post_data,
         mean_map=mean_modelling,
         vol_map=volatility_modelling,
     )
+
+    return post_process, mean_modelling, volatility_modelling, innovs

@@ -22,6 +22,8 @@ class AutoGARCHRes(NamedTuple):
     params: NDArray[np.floating]
     p_values: NDArray[np.floating]
     residuals: NDArray[np.floating]
+    conditional_volatility: NDArray[np.floating]
+    invariants: NDArray[np.floating]
 
 
 class AutoARMARes(NamedTuple):
@@ -343,7 +345,9 @@ def auto_garch(
                     criteria_res=proposed_model.bic,
                     params=proposed_model.params,  # type: ignore[attr-defined]
                     p_values=proposed_model.pvalues,  # type: ignore[attr-defined]
-                    residuals=proposed_model.std_resid,  # type: ignore[attr-defined]
+                    invariants=proposed_model.std_resid,  # type: ignore[attr-defined]
+                    residuals=proposed_model.resid,  # type: ignore[attr-defined]
+                    conditional_volatility=proposed_model.conditional_volatility,  # type: ignore[attr-defined]
                 )
             )
 
@@ -355,7 +359,9 @@ def auto_garch(
             criteria_res=base_model.bic,
             params=base_model.params,  # type: ignore[attr-defined]
             p_values=base_model.pvalues,  # type: ignore[attr-defined]
-            residuals=base_model.std_resid,  # type: ignore[attr-defined]
+            residuals=base_model.resid,  # type: ignore[attr-defined]
+            invariants=base_model.std_resid,  # type: ignore[attr-defined]
+            conditional_volatility=base_model.conditional_volatility,  # type: ignore[attr-defined]
         )
     )
 

@@ -1,13 +1,11 @@
 
 > [!ATTENTION] Update data with ADJUSTED prices (yfinance for now)
 
-## Break Down of Stochastic Process
-- [x] Apply seasonality adjustment ✅ 2026-01-14
-    - [x] Identify/test for peaks ✅ 2026-01-13
-    - [x] Run harmonic regression ✅ 2026-01-14
-    - [x] De-season from de-trended series ✅ 2026-01-14
-- [x] Write Decision rule between stochastic and deterministic trend removal ✅ 2026-01-19
-- [x] Initial pre-processing pipeline ✅ 2026-02-05
+## Priority
+- [ ] Create appropriate next function per asset based on their univariate pipeline
+    - [ ] Change mean and vol modelling results to return the appropriate parameters for next step model
+
+## Other
 - [ ] Log-likelihood + FFP based log-likelihood implementation for estimating parameters 
 - [ ] FFT Algorithm to calculate increment distribution? (see 45.5.1) 
 - [ ] Bootstrapping methods with FFP (see 47.1.3)
