@@ -1,6 +1,6 @@
 from pprint import pprint as p
 
-from methods.forecasting_pipeline import info_for_forecasting
+from methods.forecasting_pipeline import multivariate_forecasting_info
 from utils.template import get_template, synthetic_series
 
 # %%
@@ -11,9 +11,6 @@ data = data.with_columns(fake=series)
 
 
 # %%
-x = info_for_forecasting(data)
+x = multivariate_forecasting_info(data)
 p(x)
 # %%
-x[1]
-for asset, model in x[1].items:
-    print(asset, model.model_type)

@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Mapping
 
 import numpy as np
@@ -17,6 +18,42 @@ from maths.time_series.models import (
 )
 
 MeanModelRes = AutoARMARes | DemeanRes
+
+
+MeanKind = Literal["none", "demean", "arma"]
+VolKind = Literal["none", "garch"]
+
+ModelType = Literal[
+    "ARMA + GARCH", "ARMA", "GARCH", "Random Walk", "Demean", "Demean + GARCH"
+]
+
+
+_MODEL_TYPE_MAP: dict[tuple[MeanKind, VolKind], ModelType] = {
+    ("none", "none"): "Random Walk",
+    ("none", "garch"): "GARCH",
+    ("demean", "none"): "Demean",
+    ("demean", "garch"): "Demean + GARCH",
+    ("arma", "none"): "ARMA",
+    ("arma", "garch"): "ARMA + GARCH",
+}
+
+
+@dataclass
+class UnivariateModel:
+    mean_model: MeanModelRes | None
+    volatility_model: AutoGARCHRes | None
+
+    @property
+    def mean_kind(self) -> MeanKind:
+        return "none" if self.mean_model is None else self.mean_model.kind  # type: ignore[return-value]
+
+    @property
+    def vol_kind(self) -> VolKind:
+        return "none" if self.volatility_model is None else self.volatility_model.kind
+
+    @property
+    def model_type(self) -> ModelType:
+        return _MODEL_TYPE_MAP[(self.mean_kind, self.vol_kind)]
 
 
 # TODO: Move to a more appropriate place
@@ -222,3 +259,19 @@ def volatility_modelling_pipeline(
         )
 
     return asset_vol_model_res
+
+
+def build_best_univariate_model(
+    data: DataFrame, assets_to_model: list[str]
+) -> dict[str, UnivariateModel]:
+    mean_modelling = mean_modelling_pipeline(data=data, assets=assets_to_model)
+    volatility_modelling = volatility_modelling_pipeline(mean_model_res=mean_modelling)
+    all_assets = [c for c in data.columns if c != "date"]
+    asset_model = {}
+    for asset in all_assets:
+        asset_model[asset] = UnivariateModel(
+            mean_model=mean_modelling.get(asset),
+            volatility_model=volatility_modelling.get(asset),
+        )
+
+    return asset_model
