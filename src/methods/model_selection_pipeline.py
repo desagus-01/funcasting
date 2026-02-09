@@ -122,9 +122,9 @@ def needs_mean_modelling(
 
 def run_best_arma(
     asset_array: NDArray[np.floating],
+    asset_name: str,
     search_n_models: int = 5,
     information_criteria: Literal["bic", "aic"] = "bic",
-    asset_name: str | None = None,
 ) -> AutoARMARes:
     """
     Selects the best ARMA model by information criterion (AIC/BIC) among those
@@ -149,7 +149,7 @@ def run_best_arma(
         ):
             return model
     print(
-        f"For {asset_name} No model's residual has passed the ljung box test, please review your model, returning model with best information criteria for now."
+        f"Mean Modelling - For {asset_name} No model's residual has passed the ljung box test, please review your model, returning model with best information criteria for now."
     )
 
     return min(candidate_models_res, key=by_criteria)
@@ -157,7 +157,7 @@ def run_best_arma(
 
 def run_best_garch(
     asset_array: NDArray[np.floating],
-    asset_name: str | None = None,
+    asset_name: str,
 ) -> AutoGARCHRes:
     candidate_models_res = auto_garch(
         asset_array=asset_array,
@@ -170,14 +170,14 @@ def run_best_garch(
 
     for model in candidates_by_information_criteria:
         if not asset_needs_volatility_model(
-            residual=model.residuals,
+            residual=model.invariants,
             degrees_of_freedom=model.degrees_of_freedom,
             ljung_box_lags=[10, 20],
             arch_lags=[5, 10, 15],
         ):
             return model
     print(
-        f"For {asset_name} No model's residual has passed the ljung box test, please review your model, returning model with best information criteria for now."
+        f"Volatility Modelling - for {asset_name} No model's residual has passed the ljung box test, please review your model, returning model with best information criteria for now."
     )
 
     return min(candidate_models_res, key=by_criteria)
@@ -205,7 +205,7 @@ def mean_modelling_pipeline(
             mean = array.mean()
             asset_mean_model_res[asset] = DemeanRes(
                 degrees_of_freedom=0,
-                mean_=mean,
+                mean=mean,
                 residuals=array - mean,
             )
     return asset_mean_model_res
@@ -214,9 +214,11 @@ def mean_modelling_pipeline(
 def volatility_modelling_pipeline(
     mean_model_res: Mapping[str, MeanModelRes],
 ):
-    assets_needing_arma = needs_volatility_modelling(mean_model_res)
+    assets_needing_garch = needs_volatility_modelling(mean_model_res)
     asset_vol_model_res = {}
-    for asset in assets_needing_arma:
-        asset_vol_model_res[asset] = run_best_garch(mean_model_res[asset].residuals)
+    for asset in assets_needing_garch:
+        asset_vol_model_res[asset] = run_best_garch(
+            mean_model_res[asset].residuals, asset
+        )
 
     return asset_vol_model_res

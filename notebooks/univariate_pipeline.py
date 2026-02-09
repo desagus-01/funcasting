@@ -1,4 +1,6 @@
-from methods.forecasting_pipeline import fit_best_univariate_model
+from pprint import pprint as p
+
+from methods.forecasting_pipeline import info_for_forecasting
 from utils.template import get_template, synthetic_series
 
 # %%
@@ -9,7 +11,9 @@ data = data.with_columns(fake=series)
 
 
 # %%
-x = fit_best_univariate_model(data)
-
+x = info_for_forecasting(data)
+p(x)
 # %%
-x
+x[1]
+for asset, model in x[1].items:
+    print(asset, model.model_type)

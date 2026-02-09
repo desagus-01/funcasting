@@ -19,11 +19,12 @@ class AutoGARCHRes(NamedTuple):
     degrees_of_freedom: int
     criteria: Literal["aic", "bic"]
     criteria_res: float
-    params: NDArray[np.floating]
+    params: dict[str, float]
     p_values: NDArray[np.floating]
     residuals: NDArray[np.floating]
     conditional_volatility: NDArray[np.floating]
     invariants: NDArray[np.floating]
+    kind: Literal["garch"] = "garch"
 
 
 class AutoARMARes(NamedTuple):
@@ -35,12 +36,14 @@ class AutoARMARes(NamedTuple):
     ma_params: NDArray[np.floating]
     p_values: NDArray[np.floating]
     residuals: NDArray[np.floating]
+    kind: Literal["arma"] = "arma"
 
 
 class DemeanRes(NamedTuple):
     degrees_of_freedom: int
-    mean_: float
+    mean: float
     residuals: NDArray[np.floating]
+    kind: Literal["demean"] = "demean"
 
 
 def _compute_reflection_coefficient(
@@ -343,7 +346,7 @@ def auto_garch(
                     degrees_of_freedom=len(proposed_model.params),
                     criteria="bic",
                     criteria_res=proposed_model.bic,
-                    params=proposed_model.params,  # type: ignore[attr-defined]
+                    params=proposed_model.params.to_dict(),  # type: ignore[attr-defined]
                     p_values=proposed_model.pvalues,  # type: ignore[attr-defined]
                     invariants=proposed_model.std_resid,  # type: ignore[attr-defined]
                     residuals=proposed_model.resid,  # type: ignore[attr-defined]
@@ -357,7 +360,7 @@ def auto_garch(
             degrees_of_freedom=len(base_model.params),
             criteria="bic",
             criteria_res=base_model.bic,
-            params=base_model.params,  # type: ignore[attr-defined]
+            params=base_model.params.to_dict(),  # type: ignore[attr-defined]
             p_values=base_model.pvalues,  # type: ignore[attr-defined]
             residuals=base_model.resid,  # type: ignore[attr-defined]
             invariants=base_model.std_resid,  # type: ignore[attr-defined]

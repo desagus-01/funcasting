@@ -1,22 +1,19 @@
+from dataclasses import dataclass
+from typing import Literal
+
 import polars as pl
 from polars import DataFrame
 
+from maths.time_series.models import AutoGARCHRes
 from methods.model_selection_pipeline import (
+    MeanModelRes,
     mean_modelling_pipeline,
     volatility_modelling_pipeline,
 )
 from methods.preprocess_pipeline import run_univariate_preprocess
 
 
-# TODO: Finish writing the Forecast model below, to include conditional mean and conditional vol
-class ForecastModel:
-    def __init__(
-        self,
-    ):
-        pass
-
-
-def build_innovations_df(
+def _build_innovations_df(
     post: DataFrame,
     mean_map: dict,
     vol_map: dict,
@@ -31,7 +28,7 @@ def build_innovations_df(
 
     for asset in assets:
         if asset in vol_map:
-            resid = vol_map[asset].residuals
+            resid = vol_map[asset].invariants
             # align residuals to the dates actually used (non-null input series)
             used_dates = post.filter(pl.col(asset).is_not_null()).select("date")
             patch = used_dates.with_columns(pl.Series(asset, resid))
@@ -50,16 +47,70 @@ def build_innovations_df(
     return out
 
 
-def fit_best_univariate_model(data: DataFrame, assets: list[str] | None = None):
-    post_process = run_univariate_preprocess(data=data, assets=assets)
-    mean_modelling = mean_modelling_pipeline(
-        data=post_process.post_data, assets=post_process.needs_further_modelling
-    )
-    volatility_modelling = volatility_modelling_pipeline(mean_model_res=mean_modelling)
-    innovs = build_innovations_df(
-        post=post_process.post_data,
-        mean_map=mean_modelling,
-        vol_map=volatility_modelling,
-    )
+MeanKind = Literal["none", "demean", "arma"]
+VolKind = Literal["none", "garch"]
 
-    return post_process, mean_modelling, volatility_modelling, innovs
+ModelType = Literal[
+    "ARMA + GARCH", "ARMA", "GARCH", "Random Walk", "Demean", "Demean + GARCH"
+]
+
+
+_MODEL_TYPE_MAP: dict[tuple[MeanKind, VolKind], ModelType] = {
+    ("none", "none"): "Random Walk",
+    ("none", "garch"): "GARCH",
+    ("demean", "none"): "Demean",
+    ("demean", "garch"): "Demean + GARCH",
+    ("arma", "none"): "ARMA",
+    ("arma", "garch"): "ARMA + GARCH",
+}
+
+
+@dataclass
+class UnivariateModel:
+    mean_model: MeanModelRes | None
+    volatility_model: AutoGARCHRes | None
+
+    @property
+    def mean_kind(self) -> MeanKind:
+        return "none" if self.mean_model is None else self.mean_model.kind  # type: ignore[return-value]
+
+    @property
+    def vol_kind(self) -> VolKind:
+        return "none" if self.volatility_model is None else self.volatility_model.kind
+
+    @property
+    def model_type(self) -> ModelType:
+        return _MODEL_TYPE_MAP[(self.mean_kind, self.vol_kind)]
+
+
+def build_best_univariate_model(
+    data: DataFrame, assets_to_model: list[str]
+) -> dict[str, UnivariateModel]:
+    mean_modelling = mean_modelling_pipeline(data=data, assets=assets_to_model)
+    volatility_modelling = volatility_modelling_pipeline(mean_model_res=mean_modelling)
+    asset_model = {}
+    for asset in (
+        data.columns
+    ):  # we want for all assets (as some will be RW) so run in original columns
+        if asset != "date":
+            asset_model[asset] = UnivariateModel(
+                mean_model=mean_modelling.get(asset),
+                volatility_model=volatility_modelling.get(asset),
+            )
+
+    return asset_model
+
+
+def info_for_forecasting(data: DataFrame, assets: list[str] | None = None):
+    post_process = run_univariate_preprocess(data=data, assets=assets)
+    chosen_model = build_best_univariate_model(
+        data=post_process.post_data,
+        assets_to_model=post_process.needs_further_modelling,
+    )
+    # innovs = build_innovations_df(
+    #     post=post_process.post_data,
+    #     mean_map=chosen_model,
+    #     vol_map=volatility_modelling,
+    # )
+    #
+    return post_process.post_data, chosen_model
