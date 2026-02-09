@@ -7,7 +7,6 @@
 
 ## Other
 - [ ] Log-likelihood + FFP based log-likelihood implementation for estimating parameters 
-- [ ] FFT Algorithm to calculate increment distribution? (see 45.5.1) 
 - [ ] Bootstrapping methods with FFP (see 47.1.3)
 - [ ] Hybrid Monte Carlo-historical (47.6.6)
 

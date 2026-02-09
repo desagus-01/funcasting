@@ -2,7 +2,11 @@ from typing import Literal
 
 import polars as pl
 from copulae import NormalCopula, StudentCopula
+from numpy import random
+from polars import DataFrame
 from scipy.stats import norm, t
+
+from models.types import ProbVector
 
 
 def sample_marginal(
@@ -38,3 +42,20 @@ def sample_copula(
     _ = cop.fit(values, to_pobs=False)
     samples = cop.random(n=copula.height)
     return pl.DataFrame(samples, col_names)
+
+
+def weighted_bootstrapping(
+    data: DataFrame, prob_vector: ProbVector, n_samples: int, seed: int | None = None
+) -> DataFrame:
+    if data.height != len(prob_vector):
+        raise ValueError(
+            f"Your data size {data.height} and probability size {len(prob_vector)} do not match."
+        )
+    rng = random.default_rng(seed)
+    sample_row_n = rng.choice(data.height, size=n_samples, replace=True, p=prob_vector)
+
+    return (
+        data.with_row_index()
+        .filter(pl.col("index").is_in(sample_row_n.tolist()))
+        .drop("index")
+    )
