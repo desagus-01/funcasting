@@ -21,3 +21,12 @@ prob_ex = uniform_probs(inv_df.height)
 
 # %%
 weighted_bootstrapping(data=inv_df, prob_vector=prob_ex, n_samples=1)
+# %%
+
+uni = x.models["fake"]
+
+mean_res = uni.mean_model
+
+
+params = mean_res.params
+params

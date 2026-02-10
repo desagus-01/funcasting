@@ -45,7 +45,7 @@ class UnivariateModel:
 
     @property
     def mean_kind(self) -> MeanKind:
-        return "none" if self.mean_model is None else self.mean_model.kind  # type: ignore[return-value]
+        return "none" if self.mean_model is None else self.mean_model.kind
 
     @property
     def vol_kind(self) -> VolKind:
@@ -242,7 +242,7 @@ def mean_modelling_pipeline(
             mean = array.mean()
             asset_mean_model_res[asset] = DemeanRes(
                 degrees_of_freedom=0,
-                mean=mean,
+                params={"mean": mean},
                 residuals=array - mean,
             )
     return asset_mean_model_res

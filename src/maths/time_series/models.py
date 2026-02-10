@@ -1,5 +1,6 @@
 import warnings
 from itertools import product
+from re import fullmatch
 from typing import NamedTuple
 
 import numpy as np
@@ -32,8 +33,7 @@ class AutoARMARes(NamedTuple):
     degrees_of_freedom: int
     criteria: Literal["aic", "bic"]
     criteria_res: float
-    ar_params: NDArray[np.floating]
-    ma_params: NDArray[np.floating]
+    params: dict[str, float]
     p_values: NDArray[np.floating]
     residuals: NDArray[np.floating]
     kind: Literal["arma"] = "arma"
@@ -41,9 +41,29 @@ class AutoARMARes(NamedTuple):
 
 class DemeanRes(NamedTuple):
     degrees_of_freedom: int
-    mean: float
+    params: dict[str, float]
     residuals: NDArray[np.floating]
     kind: Literal["demean"] = "demean"
+
+
+def _build_arma_parameters(
+    parameter_names: list[str],
+    ar_estimates: NDArray[np.floating],
+    ma_estimates: NDArray[np.floating],
+) -> dict[str, float]:
+    params = {}
+    for param in parameter_names:
+        m = fullmatch(r"(ar|ma)\.L(\d+)", param)
+        if m:
+            kind, lag = m.group(1), int(m.group(2))
+            if lag < 1:
+                raise ValueError(f"Invalid lag in {param}")
+            if kind == "ar":
+                params[param] = ar_estimates[lag - 1]
+            if kind == "ma":
+                params[param] = ma_estimates[lag - 1]
+
+    return params
 
 
 def _compute_reflection_coefficient(
@@ -256,10 +276,13 @@ def auto_arma(
             with warnings.catch_warnings():
                 warnings.filterwarnings("error", category=ConvergenceWarning)
 
-                res = ARIMA(asset_array, order=(ar_order, 0, ma_order), trend="n").fit(
-                    method="statespace"
+                model = ARIMA(
+                    asset_array,
+                    order=(ar_order, 0, ma_order),
+                    seasonal_order=[0, 0, 0, 0],
+                    trend="n",
                 )  # no integration order needed as we have done that in pre-processing
-
+                res = model.fit(method="statespace")
         except ConvergenceWarning:
             # Skip models that fail to converge
             print(
@@ -270,11 +293,14 @@ def auto_arma(
         arma_res.append(
             AutoARMARes(
                 model_order=(ar_order, ma_order),
+                params=_build_arma_parameters(
+                    model.param_names,
+                    res.arparams,  # type: ignore[attr-defined]
+                    res.maparams,  # type: ignore[attr-defined]
+                ),
                 degrees_of_freedom=ar_order + ma_order,
                 criteria=information_criteria,
                 criteria_res=float(getattr(res, information_criteria)),
-                ar_params=res.arparams,  # type: ignore[attr-defined]
-                ma_params=res.maparams,  # type: ignore[attr-defined]
                 p_values=res.pvalues,  # type: ignore[attr-defined]
                 residuals=res.resid,  # type: ignore[attr-defined]
             )
