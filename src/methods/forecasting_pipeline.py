@@ -5,7 +5,7 @@ import polars as pl
 from polars import DataFrame
 
 from methods.model_selection_pipeline import (
-    UnivariateModel,
+    UnivariateRes,
     build_best_univariate_model,
 )
 from methods.preprocess_pipeline import run_univariate_preprocess
@@ -14,12 +14,12 @@ from methods.preprocess_pipeline import run_univariate_preprocess
 @dataclass
 class MultivariateForecastInfo:
     risk_drivers: DataFrame
-    models: dict[str, UnivariateModel]
+    model_res: dict[str, UnivariateRes]
     invariants: DataFrame
 
 
 def _build_innovations_df_from_models(
-    post: DataFrame, model_map: dict[str, UnivariateModel], assets=None
+    post: DataFrame, model_map: dict[str, UnivariateRes], assets=None
 ) -> DataFrame:
     if assets is None:
         assets = [c for c in post.columns if c != "date"]

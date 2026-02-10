@@ -39,7 +39,7 @@ _MODEL_TYPE_MAP: dict[tuple[MeanKind, VolKind], ModelType] = {
 
 
 @dataclass
-class UnivariateModel:
+class UnivariateRes:
     mean_model: MeanModelRes | None
     volatility_model: AutoGARCHRes | None
 
@@ -289,13 +289,13 @@ def volatility_modelling_pipeline(
 
 def build_best_univariate_model(
     data: DataFrame, assets_to_model: list[str]
-) -> dict[str, UnivariateModel]:
+) -> dict[str, UnivariateRes]:
     mean_modelling = mean_modelling_pipeline(data=data, assets=assets_to_model)
     volatility_modelling = volatility_modelling_pipeline(mean_model_res=mean_modelling)
     all_assets = [c for c in data.columns if c != "date"]
     asset_model = {}
     for asset in all_assets:
-        asset_model[asset] = UnivariateModel(
+        asset_model[asset] = UnivariateRes(
             mean_model=mean_modelling.get(asset),
             volatility_model=volatility_modelling.get(asset),
         )

@@ -49,7 +49,7 @@ def weighted_bootstrapping(
 ) -> DataFrame:
     if data.height != len(prob_vector):
         raise ValueError(
-            f"Your data size {data.height} and probability size {len(prob_vector)} do not match."
+            f"Data size {data.height} and probability vector size {len(prob_vector)} do not match."
         )
     rng = random.default_rng(seed)
     sample_row_n = rng.choice(data.height, size=n_samples, replace=True, p=prob_vector)

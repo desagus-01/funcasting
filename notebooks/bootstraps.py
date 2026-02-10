@@ -18,7 +18,7 @@ p(x)
 # %%
 inv_df = x.invariants
 prob_ex = uniform_probs(inv_df.height)
-inv_df
+x
 # %%
 weighted_bootstrapping(data=inv_df, prob_vector=prob_ex, n_samples=1)
 # %%
