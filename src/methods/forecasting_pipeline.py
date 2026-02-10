@@ -31,24 +31,14 @@ def _build_innovations_df_from_models(
         model = model_map[asset]
         used_dates = post.filter(pl.col(asset).is_not_null()).select("date")
 
-        if model.volatility_model is not None:
-            patch = used_dates.with_columns(
-                pl.Series(asset, model.volatility_model.invariants)
-            )
+        non_null_values = post.select(asset).drop_nulls().to_numpy().ravel()
+        invariant = model.invariant(non_null_values)
 
-        elif model.mean_model is not None:
-            patch = used_dates.with_columns(
-                pl.Series(asset, model.mean_model.residuals)
-            )
-
-        else:
-            rw_innov = post.select("date", pl.col(asset).diff().alias(asset))
-            patch = used_dates.join(rw_innov, on="date", how="left")
+        patch = used_dates.with_columns(pl.Series(asset, invariant))
 
         patches.append(patch)
 
-    out = reduce(lambda acc, p: acc.join(p, on="date", how="left"), patches, base)
-    return out
+    return reduce(lambda acc, p: acc.join(p, on="date", how="left"), patches, base)
 
 
 def multivariate_forecasting_info(

@@ -55,6 +55,32 @@ class UnivariateModel:
     def model_type(self) -> ModelType:
         return _MODEL_TYPE_MAP[(self.mean_kind, self.vol_kind)]
 
+    def invariant(self, non_null_values: NDArray[np.floating]) -> NDArray[np.floating]:
+        """
+        Returns the correct invariant to be used downstream for forecasting purposes.
+
+        Rules are:
+        - If volatility_model exists: invariants are already aligned to non-null fit sample.
+        - If only mean_model exists: residuals are aligned to non-null fit sample.
+        - Random Walk (no mean, no vol): innovations = [nan] + diff(non_null_values)
+          so length matches non-null sample, like Polars diff does.
+        """
+        if self.volatility_model is not None:
+            invariant = self.volatility_model.invariants
+        elif self.mean_model is not None:
+            invariant = self.mean_model.residuals
+        else:
+            invariant = np.concatenate(
+                [np.array([np.nan], dtype=float), np.diff(non_null_values)]
+            )
+        if invariant.shape[0] != non_null_values.shape[0]:
+            raise ValueError(
+                f"Innovation length mismatch: innov={invariant.shape[0]} "
+                f"vs non_null_values={non_null_values.shape[0]} "
+                f"(model_type={self.model_type})"
+            )
+        return invariant.astype(float)
+
 
 # TODO: Move to a more appropriate place
 def multiple_tests_rejected(
