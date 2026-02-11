@@ -84,4 +84,24 @@ Working outline:
     4. re-test efficiency
 4. If still fails look at other phenomenon 
  
+---
+
+1. Compute $\mu_{t+1}$
+   - none $\to$ 0
+   - demean $\to$ stored mean
+   - arma $\to$ ARMA recursion from `MeanState.series`
+     and `MeanState.mean_residuals`
+
+1. Compute $\sigma_{t+1}^2$ if vol exists; else `None`
+
+1. Convert bootstrapped invariant draw $z_{t+1}$ into
+   residual $\varepsilon_{t+1}$
+   - if no vol: $\varepsilon_{t+1} = z_{t+1}$
+   - if vol: $\varepsilon_{t+1} = \sqrt{\sigma_{t+1}^2}\, z_{t+1}$
+
+1. Output:
+
+   $x_{t+1} = \mu_{t+1} + \varepsilon_{t+1}.$
+
+That's it for returns.
 

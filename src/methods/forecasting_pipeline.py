@@ -72,7 +72,7 @@ class MeanState:
 @dataclass(slots=True)
 class VolState:
     volatility_residuals: NDArray[np.floating]
-    conditional_volatility: NDArray[np.floating]
+    conditional_volatility_sq: NDArray[np.floating]
 
 
 @dataclass(slots=True)
@@ -134,18 +134,10 @@ class ForecastModel:
         if res.volatility_res is not None:
             p_g, o_g, q_g = res.volatility_res.model_order
             m = max(p_g, o_g)
-            eps_v = np.asarray(res.volatility_res.residuals, dtype=float)
-            sigma = np.asarray(res.volatility_res.conditional_volatility, dtype=float)
-            sig2 = sigma * sigma
-
-            if eps_v.size < m or sig2.size < q_g:
-                raise ValueError(
-                    f"Insufficient GARCH history: eps={eps_v.size} need>={m}, sig2={sig2.size} need>={q_g}"
-                )
-
+            sig2 = res.volatility_res.conditional_volatility**2
             vol_state = VolState(
-                volatility_residuals=eps_v[-m:].copy(),
-                conditional_volatility=sig2[-q_g:].copy(),
+                volatility_residuals=res.volatility_res.residuals[-m:].copy(),
+                conditional_volatility_sq=sig2[-q_g:].copy(),
             )
 
         state0 = UnivariateState(mean=mean_state, vol=vol_state)
@@ -217,3 +209,51 @@ def multivariate_forecasting_info(
         model=forecast_models,
         invariants=invariants,
     )
+
+
+def _param_get(params: dict[str, float], *keys: str, default: float = 0.0) -> float:
+    for k in keys:
+        if k in params:
+            return float(params[k])
+    return float(default)
+
+
+def _get_lag(params: dict[str, float], base: str, lag: int) -> float:
+    return _param_get(params, f"{base}[{lag}]", f"{base}.L{lag}", default=0.0)
+
+
+def _arma_recursive_mean(
+    arma_order: tuple[int, int], arma_params: dict[str, float], mean_state: MeanState
+) -> float:
+    mean = 0.0
+    # AR part
+    for i in range(1, arma_order[0] + 1):
+        phi_i = _get_lag(arma_params, "ar", i)
+        mean += phi_i * float(mean_state.series[-i])
+    # MA part
+    for j in range(1, arma_order[1] + 1):
+        theta_j = _get_lag(arma_params, "ma", j)
+        if mean_state.mean_residuals is not None:
+            mean += theta_j * float(mean_state.mean_residuals[-j])
+    return mean
+
+
+def conditional_mean_next(forecast_model: ForecastModel) -> float:
+    mean_form = forecast_model.form.mean_model
+    mean_state = forecast_model.state0.mean
+
+    # no mean case (ie for RW and GARCH only)
+    if mean_form is None:
+        return 0.0
+
+    if mean_form.kind == "demean":
+        return float(mean_form.params["mean"])
+
+    if mean_form.kind == "arma":
+        return _arma_recursive_mean(
+            arma_order=mean_form.order if mean_form.order is not None else (0, 0),
+            arma_params=mean_form.params,
+            mean_state=mean_state,
+        )
+    else:
+        raise ValueError("You wrong bro")
