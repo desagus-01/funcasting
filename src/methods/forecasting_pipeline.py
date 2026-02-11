@@ -238,9 +238,7 @@ def _arma_recursive_mean(
     return mean
 
 
-def conditional_mean_next(forecast_model: ForecastModel) -> float:
-    mean_form = forecast_model.form.mean_model
-    mean_state = forecast_model.state0.mean
+def conditional_mean_next(mean_form: MeanForm | None, mean_state: MeanState) -> float:
 
     # no mean case (ie for RW and GARCH only)
     if mean_form is None:
@@ -257,3 +255,14 @@ def conditional_mean_next(forecast_model: ForecastModel) -> float:
         )
     else:
         raise ValueError("You wrong bro")
+
+
+def conditional_volatility_next(
+    volatility_form: VolForm, volatility_state: VolState
+) -> float:
+    if volatility_form:
+        return 0.0
+    if volatility_form.kind == "garch":
+        return 2.0
+    else:
+        return 0.0
