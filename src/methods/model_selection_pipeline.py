@@ -236,6 +236,7 @@ def mean_modelling_pipeline(
         else:
             mean = array.mean()
             asset_mean_model_res[asset] = DemeanRes(
+                model_order=None,
                 degrees_of_freedom=0,
                 params={"mean": mean},
                 residuals=array - mean,

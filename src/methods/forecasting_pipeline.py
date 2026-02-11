@@ -65,14 +65,14 @@ class UnivariateModel:
 
 @dataclass(slots=True)
 class MeanState:
-    x_hist: np.ndarray
-    eps_hist: np.ndarray | None = None
+    series: NDArray[np.floating]
+    mean_residuals: NDArray[np.floating] | None = None
 
 
 @dataclass(slots=True)
 class VolState:
-    eps_hist: np.ndarray
-    sig2_hist: np.ndarray
+    volatility_residuals: NDArray[np.floating]
+    conditional_volatility: NDArray[np.floating]
 
 
 @dataclass(slots=True)
@@ -94,49 +94,41 @@ class ForecastModel:
         post_series_non_null: NDArray[np.floating],
         x_hist_len: int = 10,
     ):
-        x = np.asarray(post_series_non_null, dtype=float)
-        if x.size == 0:
+        if post_series_non_null.size == 0:
             raise ValueError("post_series_non_null is empty")
 
         mean_form = None
-        if res.mean_res is not None:
-            if res.mean_res.kind == "arma":
-                mean_form = MeanForm(
-                    order=res.mean_res.model_order,
-                    kind="arma",
-                    params=dict(res.mean_res.params),
-                )
-            elif res.mean_res.kind == "demean":
-                mean_form = MeanForm(
-                    order=None,
-                    kind="demean",
-                    params=dict(res.mean_res.params),
-                )
-            else:
-                raise ValueError(f"Unknown mean kind: {res.mean_res.kind}")
-
         vol_form = None
+        if res.mean_res is not None:
+            mean_form = MeanForm(
+                order=res.mean_res.model_order,
+                kind=res.mean_res.kind,
+                params=res.mean_res.params,
+            )
+
         if res.volatility_res is not None:
             vol_form = VolForm(
                 order=res.volatility_res.model_order,
                 kind="garch",
-                params=dict(res.volatility_res.params),
+                params=res.volatility_res.params,
             )
 
-        form = UnivariateModel(mean_model=mean_form, volatility_model=vol_form)
+        model = UnivariateModel(mean_model=mean_form, volatility_model=vol_form)
 
-        x_hist = x[-min(x_hist_len, x.size) :].copy()
+        x_hist = post_series_non_null[
+            -min(x_hist_len, post_series_non_null.size) :
+        ].copy()
 
         eps_hist_mean = None
         if res.mean_res is not None and res.mean_res.kind == "arma":
             p, q = res.mean_res.model_order
             # ensure x_hist has at least p values
             if x_hist.size < p:
-                x_hist = x[-p:].copy()
-            eps = np.asarray(res.mean_res.residuals, dtype=float)
+                x_hist = post_series_non_null[-p:].copy()
+            eps = res.mean_res.residuals
             eps_hist_mean = eps[-q:].copy() if q > 0 else None
 
-        mean_state = MeanState(x_hist=x_hist, eps_hist=eps_hist_mean)
+        mean_state = MeanState(series=x_hist, mean_residuals=eps_hist_mean)
 
         vol_state = None
         if res.volatility_res is not None:
@@ -152,13 +144,13 @@ class ForecastModel:
                 )
 
             vol_state = VolState(
-                eps_hist=eps_v[-m:].copy(),
-                sig2_hist=sig2[-q_g:].copy(),
+                volatility_residuals=eps_v[-m:].copy(),
+                conditional_volatility=sig2[-q_g:].copy(),
             )
 
         state0 = UnivariateState(mean=mean_state, vol=vol_state)
 
-        return cls(form=form, state0=state0)
+        return cls(form=model, state0=state0)
 
 
 @dataclass(frozen=True, slots=True)

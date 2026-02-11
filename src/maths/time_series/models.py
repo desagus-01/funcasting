@@ -40,6 +40,7 @@ class AutoARMARes(NamedTuple):
 
 
 class DemeanRes(NamedTuple):
+    model_order: None
     degrees_of_freedom: int
     params: dict[str, float]
     residuals: NDArray[np.floating]
