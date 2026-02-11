@@ -20,40 +20,10 @@ from maths.time_series.models import (
 MeanModelRes = AutoARMARes | DemeanRes
 
 
-MeanKind = Literal["none", "demean", "arma"]
-VolKind = Literal["none", "garch"]
-
-ModelType = Literal[
-    "ARMA + GARCH", "ARMA", "GARCH", "Random Walk", "Demean", "Demean + GARCH"
-]
-
-
-_MODEL_TYPE_MAP: dict[tuple[MeanKind, VolKind], ModelType] = {
-    ("none", "none"): "Random Walk",
-    ("none", "garch"): "GARCH",
-    ("demean", "none"): "Demean",
-    ("demean", "garch"): "Demean + GARCH",
-    ("arma", "none"): "ARMA",
-    ("arma", "garch"): "ARMA + GARCH",
-}
-
-
 @dataclass
 class UnivariateRes:
-    mean_model: MeanModelRes | None
-    volatility_model: AutoGARCHRes | None
-
-    @property
-    def mean_kind(self) -> MeanKind:
-        return "none" if self.mean_model is None else self.mean_model.kind
-
-    @property
-    def vol_kind(self) -> VolKind:
-        return "none" if self.volatility_model is None else self.volatility_model.kind
-
-    @property
-    def model_type(self) -> ModelType:
-        return _MODEL_TYPE_MAP[(self.mean_kind, self.vol_kind)]
+    mean_res: MeanModelRes | None
+    volatility_res: AutoGARCHRes | None
 
     def invariant(self, non_null_values: NDArray[np.floating]) -> NDArray[np.floating]:
         """
@@ -65,10 +35,10 @@ class UnivariateRes:
         - Random Walk (no mean, no vol): innovations = [nan] + diff(non_null_values)
           so length matches non-null sample, like Polars diff does.
         """
-        if self.volatility_model is not None:
-            invariant = self.volatility_model.invariants
-        elif self.mean_model is not None:
-            invariant = self.mean_model.residuals
+        if self.volatility_res is not None:
+            invariant = self.volatility_res.invariants
+        elif self.mean_res is not None:
+            invariant = self.mean_res.residuals
         else:
             invariant = np.concatenate(
                 [np.array([np.nan], dtype=float), np.diff(non_null_values)]
@@ -77,7 +47,6 @@ class UnivariateRes:
             raise ValueError(
                 f"Innovation length mismatch: innov={invariant.shape[0]} "
                 f"vs non_null_values={non_null_values.shape[0]} "
-                f"(model_type={self.model_type})"
             )
         return invariant.astype(float)
 
@@ -287,7 +256,7 @@ def volatility_modelling_pipeline(
     return asset_vol_model_res
 
 
-def build_best_univariate_model(
+def get_univariate_results(
     data: DataFrame, assets_to_model: list[str]
 ) -> dict[str, UnivariateRes]:
     mean_modelling = mean_modelling_pipeline(data=data, assets=assets_to_model)
@@ -296,8 +265,8 @@ def build_best_univariate_model(
     asset_model = {}
     for asset in all_assets:
         asset_model[asset] = UnivariateRes(
-            mean_model=mean_modelling.get(asset),
-            volatility_model=volatility_modelling.get(asset),
+            mean_res=mean_modelling.get(asset),
+            volatility_res=volatility_modelling.get(asset),
         )
 
     return asset_model
