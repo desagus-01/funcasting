@@ -24,5 +24,5 @@ next_step(
     assets=[asset for asset in models.keys()],
     models=models,
     prob_vector=prob_ex,
-    seed=None,
+    n_sims=inv_df.height - 200,
 )

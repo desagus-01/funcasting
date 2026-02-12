@@ -233,6 +233,12 @@ def _arma_recursive_mean(
         phi_i = _get_lag(arma_params, "ar", i)
         mean += phi_i * float(mean_state.series[-i])
     # MA part
+    if arma_order[1] > 0:
+        if (
+            mean_state.mean_residuals is None
+            or mean_state.mean_residuals.size < arma_order[1]
+        ):
+            raise ValueError(f"Need {arma_order[1]} mean residual lags for MA part.")
     for j in range(1, arma_order[1] + 1):
         theta_j = _get_lag(arma_params, "ma", j)
         if mean_state.mean_residuals is not None:
@@ -285,30 +291,28 @@ def garch_recursion(
     shock_hist: NDArray[np.floating],
     variance_hist: NDArray[np.floating],
 ) -> float:
-    pass
-
     p, o, q = garch_order
     omega = float(garch_params["omega"])
     alpha = _get_vol_param_coeffs(garch_params, "alpha", p)
-    gamma = _get_vol_param_coeffs(garch_params, "gamma", p)
-    beta = _get_vol_param_coeffs(garch_params, "beta", p)
+    gamma = _get_vol_param_coeffs(garch_params, "gamma", o)
+    beta = _get_vol_param_coeffs(garch_params, "beta", q)
 
     variance_next = omega
 
     if p > 0:  # arch term
         shock_lags = _get_volatility_shock_lags(p, shock_hist)
-        variance_next += float(alpha @ (shock_hist**2))
+        variance_next += float(alpha @ (shock_lags**2))
     if o > 0:  # leverage term (if any)
         shock_lags = _get_volatility_shock_lags(o, shock_hist)
         indicator = (shock_lags < 0.0).astype(float)
-        variance_next += float(gamma @ (indicator * (shock_hist**2)))
+        variance_next += float(gamma @ (indicator * (shock_lags**2)))
     if q > 0:  # GARCH terms
         variance_lags = _get_volatility_shock_lags(q, variance_hist)
         variance_next += float(beta @ variance_lags)
     return max(variance_next, 0.0)
 
 
-def conditional_volatility_next(
+def conditional_variance_next(
     volatility_form: VolForm | None, volatility_state: VolState | None
 ) -> float:
     if volatility_form is None:
@@ -332,23 +336,23 @@ def next_step(
     assets: list[str],
     models: dict[str, ForecastModel],
     prob_vector: ProbVector,
-    n_steps: int = 1,
+    n_sims: int = 1,
     seed: int | None = 1,
-) -> dict[str, float]:
-    invariant_shock = weighted_bootstrapping(invariants_df, prob_vector, n_steps, seed)
+) -> dict[str, NDArray[np.floating]]:
+    invariance_draws = weighted_bootstrapping(invariants_df, prob_vector, n_sims, seed)
     selected_assets_models = {
         asset: model for asset, model in models.items() if asset in assets
     }
-    next_step_res: dict[str, float] = {}
+    next_step_res: dict[str, NDArray[np.floating]] = {}
     for asset, model in selected_assets_models.items():
-        asset_shock = invariant_shock.select(asset).item()
+        asset_shock = invariance_draws.select(asset).to_numpy().ravel()
         mean = conditional_mean_next(model.form.mean_model, model.state0.mean)
-        vol = conditional_volatility_next(model.form.volatility_model, model.state0.vol)
+        vol = conditional_variance_next(model.form.volatility_model, model.state0.vol)
         if vol == 0.0:
             shock_next = asset_shock
         else:
             shock_next = np.sqrt(vol) * asset_shock
 
-        next_step_res[asset] = float(mean + shock_next)
+        next_step_res[asset] = mean + shock_next
 
     return next_step_res
