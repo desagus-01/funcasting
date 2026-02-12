@@ -7,11 +7,13 @@ import polars as pl
 from numpy._typing import NDArray
 from polars import DataFrame
 
+from maths.sampling import weighted_bootstrapping
 from methods.model_selection_pipeline import (
     UnivariateRes,
     get_univariate_results,
 )
 from methods.preprocess_pipeline import run_univariate_preprocess
+from models.types import ProbVector
 
 MeanKind = Literal["none", "demean", "arma"]
 VolKind = Literal["none", "garch"]
@@ -147,7 +149,7 @@ class ForecastModel:
 
 @dataclass(frozen=True, slots=True)
 class MultivariateForecastInfo:
-    model: dict[str, ForecastModel]
+    models: dict[str, ForecastModel]
     invariants: DataFrame
 
 
@@ -206,7 +208,7 @@ def multivariate_forecasting_info(
         )
 
     return MultivariateForecastInfo(
-        model=forecast_models,
+        models=forecast_models,
         invariants=invariants,
     )
 
@@ -239,7 +241,6 @@ def _arma_recursive_mean(
 
 
 def conditional_mean_next(mean_form: MeanForm | None, mean_state: MeanState) -> float:
-
     # no mean case (ie for RW and GARCH only)
     if mean_form is None:
         return 0.0
@@ -254,15 +255,100 @@ def conditional_mean_next(mean_form: MeanForm | None, mean_state: MeanState) -> 
             mean_state=mean_state,
         )
     else:
-        raise ValueError("You wrong bro")
+        raise ValueError(
+            f"Your conditional mean model {mean_form.kind} is not part of the possibilities dude"
+        )
+
+
+def _get_vol_param_coeffs(params: dict[str, float], base: str, n: int) -> np.ndarray:
+    """
+    Extract coefficients [base[1],...,base[n]] as a vector.
+    Missing keys default to 0.0 (robust to absent gamma terms, etc).
+    """
+    if n <= 0:
+        return np.array([], dtype=float)
+    out = np.zeros(n, dtype=float)
+    for i in range(1, n + 1):
+        out[i - 1] = float(params.get(f"{base}[{i}]", 0.0))
+    return out
+
+
+def _get_volatility_shock_lags(
+    order: int, shock_hist: NDArray[np.floating]
+) -> NDArray[np.floating]:
+    return shock_hist[-order:][::-1]
+
+
+def garch_recursion(
+    garch_params: dict[str, float],
+    garch_order: tuple[int, int, int],
+    shock_hist: NDArray[np.floating],
+    variance_hist: NDArray[np.floating],
+) -> float:
+    pass
+
+    p, o, q = garch_order
+    omega = float(garch_params["omega"])
+    alpha = _get_vol_param_coeffs(garch_params, "alpha", p)
+    gamma = _get_vol_param_coeffs(garch_params, "gamma", p)
+    beta = _get_vol_param_coeffs(garch_params, "beta", p)
+
+    variance_next = omega
+
+    if p > 0:  # arch term
+        shock_lags = _get_volatility_shock_lags(p, shock_hist)
+        variance_next += float(alpha @ (shock_hist**2))
+    if o > 0:  # leverage term (if any)
+        shock_lags = _get_volatility_shock_lags(o, shock_hist)
+        indicator = (shock_lags < 0.0).astype(float)
+        variance_next += float(gamma @ (indicator * (shock_hist**2)))
+    if q > 0:  # GARCH terms
+        variance_lags = _get_volatility_shock_lags(q, variance_hist)
+        variance_next += float(beta @ variance_lags)
+    return max(variance_next, 0.0)
 
 
 def conditional_volatility_next(
-    volatility_form: VolForm, volatility_state: VolState
+    volatility_form: VolForm | None, volatility_state: VolState | None
 ) -> float:
-    if volatility_form:
+    if volatility_form is None:
         return 0.0
-    if volatility_form.kind == "garch":
-        return 2.0
+
+    if volatility_form.kind == "garch" and volatility_state is not None:
+        return garch_recursion(
+            garch_params=volatility_form.params,
+            garch_order=volatility_form.order,
+            shock_hist=volatility_state.volatility_residuals,
+            variance_hist=volatility_state.conditional_volatility_sq,
+        )
     else:
-        return 0.0
+        raise ValueError(
+            f"Your conditional volatility model {volatility_form.kind} is not accepted here stranger"
+        )
+
+
+def next_step(
+    invariants_df: DataFrame,
+    assets: list[str],
+    models: dict[str, ForecastModel],
+    prob_vector: ProbVector,
+    n_steps: int = 1,
+    seed: int | None = 1,
+) -> dict[str, float]:
+    invariant_shock = weighted_bootstrapping(invariants_df, prob_vector, n_steps, seed)
+    selected_assets_models = {
+        asset: model for asset, model in models.items() if asset in assets
+    }
+    next_step_res: dict[str, float] = {}
+    for asset, model in selected_assets_models.items():
+        asset_shock = invariant_shock.select(asset).item()
+        mean = conditional_mean_next(model.form.mean_model, model.state0.mean)
+        vol = conditional_volatility_next(model.form.volatility_model, model.state0.vol)
+        if vol == 0.0:
+            shock_next = asset_shock
+        else:
+            shock_next = np.sqrt(vol) * asset_shock
+
+        next_step_res[asset] = float(mean + shock_next)
+
+    return next_step_res
