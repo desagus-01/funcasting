@@ -154,7 +154,10 @@ class MultivariateForecastInfo:
 
 
 def _build_innovations_df_from_models(
-    post: DataFrame, model_map: dict[str, UnivariateRes], assets=None
+    post: DataFrame,
+    model_map: dict[str, UnivariateRes],
+    assets=None,
+    drop_nulls: bool = True,
 ) -> DataFrame:
     if assets is None:
         assets = [c for c in post.columns if c != "date"]
@@ -173,7 +176,17 @@ def _build_innovations_df_from_models(
 
         patches.append(patch)
 
-    return reduce(lambda acc, p: acc.join(p, on="date", how="left"), patches, base)
+    innovations_full = reduce(
+        lambda acc, p: acc.join(p, on="date", how="left"), patches, base
+    )
+    if drop_nulls:
+        innovations_no_null = innovations_full.drop_nulls()
+        print(
+            f"Total of {innovations_full.height - innovations_no_null.height} rows were dropped for your invariants."
+        )
+        return innovations_no_null
+
+    return innovations_full
 
 
 def multivariate_forecasting_info(
@@ -331,7 +344,7 @@ def conditional_variance_next(
         )
 
 
-def next_step(
+def next_step_bootstrap(
     invariants_df: DataFrame,
     assets: list[str],
     models: dict[str, ForecastModel],
@@ -356,3 +369,27 @@ def next_step(
         next_step_res[asset] = mean + shock_next
 
     return next_step_res
+
+
+def next_step_historical(
+    invariants_df: DataFrame,
+    assets: list[str],
+    models: dict[str, ForecastModel],
+    prob_vector: ProbVector,
+) -> tuple[dict[str, NDArray[np.floating]], ProbVector]:
+    selected_assets_models = {
+        asset: model for asset, model in models.items() if asset in assets
+    }
+    next_step_res: dict[str, NDArray[np.floating]] = {}
+    for asset, model in selected_assets_models.items():
+        asset_shock = invariants_df.select(asset).to_numpy().ravel()
+        mean = conditional_mean_next(model.form.mean_model, model.state0.mean)
+        vol = conditional_variance_next(model.form.volatility_model, model.state0.vol)
+        if vol == 0.0:
+            shock_next = asset_shock
+        else:
+            shock_next = np.sqrt(vol) * asset_shock
+
+        next_step_res[asset] = mean + shock_next
+
+    return next_step_res, prob_vector
