@@ -2,13 +2,9 @@
 > [!ATTENTION] Update data with ADJUSTED prices (yfinance for now)
 
 ## Priority
-- [ ] Create appropriate next function per asset based on their univariate pipeline
-    - [ ] Change mean and vol modelling results to return the appropriate parameters for next step model
-
-## Other
-- [ ] Log-likelihood + FFP based log-likelihood implementation for estimating parameters 
-- [ ] Bootstrapping methods with FFP (see 47.1.3)
 - [ ] Hybrid Monte Carlo-historical (47.6.6)
+- [ ] Copula Marginal Forecasting
+- [ ] 'Re-pricing'
 
 
 ## Lower Priority

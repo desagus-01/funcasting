@@ -89,6 +89,10 @@ def compute_cdf_and_pobs(
     prob: ProbVector,
     compute_pobs: bool = True,
 ) -> pl.DataFrame:
+    if data.null_count().sum_horizontal().item() > 0:
+        raise ValueError(
+            f"You have a total of {data.null_count().sum_horizontal().item()} Nulls in your data, please fix this."
+        )
     df = (
         data.select(pl.col(marginal_name))
         .with_row_index()

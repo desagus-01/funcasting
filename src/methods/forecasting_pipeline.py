@@ -14,6 +14,7 @@ from methods.model_selection_pipeline import (
 )
 from methods.preprocess_pipeline import run_univariate_preprocess
 from models.types import ProbVector
+from utils.helpers import compensate_prob
 
 MeanKind = Literal["none", "demean", "arma"]
 VolKind = Literal["none", "garch"]
@@ -157,7 +158,6 @@ def _build_innovations_df_from_models(
     post: DataFrame,
     model_map: dict[str, UnivariateRes],
     assets=None,
-    drop_nulls: bool = True,
 ) -> DataFrame:
     if assets is None:
         assets = [c for c in post.columns if c != "date"]
@@ -179,13 +179,6 @@ def _build_innovations_df_from_models(
     innovations_full = reduce(
         lambda acc, p: acc.join(p, on="date", how="left"), patches, base
     )
-    if drop_nulls:
-        innovations_no_null = innovations_full.drop_nulls()
-        print(
-            f"Total of {innovations_full.height - innovations_no_null.height} rows were dropped for your invariants."
-        )
-        return innovations_no_null
-
     return innovations_full
 
 
@@ -352,7 +345,18 @@ def next_step_bootstrap(
     n_sims: int = 1,
     seed: int | None = 1,
 ) -> dict[str, NDArray[np.floating]]:
-    invariance_draws = weighted_bootstrapping(invariants_df, prob_vector, n_sims, seed)
+    # checking if any nulls and dropping (can't have this for this type of forecasting)
+    if invariants_df.null_count().sum_horizontal().item() > 0:
+        invariants_no_nulls = invariants_df.drop_nulls()
+        rows_droped = invariants_df.height - invariants_no_nulls.height
+        prob_vector = compensate_prob(prob_vector, rows_droped)
+        print(f"Total of {rows_droped} rows were droped due to nulls.")
+    else:
+        invariants_no_nulls = invariants_df
+
+    invariance_draws = weighted_bootstrapping(
+        invariants_no_nulls, prob_vector, n_sims, seed
+    )
     selected_assets_models = {
         asset: model for asset, model in models.items() if asset in assets
     }
@@ -377,12 +381,20 @@ def next_step_historical(
     models: dict[str, ForecastModel],
     prob_vector: ProbVector,
 ) -> tuple[dict[str, NDArray[np.floating]], ProbVector]:
+    if invariants_df.null_count().sum_horizontal().item() > 0:
+        invariants_no_nulls = invariants_df.drop_nulls()
+        rows_droped = invariants_df.height - invariants_no_nulls.height
+        prob_vector = compensate_prob(prob_vector, rows_droped)
+        print(f"Total of {rows_droped} rows were droped due to nulls.")
+    else:
+        invariants_no_nulls = invariants_df
+
     selected_assets_models = {
         asset: model for asset, model in models.items() if asset in assets
     }
     next_step_res: dict[str, NDArray[np.floating]] = {}
     for asset, model in selected_assets_models.items():
-        asset_shock = invariants_df.select(asset).to_numpy().ravel()
+        asset_shock = invariants_no_nulls.select(asset).to_numpy().ravel()
         mean = conditional_mean_next(model.form.mean_model, model.state0.mean)
         vol = conditional_variance_next(model.form.volatility_model, model.state0.vol)
         if vol == 0.0:
