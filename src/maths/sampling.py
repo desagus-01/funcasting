@@ -48,12 +48,11 @@ def sample_copula(
     copula: pl.DataFrame,
     seed: int | None,
     parametric_copula: Literal["t", "norm"] = "t",
-    fit_method: Literal["ml", "irho", "itau"] = "ml",
+    fit_method: Literal["ml", "irho", "itau"] = "itau",
     to_pobs: bool = False,
 ) -> pl.DataFrame:
     values = copula.to_numpy()
     col_names = copula.columns
-
     if parametric_copula == "t":
         cop = StudentCopula(values.shape[1])
     elif parametric_copula == "norm":
@@ -61,8 +60,9 @@ def sample_copula(
     else:
         raise ValueError("You must choose either t or norm")
 
-    _ = cop.fit(values, method=fit_method, to_pobs=to_pobs)
-    samples = cop.random(n=copula.height, seed=seed)
+    samples = cop.fit(values, method=fit_method, to_pobs=to_pobs).random(
+        n=copula.height, seed=seed
+    )
     return pl.DataFrame(samples, col_names)
 
 

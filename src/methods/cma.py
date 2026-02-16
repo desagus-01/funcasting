@@ -13,6 +13,7 @@ from models.types import ProbVector
 from utils.helpers import compute_cdf_and_pobs
 
 
+# TODO: Need to find a way to allow nulls at the start
 @dataclass
 class CopulaMarginalModel:
     marginals: DataFrame
