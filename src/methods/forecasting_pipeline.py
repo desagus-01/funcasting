@@ -344,7 +344,7 @@ def next_step_bootstrap(
     models: dict[str, ForecastModel],
     prob_vector: ProbVector,
     n_sims: int = 1,
-    seed: int | None = 1,
+    seed: int | None = None,
 ) -> dict[str, NDArray[np.floating]]:
     # checking if any nulls and dropping (can't have this for this type of forecasting)
     if invariants_df.null_count().sum_horizontal().item() > 0:
