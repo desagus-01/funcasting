@@ -43,5 +43,5 @@ next_step_copula_marginal(
     prob_vector=prob_ex,
     target_copula="t",
     seed=1,
-    # target_marginals={"AAPL": "norm"},
+    target_marginals={"AAPL": "norm", "fake": "t"},
 )

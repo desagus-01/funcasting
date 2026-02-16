@@ -3,11 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Self
 
+import polars as pl
 from numpy import interp
 from polars import DataFrame
 
 from maths.distributions import uniform_probs
-from maths.sampling import sample_copula, sample_marginal
+from maths.sampling import marginal_quantile_mapping, sample_copula
 from models.types import ProbVector
 from utils.helpers import compute_cdf_and_pobs
 
@@ -96,18 +97,24 @@ class CopulaMarginalModel:
 
     def update_marginals(self, target_dists: dict[str, Literal["t", "norm"]]) -> Self:
         for marginal, target_dist in target_dists.items():
-            new_sample = sample_marginal(
-                self.marginals, marginals=marginal, kind=target_dist
+            grades = self.copula.select(marginal).to_numpy().ravel()
+            sample_values = self.marginals.select(marginal).to_numpy().ravel()
+
+            new_scenarios = marginal_quantile_mapping(
+                marginal=sample_values, grades=grades, kind=target_dist
             )
 
-            cdf = compute_cdf_and_pobs(
-                new_sample, marginal, self.prob, compute_pobs=False
+            rebuilt = compute_cdf_and_pobs(
+                pl.DataFrame({marginal: new_scenarios.ravel()}),
+                marginal,
+                self.prob,
+                compute_pobs=False,
             )
 
             self.marginals = self.marginals.with_columns(
-                new_sample[marginal].alias(marginal)
+                rebuilt[marginal].alias(marginal)
             )
-            self.cdfs = self.cdfs.with_columns(cdf["cdf"].alias(marginal))
+            self.cdfs = self.cdfs.with_columns(rebuilt["cdf"].alias(marginal))
 
         return self
 
@@ -125,15 +132,13 @@ class CopulaMarginalModel:
         target_marginals: dict[str, Literal["t", "norm"]] | None = None,
         target_copula: Literal["t", "norm"] | None = None,
     ) -> tuple[DataFrame, ProbVector]:
-        cma: CopulaMarginalModel | None = None
-
-        if target_marginals is not None:
-            cma = self.update_marginals(target_marginals)
+        if target_copula is None and target_marginals is None:
+            raise ValueError("Choose a target marginal or target copula!")
 
         if target_copula is not None:
-            cma = self.update_copula(seed=seed, target_copula=target_copula)
+            self.update_copula(seed=seed, target_copula=target_copula)
 
-        if cma is None:
-            raise ValueError("You must choose a target marginal or target copula!")
+        if target_marginals is not None:
+            self.update_marginals(target_marginals)
 
-        return cma.to_scenario_dist()
+        return self.to_scenario_dist()

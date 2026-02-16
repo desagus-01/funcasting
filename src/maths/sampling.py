@@ -1,8 +1,10 @@
 from typing import Literal
 
+import numpy as np
 import polars as pl
 from copulae import NormalCopula, StudentCopula
 from numpy import random
+from numpy._typing import NDArray
 from polars import DataFrame
 from scipy.stats import norm, t
 
@@ -26,11 +28,27 @@ def sample_marginal(
     return pl.DataFrame({marginals: frozen.rvs(size=data.height)})
 
 
+def marginal_quantile_mapping(
+    marginal: NDArray[np.floating],
+    grades: NDArray[np.floating],
+    kind: Literal["t", "norm"] = "t",
+) -> NDArray[np.floating]:
+    if kind == "t":
+        params = t.fit(marginal)
+        frozen = t(*params)
+    elif kind == "norm":
+        params = norm.fit(marginal)
+        frozen = norm(*params)
+    else:
+        raise ValueError(f"Unknown distribution kind: {kind}")
+    return frozen.ppf(grades)
+
+
 def sample_copula(
     copula: pl.DataFrame,
-    seed: int | None = None,
+    seed: int | None,
     parametric_copula: Literal["t", "norm"] = "t",
-    fit_method: Literal["ml", "irho", "itau"] = "itau",
+    fit_method: Literal["ml", "irho", "itau"] = "ml",
     to_pobs: bool = False,
 ) -> pl.DataFrame:
     values = copula.to_numpy()
