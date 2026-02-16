@@ -1,11 +1,10 @@
 from maths.distributions import uniform_probs
-from methods.cma import CopulaMarginalModel
 from methods.forecasting_pipeline import (
     multivariate_forecasting_info,
     next_step_bootstrap,
+    next_step_copula_marginal,
     next_step_historical,
 )
-from utils.helpers import compensate_prob
 from utils.template import get_template, synthetic_series
 
 # %%
@@ -37,8 +36,12 @@ nsh = next_step_historical(
     prob_vector=prob_ex,
 )
 # %%
-no_nulls_inv = inv_df.drop_nulls()
-new_prob = compensate_prob(prob_ex, inv_df.height - no_nulls_inv.height)
-inv_cma = CopulaMarginalModel.from_data_and_prob(no_nulls_inv, new_prob)
-# %%
-inv_cma.update_distribution(target_marginals={"AAPL": "t"}, target_copula="t")
+next_step_copula_marginal(
+    invariants_df=inv_df,
+    assets=[asset for asset in models.keys()],
+    models=models,
+    prob_vector=prob_ex,
+    target_copula="t",
+    seed=1,
+    # target_marginals={"AAPL": "norm"},
+)

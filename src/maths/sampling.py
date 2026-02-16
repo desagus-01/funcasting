@@ -28,6 +28,7 @@ def sample_marginal(
 
 def sample_copula(
     copula: pl.DataFrame,
+    seed: int | None = None,
     parametric_copula: Literal["t", "norm"] = "t",
     fit_method: Literal["ml", "irho", "itau"] = "itau",
     to_pobs: bool = False,
@@ -43,7 +44,7 @@ def sample_copula(
         raise ValueError("You must choose either t or norm")
 
     _ = cop.fit(values, method=fit_method, to_pobs=to_pobs)
-    samples = cop.random(n=copula.height)
+    samples = cop.random(n=copula.height, seed=seed)
     return pl.DataFrame(samples, col_names)
 
 

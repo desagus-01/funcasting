@@ -8,6 +8,7 @@ from numpy._typing import NDArray
 from polars import DataFrame
 
 from maths.sampling import weighted_bootstrapping
+from methods.cma import CopulaMarginalModel
 from methods.model_selection_pipeline import (
     UnivariateRes,
     get_univariate_results,
@@ -388,6 +389,50 @@ def next_step_historical(
         print(f"Total of {rows_droped} rows were droped due to nulls.")
     else:
         invariants_no_nulls = invariants_df
+
+    selected_assets_models = {
+        asset: model for asset, model in models.items() if asset in assets
+    }
+    next_step_res: dict[str, NDArray[np.floating]] = {}
+    for asset, model in selected_assets_models.items():
+        asset_shock = invariants_no_nulls.select(asset).to_numpy().ravel()
+        mean = conditional_mean_next(model.form.mean_model, model.state0.mean)
+        vol = conditional_variance_next(model.form.volatility_model, model.state0.vol)
+        if vol == 0.0:
+            shock_next = asset_shock
+        else:
+            shock_next = np.sqrt(vol) * asset_shock
+
+        next_step_res[asset] = mean + shock_next
+
+    return next_step_res, prob_vector
+
+
+def next_step_copula_marginal(
+    invariants_df: DataFrame,
+    assets: list[str],
+    models: dict[str, ForecastModel],
+    prob_vector: ProbVector,
+    seed: int | None = None,
+    target_copula: Literal["t", "norm"] | None = None,
+    target_marginals: dict[str, Literal["t", "norm"]] | None = None,
+) -> tuple[dict[str, NDArray[np.floating]], ProbVector]:
+    if invariants_df.null_count().sum_horizontal().item() > 0:
+        invariants_no_nulls = invariants_df.drop_nulls()
+        rows_droped = invariants_df.height - invariants_no_nulls.height
+        prob_vector = compensate_prob(prob_vector, rows_droped)
+        print(f"Total of {rows_droped} rows were droped due to nulls.")
+    else:
+        invariants_no_nulls = invariants_df
+
+    # perform cma
+    invariants_cma = CopulaMarginalModel.from_data_and_prob(
+        data=invariants_no_nulls, prob=prob_vector
+    )
+
+    invariants_no_nulls, prob_vector = invariants_cma.update_distribution(
+        target_marginals=target_marginals, target_copula=target_copula, seed=seed
+    )
 
     selected_assets_models = {
         asset: model for asset, model in models.items() if asset in assets
