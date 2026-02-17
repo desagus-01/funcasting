@@ -20,20 +20,6 @@ from utils.helpers import drop_nulls_and_compensate_prob
 MeanKind = Literal["none", "demean", "arma"]
 VolKind = Literal["none", "garch"]
 
-ModelType = Literal[
-    "ARMA + GARCH", "ARMA", "GARCH", "Random Walk", "Demean", "Demean + GARCH"
-]
-
-
-_MODEL_TYPE_MAP: dict[tuple[MeanKind, VolKind], ModelType] = {
-    ("none", "none"): "Random Walk",
-    ("none", "garch"): "GARCH",
-    ("demean", "none"): "Demean",
-    ("demean", "garch"): "Demean + GARCH",
-    ("arma", "none"): "ARMA",
-    ("arma", "garch"): "ARMA + GARCH",
-}
-
 
 @dataclass(frozen=True, slots=True)
 class UnivariateModel:
@@ -116,7 +102,7 @@ class UnivariateState:
             and fitting_results.volatility_res is not None
         ):
             p_g, o_g, q_g = univariate_model.vol_order
-            m = max(p_g, o_g)
+            m = max(p_g, o_g, 1)
             sig2 = fitting_results.volatility_res.conditional_volatility**2
             eps_vol_hist = (
                 fitting_results.volatility_res.residuals[-m:].copy() if m > 0 else None
@@ -245,24 +231,22 @@ def _get_lag(params: dict[str, float], base: str, lag: int) -> float:
 def _arma_recursive_mean(
     arma_order: tuple[int, int],
     arma_params: dict[str, float],
-    mean_state: UnivariateState,
+    state: UnivariateState,
 ) -> float:
+    p, q = arma_order
     mean = 0.0
-    # AR part
-    for i in range(1, arma_order[0] + 1):
-        phi_i = _get_lag(arma_params, "ar", i)
-        mean += phi_i * float(mean_state.series_hist[-i])
-    # MA part
-    if arma_order[1] > 0:
-        if (
-            mean_state.ma_residual_lags is None
-            or mean_state.ma_residual_lags.size < arma_order[1]
-        ):
-            raise ValueError(f"Need {arma_order[1]} mean residual lags for MA part.")
-    for j in range(1, arma_order[1] + 1):
-        theta_j = _get_lag(arma_params, "ma", j)
-        if mean_state.ma_residual_lags is not None:
-            mean += theta_j * float(mean_state.ma_residual_lags[-j])
+
+    # AR
+    for i in range(1, p + 1):
+        mean += _get_lag(arma_params, "ar", i) * float(state.series_hist[-i])
+
+    # MA
+    if q > 0:
+        if state.ma_residual_lags is None or state.ma_residual_lags.size < q:
+            raise ValueError(f"Need {q} mean residual lags for MA part.")
+        for j in range(1, q + 1):
+            mean += _get_lag(arma_params, "ma", j) * float(state.ma_residual_lags[-j])
+
     return mean
 
 
@@ -270,19 +254,9 @@ def conditional_mean_next(form: UnivariateModel, state: UnivariateState) -> floa
     if form.mean_kind == "none":
         return 0.0
     if form.mean_kind == "demean":
-        return float(form.mean_params["mean"])  # type: ignore[index]
+        return float((form.mean_params or {}).get("mean", 0.0))
     if form.mean_kind == "arma":
-        p, q = form.mean_order
-        params = form.mean_params or {}
-        mean = 0.0
-        for i in range(1, p + 1):
-            mean += _get_lag(params, "ar", i) * float(state.series_hist[-i])
-        if q > 0 and state.ma_residual_lags is not None:
-            if state.ma_residual_lags is None or state.ma_residual_lags.size < q:
-                raise ValueError(f"Need {q} mean residual lags for MA part.")
-            for j in range(1, q + 1):
-                mean += _get_lag(params, "ma", j) * float(state.ma_residual_lags[-j])
-        return mean
+        return _arma_recursive_mean(form.mean_order, form.mean_params or {}, state)
     raise ValueError(f"Unknown mean_kind: {form.mean_kind}")
 
 
