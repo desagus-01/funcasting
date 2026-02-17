@@ -102,14 +102,27 @@ def sample_copula(
     return pl.DataFrame(samples, schema=copula.columns)
 
 
-def weighted_bootstrapping(
-    data: DataFrame, prob_vector: ProbVector, n_samples: int, seed: int | None = None
-) -> DataFrame:
+def weighted_bootstrapping_idx(
+    data: DataFrame,
+    prob_vector: ProbVector,
+    n_samples: int,
+    seed: int | None = None,
+) -> NDArray[np.int64]:
     if data.height != len(prob_vector):
         raise ValueError(
             f"Data size {data.height} and probability vector size {len(prob_vector)} do not match."
         )
     rng = random.default_rng(seed)
-    sample_row_n = rng.choice(data.height, size=n_samples, replace=True, p=prob_vector)
+    return rng.choice(data.height, size=n_samples, replace=True, p=prob_vector)
 
-    return data[sample_row_n.tolist()]
+
+def weighted_bootstrapping(
+    data: DataFrame,
+    prob_vector: ProbVector,
+    n_samples: int,
+    seed: int | None = None,
+) -> DataFrame:
+    sample_row_n = weighted_bootstrapping_idx(
+        data=data, prob_vector=prob_vector, n_samples=n_samples, seed=seed
+    )
+    return data[sample_row_n]

@@ -7,7 +7,7 @@ import polars as pl
 from numpy._typing import NDArray
 from polars import DataFrame
 
-from maths.sampling import weighted_bootstrapping
+from maths.sampling import weighted_bootstrapping, weighted_bootstrapping_idx
 from methods.cma import CopulaMarginalModel
 from methods.model_selection_pipeline import (
     UnivariateRes,
@@ -342,6 +342,7 @@ def draw_invariant_shock(
     invariants_df: DataFrame,
     assets: list[str],
     prob_vector: ProbVector,
+    horizon: int,
     n_sims: int,
     seed: int | None,
     method: Literal["bootstrap", "historical", "cma"] = "bootstrap",
@@ -350,6 +351,9 @@ def draw_invariant_shock(
     copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
     target_marginals: dict[str, Literal["t", "norm"]] | None = None,
 ) -> tuple[NDArray[np.floating], ProbVector]:
+    if horizon < 1:
+        raise ValueError("horizon must be >= 1")
+
     invariants_df = invariants_df.select(assets)
     invariants, prob = drop_nulls_and_compensate_prob(invariants_df, prob_vector)
 
@@ -360,29 +364,32 @@ def draw_invariant_shock(
             "You can only have target_marginal and/or target_copula when method is cma!"
         )
 
-    if method == "bootstrap":
-        joint_shock = weighted_bootstrapping(
-            invariants, prob, n_samples=n_sims, seed=seed
-        )
-        return joint_shock.to_numpy(), prob
-    if method == "historical":
-        return invariants.to_numpy(), prob
     if method == "cma":
         if copula_fit_method is None:
             print("No copula fit method selected, using itau as default")
             copula_fit_method = "itau"
+
         invariants_cma = CopulaMarginalModel.from_data_and_prob(
             data=invariants, prob=prob
         )
 
-        invariants_post_cma, prob_post_cma = invariants_cma.update_distribution(
+        invariants, prob = invariants_cma.update_distribution(
             seed=seed,
             target_marginals=target_marginals,
             target_copula=target_copula,
             copula_fit_method=copula_fit_method,
         )
-        return invariants_post_cma.to_numpy(), prob_post_cma
-    raise ValueError(f"Invalid method: {method}")
+
+    invariants_vector = invariants.to_numpy()
+
+    if method == "historical":
+        simulated_draws = invariants_vector[:, None, :]
+        return simulated_draws, prob
+
+    n_draws = n_sims * horizon
+    idx = weighted_bootstrapping_idx(invariants, prob, n_samples=n_draws, seed=seed)
+    simulated_draws = invariants_vector[idx].reshape(n_sims, horizon, len(assets))
+    return simulated_draws, prob
 
 
 def next_step_bootstrap(

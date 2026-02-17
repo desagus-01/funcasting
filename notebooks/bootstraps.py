@@ -22,9 +22,10 @@ models = x.models
 # %%
 draw_invariant_shock(
     inv_df,
-    assets=["AAPL", "fake"],
+    assets=["AAPL", "fake", "GOOG"],
     prob_vector=prob_ex,
-    n_sims=100,
+    horizon=20,
+    n_sims=500,
     seed=1,
     method="cma",
     target_copula="t",
