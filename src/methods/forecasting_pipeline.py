@@ -351,6 +351,54 @@ def draw_invariant_shock(
     copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
     target_marginals: dict[str, Literal["t", "norm"]] | None = None,
 ) -> tuple[NDArray[np.floating], ProbVector]:
+    """
+    Draw joint invariant shocks for multiple assets and return a shock tensor.
+
+    Selects `assets` columns from `invariants_df`, drops null rows (with
+    probability re-normalization), optionally updates the joint distribution
+    using CMA, and then produces shocks using either historical scenarios or
+    weighted bootstrap resampling.
+
+    Parameters
+    ----------
+    invariants_df : polars.DataFrame
+        Historical invariants (one column per asset).
+    assets : list[str]
+        Asset columns to draw jointly. Output asset dimension follows this order.
+    prob_vector : ProbVector
+        Scenario probabilities for rows of `invariants_df`.
+    horizon : int
+        Forecast horizon (>= 1).
+    n_sims : int
+        Number of simulated paths (used for bootstrap/cma).
+    seed : int | None
+        RNG seed.
+    method : {"bootstrap", "historical", "cma"}
+        - "historical": return all scenarios as-is
+        - "bootstrap": resample scenarios with replacement using `prob_vector`
+        - "cma": CMA-update distribution, then bootstrap
+    target_copula : {"t", "norm"} | None
+        CMA-only: target copula family.
+    copula_fit_method : {"ml", "irho", "itau"} | None
+        CMA-only: copula fit method (defaults to "itau" if None).
+    target_marginals : dict[str, {"t", "norm"}] | None
+        CMA-only: per-asset marginal targets.
+
+    Returns
+    -------
+    simulated_draws : ndarray[float]
+        Shock tensor:
+        - method="historical": (n_scenarios, 1, n_assets)
+        - method in {"bootstrap","cma"}: (n_sims, horizon, n_assets)
+    prob : ProbVector
+        Probabilities aligned to the scenario rows used internally (after
+        null-dropping and CMA, if applied).
+
+    Raises
+    ------
+    ValueError
+        If horizon < 1, or CMA targets are provided when method != "cma".
+    """
     if horizon < 1:
         raise ValueError("horizon must be >= 1")
 
