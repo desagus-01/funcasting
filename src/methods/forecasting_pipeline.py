@@ -7,7 +7,7 @@ import polars as pl
 from numpy._typing import NDArray
 from polars import DataFrame
 
-from maths.sampling import weighted_bootstrapping, weighted_bootstrapping_idx
+from maths.sampling import weighted_bootstrapping_idx
 from methods.cma import CopulaMarginalModel
 from methods.model_selection_pipeline import (
     UnivariateRes,
@@ -15,7 +15,7 @@ from methods.model_selection_pipeline import (
 )
 from methods.preprocess_pipeline import run_univariate_preprocess
 from models.types import ProbVector
-from utils.helpers import compensate_prob, drop_nulls_and_compensate_prob
+from utils.helpers import drop_nulls_and_compensate_prob
 
 MeanKind = Literal["none", "demean", "arma"]
 VolKind = Literal["none", "garch"]
@@ -36,117 +36,127 @@ _MODEL_TYPE_MAP: dict[tuple[MeanKind, VolKind], ModelType] = {
 
 
 @dataclass(frozen=True, slots=True)
-class MeanForm:
-    order: tuple[int, int] | None
-    kind: Literal["demean", "arma"]
-    params: dict[str, float]
-
-
-@dataclass(frozen=True, slots=True)
-class VolForm:
-    order: tuple[int, int, int]
-    kind: Literal["garch"]
-    params: dict[str, float]
-
-
-@dataclass(frozen=True, slots=True)
 class UnivariateModel:
-    mean_model: MeanForm | None
-    volatility_model: VolForm | None
+    mean_kind: MeanKind
+    mean_order: tuple[int, int] = (0, 0)
+    mean_params: dict[str, float] | None = None
+    vol_kind: VolKind = "none"
+    vol_order: tuple[int, int, int] = (0, 0, 0)
+    vol_params: dict[str, float] | None = None
 
-    @property
-    def mean_kind(self) -> MeanKind:
-        return "none" if self.mean_model is None else self.mean_model.kind
+    @classmethod
+    def from_fitting_results(
+        cls,
+        fitting_results: UnivariateRes,
+    ):
+        if fitting_results.mean_res is None:
+            mean_kind: MeanKind = "none"
+            mean_order = (0, 0)
+            mean_params = None
+        else:
+            mean_kind = fitting_results.mean_res.kind
+            mean_order = fitting_results.mean_res.model_order
+            if mean_order is None:
+                mean_order = (0, 0)
+            mean_params = fitting_results.mean_res.params
 
-    @property
-    def vol_kind(self) -> VolKind:
-        return "none" if self.volatility_model is None else self.volatility_model.kind
+        if fitting_results.volatility_res is None:
+            vol_kind: VolKind = "none"
+            vol_order = (0, 0, 0)
+            vol_params = None
+        else:
+            vol_kind = "garch"
+            vol_order = fitting_results.volatility_res.model_order
+            vol_params = fitting_results.volatility_res.params
 
-    @property
-    def model_type(self) -> ModelType:
-        return _MODEL_TYPE_MAP[(self.mean_kind, self.vol_kind)]
-
-
-@dataclass(slots=True)
-class MeanState:
-    series: NDArray[np.floating]
-    mean_residuals: NDArray[np.floating] | None = None
-
-
-@dataclass(slots=True)
-class VolState:
-    volatility_residuals: NDArray[np.floating]
-    conditional_volatility_sq: NDArray[np.floating]
+        return cls(
+            mean_kind=mean_kind,
+            mean_order=mean_order,
+            mean_params=mean_params,
+            vol_kind=vol_kind,
+            vol_order=vol_order,
+            vol_params=vol_params,
+        )
 
 
 @dataclass(slots=True)
 class UnivariateState:
-    mean: MeanState
-    vol: VolState | None = None
+    series_hist: NDArray[np.floating]
+    ma_residual_lags: NDArray[np.floating] | None = None
+    vol_residual_lags: NDArray[np.floating] | None = None
+    var_hist: NDArray[np.floating] | None = None
+
+    @classmethod
+    def from_fitting_results(
+        cls,
+        fitting_results: UnivariateRes,
+        univariate_model: UnivariateModel,
+        post_series_non_null: NDArray[np.floating],
+        x_hist_len: int = 10,
+    ):
+        x_hist = post_series_non_null[
+            -min(x_hist_len, post_series_non_null.size) :
+        ].copy()
+
+        eps_mean_hist = None
+        if (
+            univariate_model.mean_kind == "arma"
+            and fitting_results.mean_res is not None
+        ):
+            p, q = univariate_model.mean_order
+            if x_hist.size < p:
+                x_hist = post_series_non_null[-p:].copy()
+            eps = fitting_results.mean_res.residuals
+            eps_mean_hist = eps[-q:].copy() if q > 0 else None
+
+        eps_vol_hist = None
+        var_hist = None
+        if (
+            univariate_model.vol_kind == "garch"
+            and fitting_results.volatility_res is not None
+        ):
+            p_g, o_g, q_g = univariate_model.vol_order
+            m = max(p_g, o_g)
+            sig2 = fitting_results.volatility_res.conditional_volatility**2
+            eps_vol_hist = (
+                fitting_results.volatility_res.residuals[-m:].copy() if m > 0 else None
+            )
+            var_hist = sig2[-q_g:].copy() if q_g > 0 else None
+
+        return cls(
+            series_hist=x_hist,
+            ma_residual_lags=eps_mean_hist,
+            vol_residual_lags=eps_vol_hist,
+            var_hist=var_hist,
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class ForecastModel:
-    form: UnivariateModel
+    model: UnivariateModel
     state0: UnivariateState
 
     # TODO: Break out the below, confusing atm
     @classmethod
     def from_res_and_series(
         cls,
-        res: UnivariateRes,
+        fitting_results: UnivariateRes,
         post_series_non_null: NDArray[np.floating],
         x_hist_len: int = 10,
     ):
         if post_series_non_null.size == 0:
             raise ValueError("post_series_non_null is empty")
 
-        mean_form = None
-        vol_form = None
-        if res.mean_res is not None:
-            mean_form = MeanForm(
-                order=res.mean_res.model_order,
-                kind=res.mean_res.kind,
-                params=res.mean_res.params,
-            )
-
-        if res.volatility_res is not None:
-            vol_form = VolForm(
-                order=res.volatility_res.model_order,
-                kind="garch",
-                params=res.volatility_res.params,
-            )
-
-        model = UnivariateModel(mean_model=mean_form, volatility_model=vol_form)
-
-        x_hist = post_series_non_null[
-            -min(x_hist_len, post_series_non_null.size) :
-        ].copy()
-
-        eps_hist_mean = None
-        if res.mean_res is not None and res.mean_res.kind == "arma":
-            p, q = res.mean_res.model_order
-            # ensure x_hist has at least p values
-            if x_hist.size < p:
-                x_hist = post_series_non_null[-p:].copy()
-            eps = res.mean_res.residuals
-            eps_hist_mean = eps[-q:].copy() if q > 0 else None
-
-        mean_state = MeanState(series=x_hist, mean_residuals=eps_hist_mean)
-
-        vol_state = None
-        if res.volatility_res is not None:
-            p_g, o_g, q_g = res.volatility_res.model_order
-            m = max(p_g, o_g)
-            sig2 = res.volatility_res.conditional_volatility**2
-            vol_state = VolState(
-                volatility_residuals=res.volatility_res.residuals[-m:].copy(),
-                conditional_volatility_sq=sig2[-q_g:].copy(),
-            )
-
-        state0 = UnivariateState(mean=mean_state, vol=vol_state)
-
-        return cls(form=model, state0=state0)
+        model = UnivariateModel.from_fitting_results(fitting_results=fitting_results)
+        return cls(
+            model=model,
+            state0=UnivariateState.from_fitting_results(
+                fitting_results=fitting_results,
+                univariate_model=model,
+                post_series_non_null=post_series_non_null,
+                x_hist_len=x_hist_len,
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,6 +193,7 @@ def _build_innovations_df_from_models(
     return innovations_full
 
 
+# TODO: make this more specific
 def multivariate_forecasting_info(
     data: DataFrame, assets: list[str] | None = None
 ) -> MultivariateForecastInfo:
@@ -210,7 +221,7 @@ def multivariate_forecasting_info(
             post_process.post_data.select(asset).drop_nulls().to_numpy().ravel()
         )
         forecast_models[asset] = ForecastModel.from_res_and_series(
-            res=univariate_results[asset],
+            fitting_results=univariate_results[asset],
             post_series_non_null=post_series_non_null,
         )
 
@@ -232,45 +243,47 @@ def _get_lag(params: dict[str, float], base: str, lag: int) -> float:
 
 
 def _arma_recursive_mean(
-    arma_order: tuple[int, int], arma_params: dict[str, float], mean_state: MeanState
+    arma_order: tuple[int, int],
+    arma_params: dict[str, float],
+    mean_state: UnivariateState,
 ) -> float:
     mean = 0.0
     # AR part
     for i in range(1, arma_order[0] + 1):
         phi_i = _get_lag(arma_params, "ar", i)
-        mean += phi_i * float(mean_state.series[-i])
+        mean += phi_i * float(mean_state.series_hist[-i])
     # MA part
     if arma_order[1] > 0:
         if (
-            mean_state.mean_residuals is None
-            or mean_state.mean_residuals.size < arma_order[1]
+            mean_state.ma_residual_lags is None
+            or mean_state.ma_residual_lags.size < arma_order[1]
         ):
             raise ValueError(f"Need {arma_order[1]} mean residual lags for MA part.")
     for j in range(1, arma_order[1] + 1):
         theta_j = _get_lag(arma_params, "ma", j)
-        if mean_state.mean_residuals is not None:
-            mean += theta_j * float(mean_state.mean_residuals[-j])
+        if mean_state.ma_residual_lags is not None:
+            mean += theta_j * float(mean_state.ma_residual_lags[-j])
     return mean
 
 
-def conditional_mean_next(mean_form: MeanForm | None, mean_state: MeanState) -> float:
-    # no mean case (ie for RW and GARCH only)
-    if mean_form is None:
+def conditional_mean_next(form: UnivariateModel, state: UnivariateState) -> float:
+    if form.mean_kind == "none":
         return 0.0
-
-    if mean_form.kind == "demean":
-        return float(mean_form.params["mean"])
-
-    if mean_form.kind == "arma":
-        return _arma_recursive_mean(
-            arma_order=mean_form.order if mean_form.order is not None else (0, 0),
-            arma_params=mean_form.params,
-            mean_state=mean_state,
-        )
-    else:
-        raise ValueError(
-            f"Your conditional mean model {mean_form.kind} is not part of the possibilities dude"
-        )
+    if form.mean_kind == "demean":
+        return float(form.mean_params["mean"])  # type: ignore[index]
+    if form.mean_kind == "arma":
+        p, q = form.mean_order
+        params = form.mean_params or {}
+        mean = 0.0
+        for i in range(1, p + 1):
+            mean += _get_lag(params, "ar", i) * float(state.series_hist[-i])
+        if q > 0 and state.ma_residual_lags is not None:
+            if state.ma_residual_lags is None or state.ma_residual_lags.size < q:
+                raise ValueError(f"Need {q} mean residual lags for MA part.")
+            for j in range(1, q + 1):
+                mean += _get_lag(params, "ma", j) * float(state.ma_residual_lags[-j])
+        return mean
+    raise ValueError(f"Unknown mean_kind: {form.mean_kind}")
 
 
 def _get_vol_param_coeffs(params: dict[str, float], base: str, n: int) -> np.ndarray:
@@ -319,23 +332,19 @@ def garch_recursion(
     return max(variance_next, 0.0)
 
 
-def conditional_variance_next(
-    volatility_form: VolForm | None, volatility_state: VolState | None
-) -> float:
-    if volatility_form is None:
+def conditional_variance_next(form: UnivariateModel, state: UnivariateState) -> float:
+    if form.vol_kind == "none":
         return 0.0
-
-    if volatility_form.kind == "garch" and volatility_state is not None:
+    if form.vol_kind == "garch":
+        if state.vol_residual_lags is None or state.var_hist is None:
+            raise ValueError("Missing volatility state histories for GARCH.")
         return garch_recursion(
-            garch_params=volatility_form.params,
-            garch_order=volatility_form.order,
-            shock_hist=volatility_state.volatility_residuals,
-            variance_hist=volatility_state.conditional_volatility_sq,
+            garch_params=form.vol_params or {},
+            garch_order=form.vol_order,
+            shock_hist=state.vol_residual_lags,
+            variance_hist=state.var_hist,
         )
-    else:
-        raise ValueError(
-            f"Your conditional volatility model {volatility_form.kind} is not accepted here stranger"
-        )
+    raise ValueError(f"Unknown vol_kind: {form.vol_kind}")
 
 
 def draw_invariant_shock(
@@ -440,115 +449,116 @@ def draw_invariant_shock(
     return simulated_draws, prob
 
 
-def next_step_bootstrap(
-    invariants_df: DataFrame,
-    assets: list[str],
-    models: dict[str, ForecastModel],
-    prob_vector: ProbVector,
-    n_sims: int = 1,
-    seed: int | None = None,
-) -> dict[str, NDArray[np.floating]]:
-    # checking if any nulls and dropping (can't have this for this type of forecasting)
-    if invariants_df.null_count().sum_horizontal().item() > 0:
-        invariants_no_nulls = invariants_df.drop_nulls()
-        rows_droped = invariants_df.height - invariants_no_nulls.height
-        prob_vector = compensate_prob(prob_vector, rows_droped)
-        print(f"Total of {rows_droped} rows were droped due to nulls.")
-    else:
-        invariants_no_nulls = invariants_df
-
-    invariance_draws = weighted_bootstrapping(
-        invariants_no_nulls, prob_vector, n_sims, seed
-    )
-    selected_assets_models = {
-        asset: model for asset, model in models.items() if asset in assets
-    }
-    next_step_res: dict[str, NDArray[np.floating]] = {}
-    for asset, model in selected_assets_models.items():
-        asset_shock = invariance_draws.select(asset).to_numpy().ravel()
-        mean = conditional_mean_next(model.form.mean_model, model.state0.mean)
-        vol = conditional_variance_next(model.form.volatility_model, model.state0.vol)
-        if vol == 0.0:
-            shock_next = asset_shock
-        else:
-            shock_next = np.sqrt(vol) * asset_shock
-
-        next_step_res[asset] = mean + shock_next
-
-    return next_step_res
-
-
-def next_step_historical(
-    invariants_df: DataFrame,
-    assets: list[str],
-    models: dict[str, ForecastModel],
-    prob_vector: ProbVector,
-) -> tuple[dict[str, NDArray[np.floating]], ProbVector]:
-    if invariants_df.null_count().sum_horizontal().item() > 0:
-        invariants_no_nulls = invariants_df.drop_nulls()
-        rows_droped = invariants_df.height - invariants_no_nulls.height
-        prob_vector = compensate_prob(prob_vector, rows_droped)
-        print(f"Total of {rows_droped} rows were droped due to nulls.")
-    else:
-        invariants_no_nulls = invariants_df
-
-    selected_assets_models = {
-        asset: model for asset, model in models.items() if asset in assets
-    }
-    next_step_res: dict[str, NDArray[np.floating]] = {}
-    for asset, model in selected_assets_models.items():
-        asset_shock = invariants_no_nulls.select(asset).to_numpy().ravel()
-        mean = conditional_mean_next(model.form.mean_model, model.state0.mean)
-        vol = conditional_variance_next(model.form.volatility_model, model.state0.vol)
-        if vol == 0.0:
-            shock_next = asset_shock
-        else:
-            shock_next = np.sqrt(vol) * asset_shock
-
-        next_step_res[asset] = mean + shock_next
-
-    return next_step_res, prob_vector
-
-
-def next_step_copula_marginal(
-    invariants_df: DataFrame,
-    assets: list[str],
-    models: dict[str, ForecastModel],
-    prob_vector: ProbVector,
-    seed: int | None = None,
-    target_copula: Literal["t", "norm"] | None = None,
-    target_marginals: dict[str, Literal["t", "norm"]] | None = None,
-) -> tuple[dict[str, NDArray[np.floating]], ProbVector]:
-    if invariants_df.null_count().sum_horizontal().item() > 0:
-        invariants_no_nulls = invariants_df.drop_nulls()
-        rows_droped = invariants_df.height - invariants_no_nulls.height
-        prob_vector = compensate_prob(prob_vector, rows_droped)
-        print(f"Total of {rows_droped} rows were droped due to nulls.")
-    else:
-        invariants_no_nulls = invariants_df
-
-    # perform cma
-    invariants_cma = CopulaMarginalModel.from_data_and_prob(
-        data=invariants_no_nulls, prob=prob_vector
-    )
-
-    invariants_no_nulls, prob_vector = invariants_cma.update_distribution(
-        target_marginals=target_marginals, target_copula=target_copula, seed=seed
-    )
-
-    selected_assets_models = {
-        asset: model for asset, model in models.items() if asset in assets
-    }
-    next_step_res: dict[str, NDArray[np.floating]] = {}
-    for asset, model in selected_assets_models.items():
-        asset_shock = invariants_no_nulls.select(asset).to_numpy().ravel()
-        mean = conditional_mean_next(model.form.mean_model, model.state0.mean)
-        vol = conditional_variance_next(model.form.volatility_model, model.state0.vol)
-        if vol == 0.0:
-            shock_next = asset_shock
-        else:
-            shock_next = np.sqrt(vol) * asset_shock
-
-        next_step_res[asset] = mean + shock_next
-
-    return next_step_res, prob_vector
+#
+# def next_step_bootstrap(
+#     invariants_df: DataFrame,
+#     assets: list[str],
+#     models: dict[str, ForecastModel],
+#     prob_vector: ProbVector,
+#     n_sims: int = 1,
+#     seed: int | None = None,
+# ) -> dict[str, NDArray[np.floating]]:
+#     # checking if any nulls and dropping (can't have this for this type of forecasting)
+#     if invariants_df.null_count().sum_horizontal().item() > 0:
+#         invariants_no_nulls = invariants_df.drop_nulls()
+#         rows_droped = invariants_df.height - invariants_no_nulls.height
+#         prob_vector = compensate_prob(prob_vector, rows_droped)
+#         print(f"Total of {rows_droped} rows were droped due to nulls.")
+#     else:
+#         invariants_no_nulls = invariants_df
+#
+#     invariance_draws = weighted_bootstrapping(
+#         invariants_no_nulls, prob_vector, n_sims, seed
+#     )
+#     selected_assets_models = {
+#         asset: model for asset, model in models.items() if asset in assets
+#     }
+#     next_step_res: dict[str, NDArray[np.floating]] = {}
+#     for asset, model in selected_assets_models.items():
+#         asset_shock = invariance_draws.select(asset).to_numpy().ravel()
+#         mean = conditional_mean_next(model.model.mean_model, model.state0.mean)
+#         vol = conditional_variance_next(model.model.volatility_model, model.state0.vol)
+#         if vol == 0.0:
+#             shock_next = asset_shock
+#         else:
+#             shock_next = np.sqrt(vol) * asset_shock
+#
+#         next_step_res[asset] = mean + shock_next
+#
+#     return next_step_res
+#
+#
+# def next_step_historical(
+#     invariants_df: DataFrame,
+#     assets: list[str],
+#     models: dict[str, ForecastModel],
+#     prob_vector: ProbVector,
+# ) -> tuple[dict[str, NDArray[np.floating]], ProbVector]:
+#     if invariants_df.null_count().sum_horizontal().item() > 0:
+#         invariants_no_nulls = invariants_df.drop_nulls()
+#         rows_droped = invariants_df.height - invariants_no_nulls.height
+#         prob_vector = compensate_prob(prob_vector, rows_droped)
+#         print(f"Total of {rows_droped} rows were droped due to nulls.")
+#     else:
+#         invariants_no_nulls = invariants_df
+#
+#     selected_assets_models = {
+#         asset: model for asset, model in models.items() if asset in assets
+#     }
+#     next_step_res: dict[str, NDArray[np.floating]] = {}
+#     for asset, model in selected_assets_models.items():
+#         asset_shock = invariants_no_nulls.select(asset).to_numpy().ravel()
+#         mean = conditional_mean_next(model.model.mean_model, model.state0.mean)
+#         vol = conditional_variance_next(model.model.volatility_model, model.state0.vol)
+#         if vol == 0.0:
+#             shock_next = asset_shock
+#         else:
+#             shock_next = np.sqrt(vol) * asset_shock
+#
+#         next_step_res[asset] = mean + shock_next
+#
+#     return next_step_res, prob_vector
+#
+#
+# def next_step_copula_marginal(
+#     invariants_df: DataFrame,
+#     assets: list[str],
+#     models: dict[str, ForecastModel],
+#     prob_vector: ProbVector,
+#     seed: int | None = None,
+#     target_copula: Literal["t", "norm"] | None = None,
+#     target_marginals: dict[str, Literal["t", "norm"]] | None = None,
+# ) -> tuple[dict[str, NDArray[np.floating]], ProbVector]:
+#     if invariants_df.null_count().sum_horizontal().item() > 0:
+#         invariants_no_nulls = invariants_df.drop_nulls()
+#         rows_droped = invariants_df.height - invariants_no_nulls.height
+#         prob_vector = compensate_prob(prob_vector, rows_droped)
+#         print(f"Total of {rows_droped} rows were droped due to nulls.")
+#     else:
+#         invariants_no_nulls = invariants_df
+#
+#     # perform cma
+#     invariants_cma = CopulaMarginalModel.from_data_and_prob(
+#         data=invariants_no_nulls, prob=prob_vector
+#     )
+#
+#     invariants_no_nulls, prob_vector = invariants_cma.update_distribution(
+#         target_marginals=target_marginals, target_copula=target_copula, seed=seed
+#     )
+#
+#     selected_assets_models = {
+#         asset: model for asset, model in models.items() if asset in assets
+#     }
+#     next_step_res: dict[str, NDArray[np.floating]] = {}
+#     for asset, model in selected_assets_models.items():
+#         asset_shock = invariants_no_nulls.select(asset).to_numpy().ravel()
+#         mean = conditional_mean_next(model.model.mean_model, model.state0.mean)
+#         vol = conditional_variance_next(model.model.volatility_model, model.state0.vol)
+#         if vol == 0.0:
+#             shock_next = asset_shock
+#         else:
+#             shock_next = np.sqrt(vol) * asset_shock
+#
+#         next_step_res[asset] = mean + shock_next
+#
+#     return next_step_res, prob_vector
