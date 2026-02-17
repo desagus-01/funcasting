@@ -1,3 +1,4 @@
+import warnings
 from typing import Literal
 
 import numpy as np
@@ -46,24 +47,59 @@ def marginal_quantile_mapping(
 
 def sample_copula(
     copula: pl.DataFrame,
-    seed: int | None,
+    seed: int | None = None,
     parametric_copula: Literal["t", "norm"] = "t",
-    fit_method: Literal["ml", "irho", "itau"] = "itau",
+    fit_method: Literal["ml", "irho", "itau"] = "ml",
     to_pobs: bool = False,
 ) -> pl.DataFrame:
-    values = copula.to_numpy()
-    col_names = copula.columns
-    if parametric_copula == "t":
-        cop = StudentCopula(values.shape[1])
-    elif parametric_copula == "norm":
-        cop = NormalCopula(values.shape[1])
-    else:
-        raise ValueError("You must choose either t or norm")
+    """
+    Fit a parametric copula to `copula` data and sample the same number of rows.
 
-    samples = cop.fit(values, method=fit_method, to_pobs=to_pobs).random(
-        n=copula.height, seed=seed
-    )
-    return pl.DataFrame(samples, col_names)
+    Parameters
+    ----------
+    copula : pl.DataFrame
+        Input data (typically uniform margins if to_pobs=False).
+    seed : int | None
+        Random seed for reproducibility.
+    parametric_copula : {"t", "norm"}
+        Which copula family to fit.
+    fit_method : {"ml", "irho", "itau"}
+        Fitting method; falls back to ML if analytical method fails.
+    to_pobs : bool
+        Whether to transform input values to pseudo-observations during fitting.
+
+    Returns
+    -------
+    pl.DataFrame
+        Samples with same shape and column names as input.
+    """
+    if copula.is_empty():
+        raise ValueError("`copula` is empty; cannot fit/sample.")
+
+    values = copula.to_numpy()
+    n_dim = values.shape[1]
+
+    cop_cls = {"t": StudentCopula, "norm": NormalCopula}.get(parametric_copula)
+    if cop_cls is None:
+        raise ValueError("parametric_copula must be one of {'t', 'norm'}")
+
+    cop = cop_cls(n_dim)
+
+    try:
+        fit = cop.fit(values, method=fit_method, to_pobs=to_pobs)
+    except Exception as e:
+        if fit_method == "ml":
+            raise RuntimeError(f"ML fit failed: {e}") from e
+
+        warnings.warn(
+            f"Fit method '{fit_method}' failed ({e!r}); falling back to 'ml'.",
+            RuntimeWarning,
+        )
+        fit = cop.fit(values, method="ml", to_pobs=to_pobs)
+
+    samples = fit.random(n=copula.height, seed=seed)
+
+    return pl.DataFrame(samples, schema=copula.columns)
 
 
 def weighted_bootstrapping(
@@ -76,8 +112,4 @@ def weighted_bootstrapping(
     rng = random.default_rng(seed)
     sample_row_n = rng.choice(data.height, size=n_samples, replace=True, p=prob_vector)
 
-    return (
-        data.with_row_index()
-        .filter(pl.col("index").is_in(sample_row_n.tolist()))
-        .drop("index")
-    )
+    return data[sample_row_n.tolist()]

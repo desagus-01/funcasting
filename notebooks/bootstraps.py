@@ -1,5 +1,6 @@
 from maths.distributions import uniform_probs
 from methods.forecasting_pipeline import (
+    draw_invariant_shock,
     multivariate_forecasting_info,
     next_step_bootstrap,
     next_step_historical,
@@ -16,10 +17,20 @@ data = data.with_columns(fake=series)
 x = multivariate_forecasting_info(data)
 inv_df = x.invariants
 prob_ex = uniform_probs(inv_df.height)
-# %%
-
 models = x.models
 
+# %%
+draw_invariant_shock(
+    inv_df,
+    assets=["AAPL", "fake"],
+    prob_vector=prob_ex,
+    n_sims=100,
+    seed=1,
+    method="cma",
+    target_copula="t",
+)
+
+# %%
 ns = next_step_bootstrap(
     invariants_df=inv_df,
     assets=[asset for asset in models.keys()],

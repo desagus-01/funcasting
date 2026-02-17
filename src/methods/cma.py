@@ -120,10 +120,16 @@ class CopulaMarginalModel:
         return self
 
     def update_copula(
-        self, seed: int | None = None, target_copula: Literal["t", "norm"] = "t"
+        self,
+        seed: int | None = None,
+        fit_method: Literal["ml", "irho", "itau"] = "itau",
+        target_copula: Literal["t", "norm"] = "t",
     ) -> Self:
         self.copula = sample_copula(
-            self.copula, seed=seed, parametric_copula=target_copula
+            self.copula,
+            seed=seed,
+            parametric_copula=target_copula,
+            fit_method=fit_method,
         )
         return self
 
@@ -131,13 +137,17 @@ class CopulaMarginalModel:
         self,
         seed: int | None = None,
         target_marginals: dict[str, Literal["t", "norm"]] | None = None,
+        *,
         target_copula: Literal["t", "norm"] | None = None,
+        copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
     ) -> tuple[DataFrame, ProbVector]:
         if target_copula is None and target_marginals is None:
             raise ValueError("Choose a target marginal or target copula!")
 
-        if target_copula is not None:
-            self.update_copula(seed=seed, target_copula=target_copula)
+        if (target_copula is not None) and (copula_fit_method is not None):
+            self.update_copula(
+                seed=seed, target_copula=target_copula, fit_method=copula_fit_method
+            )
 
         if target_marginals is not None:
             self.update_marginals(target_marginals)

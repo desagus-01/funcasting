@@ -15,7 +15,7 @@ from methods.model_selection_pipeline import (
 )
 from methods.preprocess_pipeline import run_univariate_preprocess
 from models.types import ProbVector
-from utils.helpers import compensate_prob
+from utils.helpers import compensate_prob, drop_nulls_and_compensate_prob
 
 MeanKind = Literal["none", "demean", "arma"]
 VolKind = Literal["none", "garch"]
@@ -336,6 +336,53 @@ def conditional_variance_next(
         raise ValueError(
             f"Your conditional volatility model {volatility_form.kind} is not accepted here stranger"
         )
+
+
+def draw_invariant_shock(
+    invariants_df: DataFrame,
+    assets: list[str],
+    prob_vector: ProbVector,
+    n_sims: int,
+    seed: int | None,
+    method: Literal["bootstrap", "historical", "cma"] = "bootstrap",
+    *,
+    target_copula: Literal["t", "norm"] | None = None,
+    copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
+    target_marginals: dict[str, Literal["t", "norm"]] | None = None,
+) -> tuple[NDArray[np.floating], ProbVector]:
+    invariants_df = invariants_df.select(assets)
+    invariants, prob = drop_nulls_and_compensate_prob(invariants_df, prob_vector)
+
+    if (target_copula is not None or target_marginals is not None) and (
+        method != "cma"
+    ):
+        raise ValueError(
+            "You can only have target_marginal and/or target_copula when method is cma!"
+        )
+
+    if method == "bootstrap":
+        joint_shock = weighted_bootstrapping(
+            invariants, prob, n_samples=n_sims, seed=seed
+        )
+        return joint_shock.to_numpy(), prob
+    if method == "historical":
+        return invariants.to_numpy(), prob
+    if method == "cma":
+        if copula_fit_method is None:
+            print("No copula fit method selected, using itau as default")
+            copula_fit_method = "itau"
+        invariants_cma = CopulaMarginalModel.from_data_and_prob(
+            data=invariants, prob=prob
+        )
+
+        invariants_post_cma, prob_post_cma = invariants_cma.update_distribution(
+            seed=seed,
+            target_marginals=target_marginals,
+            target_copula=target_copula,
+            copula_fit_method=copula_fit_method,
+        )
+        return invariants_post_cma.to_numpy(), prob_post_cma
+    raise ValueError(f"Invalid method: {method}")
 
 
 def next_step_bootstrap(
