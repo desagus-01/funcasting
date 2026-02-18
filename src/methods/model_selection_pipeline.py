@@ -234,7 +234,7 @@ def mean_modelling_pipeline(
         if asset in assets_needing_arma:
             asset_mean_model_res[asset] = run_best_arma(array, asset_name=asset)
         else:
-            mean = array.mean()
+            mean = array.mean().item()
             asset_mean_model_res[asset] = DemeanRes(
                 model_order=None,
                 degrees_of_freedom=0,

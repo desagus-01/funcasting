@@ -1,6 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from functools import reduce
-from typing import Literal
+from typing import Literal, Mapping
 
 import numpy as np
 import polars as pl
@@ -22,13 +22,24 @@ VolKind = Literal["none", "garch"]
 
 
 @dataclass(frozen=True, slots=True)
+class CompiledParams:
+    mu: float
+    ar: NDArray[np.floating]
+    ma: NDArray[np.floating]
+    omega: float
+    alpha: NDArray[np.floating]
+    gamma: NDArray[np.floating]
+    beta: NDArray[np.floating]
+
+
+@dataclass(frozen=True, slots=True)
 class UnivariateModel:
     mean_kind: MeanKind
+    mean_params: dict[str, float]
+    vol_params: dict[str, float]
     mean_order: tuple[int, int] = (0, 0)
-    mean_params: dict[str, float] | None = None
     vol_kind: VolKind = "none"
     vol_order: tuple[int, int, int] = (0, 0, 0)
-    vol_params: dict[str, float] | None = None
 
     @classmethod
     def from_fitting_results(
@@ -38,7 +49,7 @@ class UnivariateModel:
         if fitting_results.mean_res is None:
             mean_kind: MeanKind = "none"
             mean_order = (0, 0)
-            mean_params = None
+            mean_params = {}
         else:
             mean_kind = fitting_results.mean_res.kind
             mean_order = fitting_results.mean_res.model_order
@@ -49,7 +60,7 @@ class UnivariateModel:
         if fitting_results.volatility_res is None:
             vol_kind: VolKind = "none"
             vol_order = (0, 0, 0)
-            vol_params = None
+            vol_params = {}
         else:
             vol_kind = "garch"
             vol_order = fitting_results.volatility_res.model_order
@@ -64,6 +75,67 @@ class UnivariateModel:
             vol_params=vol_params,
         )
 
+    @property
+    def all_params(self) -> Mapping[str, float | NDArray[np.floating]]:
+        return self.mean_params | self.vol_params
+
+    def compile_arma_params(
+        self,
+    ) -> tuple[float, NDArray[np.floating], NDArray[np.floating]]:
+        # returns (mu, ar(p), ma(q))
+        if self.mean_kind == "none":
+            return 0.0, np.zeros(0), np.zeros(0)
+        if self.mean_kind == "demean":
+            mu = float((self.mean_params or {}).get("mean", 0.0))
+            return mu, np.zeros(0), np.zeros(0)
+        if self.mean_kind == "arma":
+            p, q = self.mean_order
+            mu = float(
+                (self.mean_params or {}).get(
+                    "const", (self.mean_params or {}).get("mu", 0.0)
+                )
+            )
+            ar = np.array(
+                [_get_lag(self.mean_params or {}, "ar", i) for i in range(1, p + 1)],
+                dtype=float,
+            )
+            ma = np.array(
+                [_get_lag(self.mean_params or {}, "ma", j) for j in range(1, q + 1)],
+                dtype=float,
+            )
+            return mu, ar, ma
+        raise ValueError(self.mean_kind)
+
+    def compile_garch_params(
+        self,
+    ) -> tuple[float, NDArray[np.floating], NDArray[np.floating], NDArray[np.floating]]:
+        # returns (omega, alpha(p), gamma(o), beta(q))
+        if self.vol_kind == "none":
+            return 0.0, np.zeros(0), np.zeros(0), np.zeros(0)
+        if self.vol_kind == "garch":
+            p, o, q = self.vol_order
+            vp = self.vol_params or {}
+            omega = float(vp.get("omega", 0.0))
+            alpha = np.array(
+                [float(vp.get(f"alpha[{i}]", 0.0)) for i in range(1, p + 1)],
+                dtype=float,
+            )
+            gamma = np.array(
+                [float(vp.get(f"gamma[{i}]", 0.0)) for i in range(1, o + 1)],
+                dtype=float,
+            )
+            beta = np.array(
+                [float(vp.get(f"beta[{i}]", 0.0)) for i in range(1, q + 1)], dtype=float
+            )
+            return omega, alpha, gamma, beta
+        raise ValueError(self.vol_kind)
+
+    def compile_params(self) -> CompiledParams:
+        return CompiledParams(
+            *self.compile_arma_params(),
+            *self.compile_garch_params(),
+        )
+
 
 @dataclass(slots=True)
 class UnivariateState:
@@ -73,7 +145,7 @@ class UnivariateState:
     var_hist: NDArray[np.floating] | None = None
 
     @classmethod
-    def from_fitting_results(
+    def from_fitting_results_and_model(
         cls,
         fitting_results: UnivariateRes,
         univariate_model: UnivariateModel,
@@ -116,6 +188,10 @@ class UnivariateState:
             var_hist=var_hist,
         )
 
+    @property
+    def state_as_dict(self) -> Mapping[str, NDArray[np.floating]]:
+        return asdict(self)
+
 
 @dataclass(frozen=True, slots=True)
 class ForecastModel:
@@ -136,7 +212,7 @@ class ForecastModel:
         model = UnivariateModel.from_fitting_results(fitting_results=fitting_results)
         return cls(
             model=model,
-            state0=UnivariateState.from_fitting_results(
+            state0=UnivariateState.from_fitting_results_and_model(
                 fitting_results=fitting_results,
                 univariate_model=model,
                 post_series_non_null=post_series_non_null,

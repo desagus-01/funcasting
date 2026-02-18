@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Mapping
 
 import numpy as np
 import polars as pl
@@ -199,3 +200,31 @@ def get_akicc(sample_size: int, rho: float, n_parameters: int) -> float:
         + (3.0 - (n_parameters + 2.0) / sample_size)
         * ((n_parameters + 1.0) / (sample_size - n_parameters - 2.0))
     )
+
+
+def dict_to_matrix(
+    dict: Mapping[str, NDArray[np.floating] | float],
+    preferred_order: list[str] | None = None,
+    broadcast_rows_n: int = 1,
+    writable: bool = True,
+) -> tuple[NDArray[np.floating], list[str]]:
+    if broadcast_rows_n < 1:
+        raise ValueError(
+            f"Your broadcast must be larger than 1, currently {broadcast_rows_n}"
+        )
+    if preferred_order is None:
+        preferred_order = list(dict.keys())
+    matrix = np.column_stack([np.asarray(dict[param]) for param in preferred_order])
+    if broadcast_rows_n is None:
+        out = matrix
+    else:
+        # If you intend broadcasting, matrix must have 1 row (or already match)
+        if matrix.shape[0] not in (1, broadcast_rows_n):
+            raise ValueError(
+                f"Cannot broadcast shape {matrix.shape} to ({broadcast_rows_n}, {matrix.shape[1]})"
+            )
+        out = np.broadcast_to(matrix, (broadcast_rows_n, matrix.shape[1]))
+        if writable:
+            out = out.copy()
+
+    return out, preferred_order
