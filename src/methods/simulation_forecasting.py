@@ -1,178 +1,363 @@
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from typing import Literal, Mapping
+
 import numpy as np
 from numpy._typing import NDArray
 
-from methods.forecasting_pipeline import CompiledParams, ForecastModel
+from methods.model_selection_pipeline import (
+    UnivariateRes,
+)
+
+MeanKind = Literal["none", "demean", "arma"]
+VolKind = Literal["none", "garch"]
 
 
-def _ensure_2d(
-    innovations: NDArray[np.floating],
-) -> NDArray[np.floating]:
-    innovations = np.asarray(innovations, dtype=float)
-    if innovations.ndim == 2:
-        return innovations
-    if innovations.ndim == 1:
-        return innovations.reshape(-1, 1)
-    raise ValueError("innovations must be 1D or 2D")
+@dataclass(frozen=True, slots=True)
+class CompiledParams:
+    mu: float
+    ar: NDArray[np.floating]
+    ma: NDArray[np.floating]
+    omega: float
+    alpha: NDArray[np.floating]
+    gamma: NDArray[np.floating]
+    beta: NDArray[np.floating]
 
 
-def _as_broadcast_lags(
-    lags_1d: NDArray[np.floating] | None, n_sims: int, needed: int, *, name: str
-) -> NDArray[np.floating]:
-    if needed <= 0:
-        return np.empty((n_sims, 0), dtype=float)
-    if lags_1d is None:
-        raise ValueError(f"Missing {name} lags: need {needed} values.")
-    lags_1d = np.asarray(lags_1d, dtype=float).ravel()
-    if lags_1d.size < needed:
-        raise ValueError(
-            f"Insufficient {name} lags: need {needed}, have {lags_1d.size}."
+@dataclass(frozen=True, slots=True)
+class UnivariateModel:
+    mean_kind: MeanKind
+    mean_params: dict[str, float]
+    vol_params: dict[str, float]
+    mean_order: tuple[int, int] = (0, 0)
+    vol_kind: VolKind = "none"
+    vol_order: tuple[int, int, int] = (0, 0, 0)
+
+    @classmethod
+    def from_fitting_results(
+        cls,
+        fitting_results: UnivariateRes,
+    ):
+        if fitting_results.mean_res is None:
+            mean_kind: MeanKind = "none"
+            mean_order = (0, 0)
+            mean_params = {}
+        else:
+            mean_kind = fitting_results.mean_res.kind
+            mean_order = fitting_results.mean_res.model_order
+            if mean_order is None:
+                mean_order = (0, 0)
+            mean_params = fitting_results.mean_res.params
+
+        if fitting_results.volatility_res is None:
+            vol_kind: VolKind = "none"
+            vol_order = (0, 0, 0)
+            vol_params = {}
+        else:
+            vol_kind = "garch"
+            vol_order = fitting_results.volatility_res.model_order
+            vol_params = fitting_results.volatility_res.params
+
+        return cls(
+            mean_kind=mean_kind,
+            mean_order=mean_order,
+            mean_params=mean_params,
+            vol_kind=vol_kind,
+            vol_order=vol_order,
+            vol_params=vol_params,
         )
-    return np.broadcast_to(lags_1d[-needed:], (n_sims, needed)).copy()
+
+    @property
+    def all_params(self) -> Mapping[str, float | NDArray[np.floating]]:
+        return self.mean_params | self.vol_params
+
+    def _param_get(
+        self, params: dict[str, float], *keys: str, default: float = 0.0
+    ) -> float:
+        for k in keys:
+            if k in params:
+                return float(params[k])
+        return float(default)
+
+    def _get_lag(self, params: dict[str, float], base: str, lag: int) -> float:
+        return self._param_get(params, f"{base}[{lag}]", f"{base}.L{lag}", default=0.0)
+
+    def compile_arma_params(
+        self,
+    ) -> tuple[float, NDArray[np.floating], NDArray[np.floating]]:
+        # returns (mu, ar(p), ma(q))
+        if self.mean_kind == "none":
+            return 0.0, np.zeros(0), np.zeros(0)
+        if self.mean_kind == "demean":
+            mu = float((self.mean_params or {}).get("mean", 0.0))
+            return mu, np.zeros(0), np.zeros(0)
+        if self.mean_kind == "arma":
+            p, q = self.mean_order
+            mu = float(
+                (self.mean_params or {}).get(
+                    "const", (self.mean_params or {}).get("mu", 0.0)
+                )
+            )
+            ar = np.array(
+                [
+                    self._get_lag(self.mean_params or {}, "ar", i)
+                    for i in range(1, p + 1)
+                ],
+                dtype=float,
+            )
+            ma = np.array(
+                [
+                    self._get_lag(self.mean_params or {}, "ma", j)
+                    for j in range(1, q + 1)
+                ],
+                dtype=float,
+            )
+            return mu, ar, ma
+        raise ValueError(self.mean_kind)
+
+    def compile_garch_params(
+        self,
+    ) -> tuple[float, NDArray[np.floating], NDArray[np.floating], NDArray[np.floating]]:
+        # returns (omega, alpha(p), gamma(o), beta(q))
+        if self.vol_kind == "none":
+            return 0.0, np.zeros(0), np.zeros(0), np.zeros(0)
+        if self.vol_kind == "garch":
+            p, o, q = self.vol_order
+            vp = self.vol_params or {}
+            omega = float(vp.get("omega", 0.0))
+            alpha = np.array(
+                [float(vp.get(f"alpha[{i}]", 0.0)) for i in range(1, p + 1)],
+                dtype=float,
+            )
+            gamma = np.array(
+                [float(vp.get(f"gamma[{i}]", 0.0)) for i in range(1, o + 1)],
+                dtype=float,
+            )
+            beta = np.array(
+                [float(vp.get(f"beta[{i}]", 0.0)) for i in range(1, q + 1)], dtype=float
+            )
+            return omega, alpha, gamma, beta
+        raise ValueError(self.vol_kind)
+
+    def compile_params(self) -> CompiledParams:
+        return CompiledParams(
+            *self.compile_arma_params(),
+            *self.compile_garch_params(),
+        )
 
 
-def _validate_horizon_and_get_shape(
-    values: NDArray[np.floating],
+@dataclass(slots=True)
+class UnivariateState:
+    series_hist: NDArray[np.floating]
+    ma_residual_lags: NDArray[np.floating] | None = None
+    vol_residual_lags: NDArray[np.floating] | None = None
+    var_hist: NDArray[np.floating] | None = None
+
+    @classmethod
+    def from_fitting_results_and_model(
+        cls,
+        fitting_results: UnivariateRes,
+        univariate_model: UnivariateModel,
+        post_series_non_null: NDArray[np.floating],
+        x_hist_len: int = 10,
+    ):
+        x_hist = post_series_non_null[
+            -min(x_hist_len, post_series_non_null.size) :
+        ].copy()
+
+        eps_mean_hist = None
+        if (
+            univariate_model.mean_kind == "arma"
+            and fitting_results.mean_res is not None
+        ):
+            p, q = univariate_model.mean_order
+            if x_hist.size < p:
+                x_hist = post_series_non_null[-p:].copy()
+            eps = fitting_results.mean_res.residuals
+            eps_mean_hist = eps[-q:].copy() if q > 0 else None
+
+        eps_vol_hist = None
+        var_hist = None
+        if (
+            univariate_model.vol_kind == "garch"
+            and fitting_results.volatility_res is not None
+        ):
+            p_g, o_g, q_g = univariate_model.vol_order
+            m = max(p_g, o_g, 1)
+            sig2 = fitting_results.volatility_res.conditional_volatility**2
+            eps_vol_hist = (
+                fitting_results.volatility_res.residuals[-m:].copy() if m > 0 else None
+            )
+            var_hist = sig2[-q_g:].copy() if q_g > 0 else None
+
+        return cls(
+            series_hist=x_hist,
+            ma_residual_lags=eps_mean_hist,
+            vol_residual_lags=eps_vol_hist,
+            var_hist=var_hist,
+        )
+
+    @property
+    def state_as_dict(self) -> Mapping[str, NDArray[np.floating]]:
+        return asdict(self)
+
+
+@dataclass(frozen=True, slots=True)
+class ForecastModel:
+    model: UnivariateModel
+    state0: UnivariateState
+
+    @classmethod
+    def from_res_and_series(
+        cls,
+        fitting_results: UnivariateRes,
+        post_series_non_null: NDArray[np.floating],
+        x_hist_len: int = 10,
+    ):
+        if post_series_non_null.size == 0:
+            raise ValueError("post_series_non_null is empty")
+
+        model = UnivariateModel.from_fitting_results(fitting_results=fitting_results)
+        return cls(
+            model=model,
+            state0=UnivariateState.from_fitting_results_and_model(
+                fitting_results=fitting_results,
+                univariate_model=model,
+                post_series_non_null=post_series_non_null,
+                x_hist_len=x_hist_len,
+            ),
+        )
+
+
+def as_sims_by_horizon(
+    array: NDArray[np.floating],
 ) -> tuple[NDArray[np.floating], int, int]:
-    innovations_for_asset = _ensure_2d(innovations=values)
-    n_sims, horizon = innovations_for_asset.shape
+    """
+    Normalize x to shape (n_sims, horizon), dtype float.
+    Accepts 1D (horizon,) or 2D (n_sims, horizon).
+    """
+    x = np.asarray(array, dtype=float)
+    if x.ndim == 1:
+        x = x.reshape(1, -1)
+    if x.ndim != 2:
+        raise ValueError("Expected 1D or 2D array.")
+    n_sims, horizon = x.shape
     if horizon < 1:
         raise ValueError("horizon must be >= 1")
-    return innovations_for_asset, n_sims, horizon
+    return x, n_sims, horizon
 
 
-def _extract_and_validate_garch_params(
-    params: CompiledParams, garch_order: tuple[int, int, int]
+def broadcast_last_k_lags(
+    lags_1d: NDArray[np.floating] | None, n_sims: int, k: int, *, name: str
+) -> NDArray[np.floating]:
+    """
+    Return shape (n_sims, k) containing the last k values from lags_1d,
+    broadcasted across simulations.
+
+    If k == 0 => returns empty (n_sims, 0).
+    """
+    if k <= 0:
+        return np.empty((n_sims, 0), dtype=float)
+    if lags_1d is None:
+        raise ValueError(f"Missing {name} lags: need {k} values.")
+    lags_1d = np.asarray(lags_1d, dtype=float).ravel()
+    if lags_1d.size < k:
+        raise ValueError(f"Insufficient {name} lags: need {k}, have {lags_1d.size}.")
+    return np.broadcast_to(lags_1d[-k:], (n_sims, k)).copy()
+
+
+def lag_matrix(
+    ext: NDArray[np.floating], last_col: int, k: int
+) -> NDArray[np.floating]:
+    """
+    Return a (n_sims, k) matrix of lags from a 2D 'extended' buffer.
+    Column order: [t-1, t-2, ..., t-k]
+    """
+    if k <= 0:
+        return ext[:, :0]
+    return ext[:, last_col - np.arange(k)]
+
+
+def take_vector(
+    params: CompiledParams, attr: str, expected: int
+) -> NDArray[np.floating]:
+    x = np.asarray(getattr(params, attr), dtype=float).ravel()
+    if x.size != expected:
+        raise ValueError(f"{attr} size {x.size} != {expected}")
+    return x
+
+
+def take_scalar(params: CompiledParams, attr: str) -> float:
+    return float(getattr(params, attr))
+
+
+def garch_params(
+    params: CompiledParams, order: tuple[int, int, int]
 ) -> tuple[float, NDArray[np.floating], NDArray[np.floating], NDArray[np.floating]]:
-    p, o, q = garch_order
-
-    omega = float(params.omega)
-    alpha = np.asarray(params.alpha, dtype=float)
-    gamma = np.asarray(params.gamma, dtype=float)
-    beta = np.asarray(params.beta, dtype=float)
-
-    if alpha.size != p:
-        raise ValueError(f"alpha size {alpha.size} != p {p}")
-    if gamma.size != o:
-        raise ValueError(f"gamma size {gamma.size} != o {o}")
-    if beta.size != q:
-        raise ValueError(f"beta size {beta.size} != q {q}")
-
+    p, o, q = order
+    omega = take_scalar(params, "omega")
+    alpha = take_vector(params, "alpha", p)
+    gamma = take_vector(params, "gamma", o)
+    beta = take_vector(params, "beta", q)
     return omega, alpha, gamma, beta
 
 
-def _init_garch_lag_buffers(
-    *,
-    n_sims: int,
-    horizon: int,
-    p: int,
-    o: int,
-    q: int,
-    eps_start: NDArray[np.floating] | None,
-    var_start: NDArray[np.floating] | None,
-) -> tuple[NDArray[np.floating], NDArray[np.floating], int, int]:
-    eps_lag_needed = max(p, o)
-    var_lag_needed = q
-
-    eps_ext = np.empty((n_sims, eps_lag_needed + horizon), dtype=float)
-    var_ext = np.empty((n_sims, var_lag_needed + horizon), dtype=float)
-
-    if eps_lag_needed > 0:
-        eps_ext[:, :eps_lag_needed] = _as_broadcast_lags(
-            eps_start, n_sims, eps_lag_needed, name="eps"
-        )
-    if var_lag_needed > 0:
-        var_ext[:, :var_lag_needed] = _as_broadcast_lags(
-            var_start, n_sims, var_lag_needed, name="variance"
-        )
-
-    return eps_ext, var_ext, eps_lag_needed, var_lag_needed
+def mean_params(
+    params: CompiledParams, order: tuple[int, int]
+) -> tuple[float, NDArray[np.floating], NDArray[np.floating]]:
+    p, q = order
+    mu = take_scalar(params, "mu")
+    ar = take_vector(params, "ar", p)
+    ma = take_vector(params, "ma", q)
+    return mu, ar, ma
 
 
-def _next_variance(
-    *,
-    h: int,
-    omega: float,
-    alpha: NDArray[np.floating],
-    gamma: NDArray[np.floating],
-    beta: NDArray[np.floating],
-    p: int,
-    o: int,
-    q: int,
-    eps_ext: NDArray[np.floating],
-    var_ext: NDArray[np.floating],
-    eps_lag_needed: int,
-    var_lag_needed: int,
-) -> NDArray[np.floating]:
-    n_sims = eps_ext.shape[0]
-    v_next = np.full(n_sims, omega, dtype=float)
+@dataclass
+class GarchSimulator:
+    omega: float
+    alpha: NDArray[np.floating]
+    gamma: NDArray[np.floating]
+    beta: NDArray[np.floating]
+    p: int
+    o: int
+    q: int
+    eps_ext: NDArray[np.floating]
+    var_ext: NDArray[np.floating]
+    eps_lag: int
+    var_lag: int
+    var_floor: float = 1e-12
 
-    eps_last = eps_lag_needed + h - 1
-    var_last = var_lag_needed + h - 1
+    @classmethod
+    def from_state(
+        cls,
+        *,
+        params: CompiledParams,
+        order: tuple[int, int, int],
+        n_sims: int,
+        horizon: int,
+        eps_start: NDArray[np.floating] | None,
+        var_start: NDArray[np.floating] | None,
+    ) -> GarchSimulator:
+        p, o, q = order
+        omega, alpha, gamma, beta = garch_params(params, order)
 
-    if p > 0:
-        idx = eps_last - np.arange(p)
-        eps_lags = eps_ext[:, idx]
-        v_next += (eps_lags * eps_lags) @ alpha
+        eps_lag = max(p, o)
+        var_lag = q
 
-    if o > 0:
-        idx = eps_last - np.arange(o)
-        eps_lags_o = eps_ext[:, idx]
-        ind = (eps_lags_o < 0.0).astype(float)
-        v_next += (ind * (eps_lags_o * eps_lags_o)) @ gamma
+        eps_ext = np.empty((n_sims, eps_lag + horizon), dtype=float)
+        var_ext = np.empty((n_sims, var_lag + horizon), dtype=float)
 
-    if q > 0:
-        idx = var_last - np.arange(q)
-        var_lags = var_ext[:, idx]
-        v_next += var_lags @ beta
+        if eps_lag > 0:
+            eps_ext[:, :eps_lag] = broadcast_last_k_lags(
+                eps_start, n_sims, eps_lag, name="eps"
+            )
+        if var_lag > 0:
+            var_ext[:, :var_lag] = broadcast_last_k_lags(
+                var_start, n_sims, var_lag, name="variance"
+            )
 
-    return np.maximum(v_next, 1e-12)
-
-
-def _roll_forward_buffers(
-    *,
-    h: int,
-    eps_next: NDArray[np.floating],
-    v_next: NDArray[np.floating],
-    eps_ext: NDArray[np.floating],
-    var_ext: NDArray[np.floating],
-    eps_lag_needed: int,
-    var_lag_needed: int,
-) -> None:
-    if eps_lag_needed > 0:
-        eps_ext[:, eps_lag_needed + h] = eps_next
-    if var_lag_needed > 0:
-        var_ext[:, var_lag_needed + h] = v_next
-
-
-def garch_simulation_paths(
-    params: CompiledParams,
-    garch_order: tuple[int, int, int],
-    eps_start: NDArray[np.floating] | None,
-    var_start: NDArray[np.floating] | None,
-    innovations_for_asset: NDArray[np.floating],
-) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
-    innovations_for_asset, n_sims, horizon = _validate_horizon_and_get_shape(
-        innovations_for_asset
-    )
-    omega, alpha, gamma, beta = _extract_and_validate_garch_params(params, garch_order)
-
-    p, o, q = garch_order
-    eps_ext, var_ext, eps_lag_needed, var_lag_needed = _init_garch_lag_buffers(
-        n_sims=n_sims,
-        horizon=horizon,
-        p=p,
-        o=o,
-        q=q,
-        eps_start=eps_start,
-        var_start=var_start,
-    )
-
-    sigma2_paths = np.empty((n_sims, horizon), dtype=float)
-    eps_paths = np.empty((n_sims, horizon), dtype=float)
-
-    for h in range(horizon):
-        v_next = _next_variance(
-            h=h,
+        return cls(
             omega=omega,
             alpha=alpha,
             gamma=gamma,
@@ -182,112 +367,168 @@ def garch_simulation_paths(
             q=q,
             eps_ext=eps_ext,
             var_ext=var_ext,
-            eps_lag_needed=eps_lag_needed,
-            var_lag_needed=var_lag_needed,
+            eps_lag=eps_lag,
+            var_lag=var_lag,
         )
 
-        eps_next = np.sqrt(v_next) * innovations_for_asset[:, h]
+    def variance_step(self, t: int) -> NDArray[np.floating]:
+        """
+        Compute next variance vector v_next for time t.
+        """
+        n_sims = self.eps_ext.shape[0]
+        v_next = np.full(n_sims, self.omega, dtype=float)
 
-        sigma2_paths[:, h] = v_next
-        eps_paths[:, h] = eps_next
+        eps_last = self.eps_lag + t - 1
+        var_last = self.var_lag + t - 1
 
-        _roll_forward_buffers(
-            h=h,
-            eps_next=eps_next,
-            v_next=v_next,
-            eps_ext=eps_ext,
-            var_ext=var_ext,
-            eps_lag_needed=eps_lag_needed,
-            var_lag_needed=var_lag_needed,
+        if self.p > 0:
+            eps_lags = lag_matrix(self.eps_ext, eps_last, self.p)
+            v_next += (eps_lags * eps_lags) @ self.alpha
+
+        if self.o > 0:
+            eps_lags_o = lag_matrix(self.eps_ext, eps_last, self.o)
+            ind = (eps_lags_o < 0.0).astype(float)
+            v_next += (ind * (eps_lags_o * eps_lags_o)) @ self.gamma
+
+        if self.q > 0:
+            var_lags = lag_matrix(self.var_ext, var_last, self.q)
+            v_next += var_lags @ self.beta
+
+        return np.maximum(v_next, self.var_floor)
+
+    def push(
+        self, t: int, eps_next: NDArray[np.floating], var_next: NDArray[np.floating]
+    ) -> None:
+        """
+        Store computed eps and variance into the extended buffers.
+        """
+        if self.eps_lag > 0:
+            self.eps_ext[:, self.eps_lag + t] = eps_next
+        if self.var_lag > 0:
+            self.var_ext[:, self.var_lag + t] = var_next
+
+
+def garch_simulation_paths(
+    *,
+    params: CompiledParams,
+    garch_order: tuple[int, int, int],
+    eps_start: NDArray[np.floating] | None,
+    var_start: NDArray[np.floating] | None,
+    innovations: NDArray[np.floating],
+) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+    innovations, n_sims, horizon = as_sims_by_horizon(innovations)
+
+    sim = GarchSimulator.from_state(
+        params=params,
+        order=garch_order,
+        n_sims=n_sims,
+        horizon=horizon,
+        eps_start=eps_start,
+        var_start=var_start,
+    )
+
+    sigma2 = np.empty((n_sims, horizon), dtype=float)
+    eps = np.empty((n_sims, horizon), dtype=float)
+
+    for t in range(horizon):
+        v_next = sim.variance_step(t)
+        eps_next = np.sqrt(v_next) * innovations[:, t]
+
+        sigma2[:, t] = v_next
+        eps[:, t] = eps_next
+
+        sim.push(t, eps_next, v_next)
+
+    return sigma2, eps
+
+
+@dataclass
+class MeanSimulator:
+    mu: float
+    ar: NDArray[np.floating]
+    ma: NDArray[np.floating]
+    p: int
+    q: int
+    y_ext: NDArray[np.floating]
+    e_ext: NDArray[np.floating]
+
+    @classmethod
+    def from_state(
+        cls,
+        *,
+        params: CompiledParams,
+        order: tuple[int, int],
+        n_sims: int,
+        horizon: int,
+        series_hist: NDArray[np.floating],
+        ma_resid_lags: NDArray[np.floating] | None,
+    ) -> MeanSimulator:
+        p, q = order
+        mu, ar, ma = mean_params(params, order)
+
+        if p > 0 and series_hist.size < p:
+            raise ValueError(f"Need at least {p} series lags, have {series_hist.size}.")
+
+        if q > 0:
+            if ma_resid_lags is None:
+                raise ValueError(f"Need {q} mean residual lags for MA part.")
+            if ma_resid_lags.size < q:
+                raise ValueError(
+                    f"Need {q} mean residual lags, have {ma_resid_lags.size}."
+                )
+        else:
+            ma_resid_lags = np.asarray([], dtype=float)
+
+        y_ext = (
+            np.empty((n_sims, p + horizon), dtype=float)
+            if p > 0
+            else np.empty((n_sims, 0), dtype=float)
+        )
+        e_ext = (
+            np.empty((n_sims, q + horizon), dtype=float)
+            if q > 0
+            else np.empty((n_sims, 0), dtype=float)
         )
 
-    return sigma2_paths, eps_paths
+        if p > 0:
+            y_ext[:, :p] = np.broadcast_to(series_hist[-p:], (n_sims, p))
+        if q > 0:
+            e_ext[:, :q] = np.broadcast_to(ma_resid_lags[-q:], (n_sims, q))
 
+        return cls(mu=mu, ar=ar, ma=ma, p=p, q=q, y_ext=y_ext, e_ext=e_ext)
 
-def _extract_and_validate_mean_params(
-    params: CompiledParams, arma_order: tuple[int, int]
-) -> tuple[float, NDArray[np.floating], NDArray[np.floating]]:
-    mu = float(params.mu)
-    ar = np.asarray(params.ar, dtype=float)
-    ma = np.asarray(params.ma, dtype=float)
-    p, q = arma_order
+    def mean_step(self, time: int, eps: NDArray[np.floating]) -> NDArray[np.floating]:
+        """
+        Compute y_next for time t given eps[:, t].
+        """
+        ar_part = 0.0
+        if self.p > 0:
+            y_last = self.p + time - 1
+            y_lags = lag_matrix(self.y_ext, y_last, self.p)
+            ar_part = y_lags @ self.ar
 
-    if ar.size != p:
-        raise ValueError(f"ar size {ar.size} != p {p}")
-    if ma.size != q:
-        raise ValueError(f"ma size {ma.size} != q {q}")
-    return mu, ar, ma
+        ma_part = 0.0
+        if self.q > 0:
+            e_last = self.q + time - 1
+            e_lags = lag_matrix(self.e_ext, e_last, self.q)
+            ma_part = e_lags @ self.ma
 
+        return self.mu + ar_part + ma_part + eps[:, time]
 
-def _determine_mean_buffers(
-    state_series_hist: NDArray[np.floating],
-    state_ma_resid_lags: NDArray[np.floating] | None,
-    p_order: int,
-    q_order: int,
-    horizon: int,
-    n_sims: int,
-) -> tuple[NDArray[np.floating] | None, NDArray[np.floating] | None]:
-    if p_order > 0 and state_series_hist.size < p_order:
-        raise ValueError(
-            f"Need at least {p_order} series lags, have {state_series_hist.size}."
-        )
-
-    if p_order > 0:
-        y_ext = np.empty((n_sims, p_order + horizon), dtype=float)
-        y_ext[:, :p_order] = np.broadcast_to(
-            state_series_hist[-p_order:], (n_sims, p_order)
-        )
-    else:
-        y_ext = None
-
-    if q_order > 0:
-        if state_ma_resid_lags is None:
-            raise ValueError(f"Need {q_order} mean residual lags for MA part.")
-        if state_ma_resid_lags.size < q_order:
-            raise ValueError(
-                f"Need {q_order} mean residual lags, have {state_ma_resid_lags.size}."
-            )
-        e_ext = np.empty((n_sims, q_order + horizon), dtype=float)
-        e_ext[:, :q_order] = np.broadcast_to(
-            state_ma_resid_lags[-q_order:], (n_sims, q_order)
-        )
-    else:
-        e_ext = None
-
-    return y_ext, e_ext
-
-
-def _mean_next(
-    ar: NDArray[np.floating],
-    ma: NDArray[np.floating],
-    e_ext: NDArray[np.floating] | None,
-    eps_paths: NDArray[np.floating],
-    p: int,
-    mu: float,
-    q: int,
-    h: int,
-    y_ext: NDArray[np.floating] | None,
-) -> NDArray[np.floating]:
-    ar_part = 0.0
-    if p > 0:
-        assert y_ext is not None
-        y_last = p + h - 1
-        idx_y = y_last - np.arange(p)
-        y_lags = y_ext[:, idx_y]
-        ar_part = y_lags @ ar
-
-    ma_part = 0.0
-    if q > 0:
-        assert e_ext is not None
-        e_last = q + h - 1
-        idx_e = e_last - np.arange(q)
-        e_lags = e_ext[:, idx_e]
-        ma_part = e_lags @ ma
-
-    return mu + ar_part + ma_part + eps_paths[:, h]
+    def push(
+        self, time: int, y_next: NDArray[np.floating], eps_t: NDArray[np.floating]
+    ) -> None:
+        """
+        Update buffers with the new output and eps (as MA residual).
+        """
+        if self.p > 0:
+            self.y_ext[:, self.p + time] = y_next
+        if self.q > 0:
+            self.e_ext[:, self.q + time] = eps_t
 
 
 def mean_simulation_paths(
+    *,
     params: CompiledParams,
     mean_kind: str,
     mean_order: tuple[int, int],
@@ -295,79 +536,62 @@ def mean_simulation_paths(
     state_ma_resid_lags: NDArray[np.floating] | None,
     eps_paths: NDArray[np.floating],
 ) -> NDArray[np.floating]:
-    eps_paths, n_sims, horizon = _validate_horizon_and_get_shape(eps_paths)
-    mu, ar, ma = _extract_and_validate_mean_params(params=params, arma_order=mean_order)
-    p, q = mean_order
+    eps_paths, n_sims, horizon = as_sims_by_horizon(eps_paths)
 
     if mean_kind == "none":
         return eps_paths.copy()
+
+    mu, _, _ = mean_params(params, mean_order)
+
     if mean_kind == "demean":
         return (mu + eps_paths).copy()
+
     if mean_kind != "arma":
         raise ValueError(f"Unknown mean_kind: {mean_kind}")
 
-    y_paths = np.empty((n_sims, horizon), dtype=float)
-
-    y_ext, e_ext = _determine_mean_buffers(
-        state_series_hist=state_series_hist,
-        state_ma_resid_lags=state_ma_resid_lags,
-        p_order=p,
-        q_order=q,
-        horizon=horizon,
+    simulation = MeanSimulator.from_state(
+        params=params,
+        order=mean_order,
         n_sims=n_sims,
+        horizon=horizon,
+        series_hist=state_series_hist,
+        ma_resid_lags=state_ma_resid_lags,
     )
 
-    for h in range(horizon):
-        y_next = _mean_next(
-            ar=ar,
-            ma=ma,
-            e_ext=e_ext,
-            eps_paths=eps_paths,
-            p=p,
-            mu=mu,
-            q=q,
-            h=h,
-            y_ext=y_ext,
-        )
+    simulation_results = np.empty((n_sims, horizon), dtype=float)
+    for time in range(horizon):
+        y_next = simulation.mean_step(time, eps_paths)
+        simulation_results[:, time] = y_next
+        simulation.push(time, y_next, eps_paths[:, time])
 
-        y_paths[:, h] = y_next
-
-        if p > 0:
-            assert y_ext is not None
-            y_ext[:, p + h] = y_next
-        if q > 0:
-            assert e_ext is not None
-            e_ext[:, q + h] = eps_paths[:, h]
-
-    return y_paths
+    return simulation_results
 
 
 def simulate_asset_paths(
-    forecast_model: ForecastModel, innovations: NDArray[np.floating]
-):
+    forecast_model: ForecastModel,
+    innovations: NDArray[np.floating],
+) -> NDArray[np.floating]:
     model = forecast_model.model
-    model_parameters = model.compile_params()
+    params = model.compile_params()
     state0 = forecast_model.state0
-    innovations = _ensure_2d(innovations)
-    n_sims, horizon = innovations.shape
-    if horizon < 1:
-        raise ValueError("horizon must be >= 1")
+
+    innovations, n_sims, horizon = as_sims_by_horizon(innovations)
 
     if model.vol_kind == "none":
         eps_paths = innovations
     elif model.vol_kind == "garch":
-        sigma2_paths, eps_paths = garch_simulation_paths(
-            params=model_parameters,
+        _, eps_paths = garch_simulation_paths(
+            params=params,
             garch_order=model.vol_order,
             eps_start=state0.vol_residual_lags,
             var_start=state0.var_hist,
-            innovations_for_asset=innovations,
+            innovations=innovations,
         )
     else:
         raise ValueError(f"Unknown vol_kind: {model.vol_kind}")
 
     y_paths = mean_simulation_paths(
-        params=model_parameters,
+        params=params,
         mean_kind=model.mean_kind,
         mean_order=model.mean_order,
         state_series_hist=state0.series_hist,

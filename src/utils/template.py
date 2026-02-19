@@ -76,33 +76,48 @@ class TestTemplateResult:
 
 
 def synthetic_series(n: int) -> np.ndarray:
-    """
-    Construct a signal containing all requested seasonalities on the Fourier grid,
-    plus AR(1)-flavored noise. Length LCM(5,21,63,126,252)=1260.
-    """
     t = np.arange(n, dtype=float)
     rng = np.random.default_rng(20250112)
 
-    # amplitudes and phases (tuned so all are detectable and not collinear)
     comps = {
-        "weekly": (8.0, SEASONAL_MAP["weekly"], 0.35),
-        "monthly": (6.0, SEASONAL_MAP["monthly"], -1.10),
-        "quarterly": (5.0, SEASONAL_MAP["quarterly"], 2.00),
-        "semi-annual": (4.5, SEASONAL_MAP["semi-annual"], 0.75),
-        "annual": (3.5, SEASONAL_MAP["annual"], -2.20),
+        "weekly": (0.0030, SEASONAL_MAP["weekly"], 0.35),
+        "monthly": (0.0022, SEASONAL_MAP["monthly"], -1.10),
+        "quarterly": (0.0018, SEASONAL_MAP["quarterly"], 2.00),
+        "semi-annual": (0.0015, SEASONAL_MAP["semi-annual"], 0.75),
+        "annual": (0.0012, SEASONAL_MAP["annual"], -2.20),
     }
 
-    x = np.zeros(n, dtype=float)
+    mu = np.zeros(n, dtype=float)
     for amp, period, phase in comps.values():
-        x += amp * np.sin(2.0 * np.pi * t / period + phase)
+        mu += amp * np.sin(2.0 * np.pi * t / period + phase)
 
-    # AR(1) noise with moderate variance
-    e = rng.normal(0.0, 2.0, size=n)
+    df = 6.0
+    z = rng.standard_t(df, size=n)
+    z /= np.sqrt(df / (df - 2.0))  # normalize to unit variance (df>2)
+
+    omega = 1e-6
+    alpha = 0.08
+    beta = 0.90
+    sigma2 = np.empty(n, dtype=float)
+    eps = np.empty(n, dtype=float)
+
+    sigma2[0] = 1e-4
+    eps[0] = np.sqrt(sigma2[0]) * z[0]
     for i in range(1, n):
-        e[i] += 0.35 * e[i - 1]
+        sigma2[i] = omega + alpha * (eps[i - 1] ** 2) + beta * sigma2[i - 1]
+        eps[i] = np.sqrt(sigma2[i]) * z[i]
 
-    y = x + e
-    return y
+    phi = 0.10
+    r = np.empty(n, dtype=float)
+    r[0] = mu[0] + eps[0]
+    for i in range(1, n):
+        r[i] = mu[i] + phi * (r[i - 1] - mu[i - 1]) + eps[i]
+
+    jump_prob = 0.005
+    jumps = (rng.random(n) < jump_prob) * rng.normal(0.0, 0.03, size=n)
+    r += jumps
+
+    return r
 
 
 def get_template():
