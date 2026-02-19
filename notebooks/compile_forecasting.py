@@ -3,7 +3,7 @@ from methods.forecasting_pipeline import (
     draw_invariant_shock,
     multivariate_forecasting_info,
 )
-from methods.simulation_forecasting import garch_simulation_paths
+from methods.simulation_forecasting import garch_simulation_paths, mean_simulation_paths
 from utils.template import get_template, synthetic_series
 
 # %%
@@ -32,10 +32,23 @@ invariant_shock, prob = draw_invariant_shock(
 )
 innov_aapl = invariant_shock[:, :, 0]  # (n_paths, h)
 
+# %%
 garch_simulation_paths(
     params=params,
     garch_order=aapl_model.model.vol_order,
     innovations_for_asset=innov_aapl,
     var_start=aapl_model.state0.var_hist,
-    eps_start=aapl_model.state0.vol_residual_lags,  # <-- this is the key fix
+    eps_start=aapl_model.state0.vol_residual_lags,
+)
+
+
+# %%
+
+mean_simulation_paths(
+    params=params,
+    mean_kind=aapl_model.model.mean_kind,
+    mean_order=aapl_model.model.mean_order,
+    eps_paths=innov_aapl,
+    state_series_hist=aapl_model.state0.series_hist,
+    state_ma_resid_lags=aapl_model.state0.ma_residual_lags,
 )
