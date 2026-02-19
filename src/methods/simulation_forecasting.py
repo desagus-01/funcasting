@@ -125,7 +125,7 @@ def _next_variance(
         var_lags = var_ext[:, idx]
         v_next += var_lags @ beta
 
-    return v_next
+    return np.maximum(v_next, 1e-12)
 
 
 def _roll_forward_buffers(
@@ -219,25 +219,6 @@ def _extract_and_validate_mean_params(
     return mu, ar, ma
 
 
-def _determine_mean_y_path(
-    mu: float,
-    y_paths: NDArray[np.floating],
-    mean_kind: str,
-    eps_paths: NDArray[np.floating],
-) -> NDArray[np.floating]:
-    if mean_kind == "none":
-        y_paths[:] = eps_paths
-        return y_paths
-
-    if mean_kind == "demean":
-        y_paths[:] = mu + eps_paths
-        return y_paths
-
-    if mean_kind != "arma":
-        raise ValueError(f"Unknown mean_kind: {mean_kind}")
-    return y_paths
-
-
 def _determine_mean_buffers(
     state_series_hist: NDArray[np.floating],
     state_ma_resid_lags: NDArray[np.floating] | None,
@@ -251,7 +232,6 @@ def _determine_mean_buffers(
             f"Need at least {p_order} series lags, have {state_series_hist.size}."
         )
 
-    # y buffer: (n_sims, p + horizon)
     if p_order > 0:
         y_ext = np.empty((n_sims, p_order + horizon), dtype=float)
         y_ext[:, :p_order] = np.broadcast_to(
@@ -277,11 +257,36 @@ def _determine_mean_buffers(
     return y_ext, e_ext
 
 
-def _mean_next():
-    pass
+def _mean_next(
+    ar: NDArray[np.floating],
+    ma: NDArray[np.floating],
+    e_ext: NDArray[np.floating] | None,
+    eps_paths: NDArray[np.floating],
+    p: int,
+    mu: float,
+    q: int,
+    h: int,
+    y_ext: NDArray[np.floating] | None,
+) -> NDArray[np.floating]:
+    ar_part = 0.0
+    if p > 0:
+        assert y_ext is not None
+        y_last = p + h - 1
+        idx_y = y_last - np.arange(p)
+        y_lags = y_ext[:, idx_y]
+        ar_part = y_lags @ ar
+
+    ma_part = 0.0
+    if q > 0:
+        assert e_ext is not None
+        e_last = q + h - 1
+        idx_e = e_last - np.arange(q)
+        e_lags = e_ext[:, idx_e]
+        ma_part = e_lags @ ma
+
+    return mu + ar_part + ma_part + eps_paths[:, h]
 
 
-# TODO : finish this
 def mean_simulation_paths(
     params: CompiledParams,
     mean_kind: str,
@@ -289,16 +294,19 @@ def mean_simulation_paths(
     state_series_hist: NDArray[np.floating],
     state_ma_resid_lags: NDArray[np.floating] | None,
     eps_paths: NDArray[np.floating],
-):
+) -> NDArray[np.floating]:
     innovations_for_asset, n_sims, horizon = _validate_horizon_and_get_shape(eps_paths)
     mu, ar, ma = _extract_and_validate_mean_params(params=params, arma_order=mean_order)
-
     p, q = mean_order
 
+    if mean_kind == "none":
+        return eps_paths.copy()
+    if mean_kind == "demean":
+        return (mu + eps_paths).copy()
+    if mean_kind != "arma":
+        raise ValueError(f"Unknown mean_kind: {mean_kind}")
+
     y_paths = np.empty((n_sims, horizon), dtype=float)
-    y_paths = _determine_mean_y_path(
-        mu=mu, y_paths=y_paths, mean_kind=mean_kind, eps_paths=eps_paths
-    )
 
     y_ext, e_ext = _determine_mean_buffers(
         state_series_hist=state_series_hist,
@@ -308,3 +316,25 @@ def mean_simulation_paths(
         horizon=horizon,
         n_sims=n_sims,
     )
+
+    for h in range(horizon):
+        y_next = _mean_next(
+            ar=ar,
+            ma=ma,
+            e_ext=e_ext,
+            eps_paths=eps_paths,
+            p=p,
+            mu=mu,
+            q=q,
+            h=h,
+            y_ext=y_ext,
+        )
+
+        if p > 0:
+            assert y_ext is not None
+            y_ext[:, p + h] = y_next
+        if q > 0:
+            assert e_ext is not None
+            e_ext[:, q + h] = eps_paths[:, h]
+
+    return y_paths

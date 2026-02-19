@@ -28,12 +28,11 @@ h = 2
 
 params = aapl_model.model.compile_params()
 invariant_shock, prob = draw_invariant_shock(
-    inv_df, assets=["AAPL"], prob_vector=prob_ex, horizon=h, n_sims=n_paths, seed=1
+    inv_df, assets=["AAPL"], prob_vector=prob_ex, horizon=h, n_sims=n_paths, seed=None
 )
 innov_aapl = invariant_shock[:, :, 0]  # (n_paths, h)
 
-# %%
-garch_simulation_paths(
+sigma2_paths, eps_paths = garch_simulation_paths(
     params=params,
     garch_order=aapl_model.model.vol_order,
     innovations_for_asset=innov_aapl,
@@ -42,13 +41,11 @@ garch_simulation_paths(
 )
 
 
-# %%
-
 mean_simulation_paths(
     params=params,
     mean_kind=aapl_model.model.mean_kind,
     mean_order=aapl_model.model.mean_order,
-    eps_paths=innov_aapl,
+    eps_paths=eps_paths,
     state_series_hist=aapl_model.state0.series_hist,
     state_ma_resid_lags=aapl_model.state0.ma_residual_lags,
 )
