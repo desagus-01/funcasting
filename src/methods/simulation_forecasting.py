@@ -1,7 +1,7 @@
 import numpy as np
 from numpy._typing import NDArray
 
-from methods.forecasting_pipeline import CompiledParams
+from methods.forecasting_pipeline import CompiledParams, ForecastModel
 
 
 def _ensure_2d(
@@ -295,7 +295,7 @@ def mean_simulation_paths(
     state_ma_resid_lags: NDArray[np.floating] | None,
     eps_paths: NDArray[np.floating],
 ) -> NDArray[np.floating]:
-    innovations_for_asset, n_sims, horizon = _validate_horizon_and_get_shape(eps_paths)
+    eps_paths, n_sims, horizon = _validate_horizon_and_get_shape(eps_paths)
     mu, ar, ma = _extract_and_validate_mean_params(params=params, arma_order=mean_order)
     p, q = mean_order
 
@@ -330,11 +330,49 @@ def mean_simulation_paths(
             y_ext=y_ext,
         )
 
+        y_paths[:, h] = y_next
+
         if p > 0:
             assert y_ext is not None
             y_ext[:, p + h] = y_next
         if q > 0:
             assert e_ext is not None
             e_ext[:, q + h] = eps_paths[:, h]
+
+    return y_paths
+
+
+def simulate_asset_paths(
+    forecast_model: ForecastModel, innovations: NDArray[np.floating]
+):
+    model = forecast_model.model
+    model_parameters = model.compile_params()
+    state0 = forecast_model.state0
+    innovations = _ensure_2d(innovations)
+    n_sims, horizon = innovations.shape
+    if horizon < 1:
+        raise ValueError("horizon must be >= 1")
+
+    if model.vol_kind == "none":
+        eps_paths = innovations
+    elif model.vol_kind == "garch":
+        sigma2_paths, eps_paths = garch_simulation_paths(
+            params=model_parameters,
+            garch_order=model.vol_order,
+            eps_start=state0.vol_residual_lags,
+            var_start=state0.var_hist,
+            innovations_for_asset=innovations,
+        )
+    else:
+        raise ValueError(f"Unknown vol_kind: {model.vol_kind}")
+
+    y_paths = mean_simulation_paths(
+        params=model_parameters,
+        mean_kind=model.mean_kind,
+        mean_order=model.mean_order,
+        state_series_hist=state0.series_hist,
+        state_ma_resid_lags=state0.ma_residual_lags,
+        eps_paths=eps_paths,
+    )
 
     return y_paths

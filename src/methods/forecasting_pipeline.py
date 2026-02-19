@@ -255,6 +255,108 @@ def _build_innovations_df_from_models(
     return innovations_full
 
 
+def draw_invariant_shock(
+    invariants_df: DataFrame,
+    assets: list[str],
+    prob_vector: ProbVector,
+    horizon: int,
+    n_sims: int,
+    seed: int | None,
+    method: Literal["bootstrap", "historical", "cma"] = "bootstrap",
+    *,
+    target_copula: Literal["t", "norm"] | None = None,
+    copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
+    target_marginals: dict[str, Literal["t", "norm"]] | None = None,
+) -> NDArray[np.floating]:
+    """
+    Draw joint invariant shocks for multiple assets and return a shock tensor.
+
+    Selects `assets` columns from `invariants_df`, drops null rows (with
+    probability re-normalization), optionally updates the joint distribution
+    using CMA, and then produces shocks using either historical scenarios or
+    weighted bootstrap resampling.
+
+    Parameters
+    ----------
+    invariants_df : polars.DataFrame
+        Historical invariants (one column per asset).
+    assets : list[str]
+        Asset columns to draw jointly. Output asset dimension follows this order.
+    prob_vector : ProbVector
+        Scenario probabilities for rows of `invariants_df`.
+    horizon : int
+        Forecast horizon (>= 1).
+    n_sims : int
+        Number of simulated paths (used for bootstrap/cma).
+    seed : int | None
+        RNG seed.
+    method : {"bootstrap", "historical", "cma"}
+        - "historical": return all scenarios as-is
+        - "bootstrap": resample scenarios with replacement using `prob_vector`
+        - "cma": CMA-update distribution, then bootstrap
+    target_copula : {"t", "norm"} | None
+        CMA-only: target copula family.
+    copula_fit_method : {"ml", "irho", "itau"} | None
+        CMA-only: copula fit method (defaults to "itau" if None).
+    target_marginals : dict[str, {"t", "norm"}] | None
+        CMA-only: per-asset marginal targets.
+
+    Returns
+    -------
+    simulated_draws : ndarray[float]
+        Shock tensor:
+        - method="historical": (n_scenarios, 1, n_assets)
+        - method in {"bootstrap","cma"}: (n_sims, horizon, n_assets)
+    prob : ProbVector
+        Probabilities aligned to the scenario rows used internally (after
+        null-dropping and CMA, if applied).
+
+    Raises
+    ------
+    ValueError
+        If horizon < 1, or CMA targets are provided when method != "cma".
+    """
+    if horizon < 1:
+        raise ValueError("horizon must be >= 1")
+
+    invariants_df = invariants_df.select(assets)
+    invariants, prob = drop_nulls_and_compensate_prob(invariants_df, prob_vector)
+
+    if (target_copula is not None or target_marginals is not None) and (
+        method != "cma"
+    ):
+        raise ValueError(
+            "You can only have target_marginal and/or target_copula when method is cma!"
+        )
+
+    if method == "cma":
+        if copula_fit_method is None:
+            print("No copula fit method selected, using itau as default")
+            copula_fit_method = "itau"
+
+        invariants_cma = CopulaMarginalModel.from_data_and_prob(
+            data=invariants, prob=prob
+        )
+
+        invariants, prob = invariants_cma.update_distribution(
+            seed=seed,
+            target_marginals=target_marginals,
+            target_copula=target_copula,
+            copula_fit_method=copula_fit_method,
+        )
+
+    invariants_vector = invariants.to_numpy()
+
+    if method == "historical":
+        simulated_draws = invariants_vector[:, None, :]
+        return simulated_draws
+
+    n_draws = n_sims * horizon
+    idx = weighted_bootstrapping_idx(invariants, prob, n_samples=n_draws, seed=seed)
+    simulated_draws = invariants_vector[idx].reshape(n_sims, horizon, len(assets))
+    return simulated_draws
+
+
 # TODO: make this more specific
 def multivariate_forecasting_info(
     data: DataFrame, assets: list[str] | None = None
@@ -395,108 +497,6 @@ def conditional_variance_next(form: UnivariateModel, state: UnivariateState) -> 
             variance_hist=state.var_hist,
         )
     raise ValueError(f"Unknown vol_kind: {form.vol_kind}")
-
-
-def draw_invariant_shock(
-    invariants_df: DataFrame,
-    assets: list[str],
-    prob_vector: ProbVector,
-    horizon: int,
-    n_sims: int,
-    seed: int | None,
-    method: Literal["bootstrap", "historical", "cma"] = "bootstrap",
-    *,
-    target_copula: Literal["t", "norm"] | None = None,
-    copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
-    target_marginals: dict[str, Literal["t", "norm"]] | None = None,
-) -> tuple[NDArray[np.floating], ProbVector]:
-    """
-    Draw joint invariant shocks for multiple assets and return a shock tensor.
-
-    Selects `assets` columns from `invariants_df`, drops null rows (with
-    probability re-normalization), optionally updates the joint distribution
-    using CMA, and then produces shocks using either historical scenarios or
-    weighted bootstrap resampling.
-
-    Parameters
-    ----------
-    invariants_df : polars.DataFrame
-        Historical invariants (one column per asset).
-    assets : list[str]
-        Asset columns to draw jointly. Output asset dimension follows this order.
-    prob_vector : ProbVector
-        Scenario probabilities for rows of `invariants_df`.
-    horizon : int
-        Forecast horizon (>= 1).
-    n_sims : int
-        Number of simulated paths (used for bootstrap/cma).
-    seed : int | None
-        RNG seed.
-    method : {"bootstrap", "historical", "cma"}
-        - "historical": return all scenarios as-is
-        - "bootstrap": resample scenarios with replacement using `prob_vector`
-        - "cma": CMA-update distribution, then bootstrap
-    target_copula : {"t", "norm"} | None
-        CMA-only: target copula family.
-    copula_fit_method : {"ml", "irho", "itau"} | None
-        CMA-only: copula fit method (defaults to "itau" if None).
-    target_marginals : dict[str, {"t", "norm"}] | None
-        CMA-only: per-asset marginal targets.
-
-    Returns
-    -------
-    simulated_draws : ndarray[float]
-        Shock tensor:
-        - method="historical": (n_scenarios, 1, n_assets)
-        - method in {"bootstrap","cma"}: (n_sims, horizon, n_assets)
-    prob : ProbVector
-        Probabilities aligned to the scenario rows used internally (after
-        null-dropping and CMA, if applied).
-
-    Raises
-    ------
-    ValueError
-        If horizon < 1, or CMA targets are provided when method != "cma".
-    """
-    if horizon < 1:
-        raise ValueError("horizon must be >= 1")
-
-    invariants_df = invariants_df.select(assets)
-    invariants, prob = drop_nulls_and_compensate_prob(invariants_df, prob_vector)
-
-    if (target_copula is not None or target_marginals is not None) and (
-        method != "cma"
-    ):
-        raise ValueError(
-            "You can only have target_marginal and/or target_copula when method is cma!"
-        )
-
-    if method == "cma":
-        if copula_fit_method is None:
-            print("No copula fit method selected, using itau as default")
-            copula_fit_method = "itau"
-
-        invariants_cma = CopulaMarginalModel.from_data_and_prob(
-            data=invariants, prob=prob
-        )
-
-        invariants, prob = invariants_cma.update_distribution(
-            seed=seed,
-            target_marginals=target_marginals,
-            target_copula=target_copula,
-            copula_fit_method=copula_fit_method,
-        )
-
-    invariants_vector = invariants.to_numpy()
-
-    if method == "historical":
-        simulated_draws = invariants_vector[:, None, :]
-        return simulated_draws, prob
-
-    n_draws = n_sims * horizon
-    idx = weighted_bootstrapping_idx(invariants, prob, n_samples=n_draws, seed=seed)
-    simulated_draws = invariants_vector[idx].reshape(n_sims, horizon, len(assets))
-    return simulated_draws, prob
 
 
 #
