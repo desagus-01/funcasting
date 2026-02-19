@@ -29,5 +29,4 @@ forecasts = run_n_steps_forecast(
 for asset, res in forecasts.items():
     logP_paths = 0.0 + np.cumsum(res, axis=1)
     paths = np.exp(logP_paths)
-
     plot_simulation_results(paths, title=f"{asset}")
