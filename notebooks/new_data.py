@@ -3,6 +3,7 @@ import logging
 import os
 from typing import Any, Literal
 
+import matplotlib.pyplot as plt
 import polars as pl
 import requests
 from dotenv import load_dotenv
@@ -112,9 +113,40 @@ def get_ticker_prices(
     return df
 
 
-# %%
-# example
-df = get_ticker_prices(start_date="2026-01-01", tickers=["AAPL", "MSFT"])
+def plot_ticker_lines(
+    df: pl.DataFrame,
+    date_column: str = "date",
+    value_column: str = "adj_close",
+    ticker_column: str = "ticker",
+):
+    tickers = df.select(pl.col(ticker_column).unique()).to_series().to_list()
+    figs_axes = []
+
+    for ticker in tickers:
+        ticker_df = df.filter(pl.col(ticker_column) == ticker).sort(date_column)
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.plot(
+            ticker_df[date_column].to_list(),
+            ticker_df[value_column].to_list(),
+            linewidth=1.5,
+        )
+
+        ax.set_title(f"{ticker} {value_column} over time")
+        ax.set_xlabel("Date")
+        ax.set_ylabel(value_column)
+        ax.grid(True, alpha=0.3)
+        fig.autofmt_xdate()
+        plt.tight_layout()
+        plt.show()
+
+        figs_axes.append((ticker, fig, ax))
+
+    return figs_axes
+
 
 # %%
-df.columns
+df = get_ticker_prices(start_date="2018-01-01", tickers=["AAPL", "MSFT"])
+
+# %%
+plot_ticker_lines(df)
