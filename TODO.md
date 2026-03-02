@@ -2,11 +2,11 @@
 > [!ATTENTION] Update data with ADJUSTED prices (yfinance for now)
 
 ## Priority
-- [ ] Hybrid Monte Carlo-historical (47.6.6)
 - [ ] Sit down and figure our dataypes
 - [ ] Clean up all the polars-numpy conversion madness
-- [ ] Copula Marginal Forecasting
 - [ ] 'Re-pricing'
+
+**Clean uo todos**
 
 
 ## Lower Priority

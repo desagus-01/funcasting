@@ -17,7 +17,7 @@ forecasts = run_n_steps_forecast(
     data=data,
     prob=prob_ex,
     horizon=100,
-    n_sims=1000,
+    n_sims=10000,
     seed=1,
     assets=["AAPL", "GOOG", "MSFT", "fake"],
     method="cma",
@@ -26,7 +26,18 @@ forecasts = run_n_steps_forecast(
 
 # %%
 
+forecasts
+# %%
+
 for asset, res in forecasts.items():
-    logP_paths = 0.0 + np.cumsum(res, axis=1)
+    x0 = data.select(asset).to_numpy()[-1, 0]
+    logP_paths = x0 + np.cumsum(res, axis=1)
     paths = np.exp(logP_paths)
     plot_simulation_results(paths, title=f"{asset}")
+
+
+# %%
+assets = ["AAPL", "GOOG", "MSFT", "fake"]
+s = 99  # zero-based index for step 100
+
+J = np.column_stack([forecasts[a][:, s] for a in assets])
