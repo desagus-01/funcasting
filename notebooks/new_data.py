@@ -146,7 +146,7 @@ def plot_ticker_lines(
 
 
 # %%
-df = get_ticker_prices(start_date="2018-01-01", tickers=["AAPL", "MSFT"])
+df = get_ticker_prices(start_date="2018-01-01", tickers=["AAPL", "MSFT", "GOOG"])
 
 # %%
 plot_ticker_lines(df)
