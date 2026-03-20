@@ -52,9 +52,15 @@ def run_harmonic_regression(
 
 def deterministic_seasonal_adjustment(
     data: DataFrame, asset: str, frequency_radians: list[float]
-) -> dict[str, list[float]]:
+) -> pl.DataFrame:
+    asset_df = data.select(["date", asset]).drop_nulls()
+
     harmonic_residuals = run_harmonic_regression(
-        data=data, asset=asset, frequency_radians=frequency_radians
+        data=asset_df,
+        asset=asset,
+        frequency_radians=frequency_radians,
     ).residuals.ravel()
 
-    return {asset: harmonic_residuals.tolist()}
+    return asset_df.select("date").with_columns(
+        pl.Series(name=asset, values=harmonic_residuals)
+    )

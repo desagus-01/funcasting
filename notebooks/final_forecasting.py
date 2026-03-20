@@ -1,16 +1,13 @@
 import numpy as np
+import polars as pl
 
 from maths.distributions import uniform_probs
 from methods.forecasting_pipeline import run_n_steps_forecast
-from utils.template import get_template, synthetic_series
 from utils.visuals import plot_simulation_results
 
 # %%
-
-data = get_template().asset_info.risk_drivers
-series = synthetic_series(data.height)
-data = data.with_columns(fake=series)
-
+data = pl.read_csv("./data/tiingo_sample.csv")
+print(data)
 # %%
 prob_ex = uniform_probs(data.height)
 forecasts = run_n_steps_forecast(
@@ -19,14 +16,12 @@ forecasts = run_n_steps_forecast(
     horizon=100,
     n_sims=10000,
     seed=1,
-    assets=["AAPL", "GOOG", "MSFT", "fake"],
-    method="cma",
-    target_copula="t",
+    assets=["SMBC"],
+    method="bootstrap",
+    # target_copula="t",
 )
 
-# %%
 
-forecasts
 # %%
 
 for asset, res in forecasts.items():
@@ -37,7 +32,7 @@ for asset, res in forecasts.items():
 
 
 # %%
-assets = ["AAPL", "GOOG", "MSFT", "fake"]
+assets = [column for column in data.columns if column != "date"]
 s = 99  # zero-based index for step 100
 
 J = np.column_stack([forecasts[a][:, s] for a in assets])

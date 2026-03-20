@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from typing import Callable, Literal
 
@@ -26,6 +27,12 @@ from models.types import ProbVector
 from utils.helpers import (
     get_assets_names,
 )
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -88,7 +95,6 @@ def _run_pipeline(
     diagnostic = diagnostic_fn(data=data, assets=assets, **diag_kwargs)
 
     # 2) decide
-    # (Trend decision often needs assets order; seasonality doesn’t—this signature stays flexible)
     decision = decision_rule(diagnostic, assets=assets)
 
     # 3) apply — let your apply_* do the batching/fusing
@@ -330,16 +336,21 @@ def _deseason_apply(
     if not assets:
         return data.select(["date"])
 
-    deseasoned = {}
+    out = data.select(["date"])
+
     for asset in assets:
         seasons = decision[asset]
         omega = [rad for _, rad in seasons]
-        deseasoned[asset] = deterministic_seasonal_adjustment(
-            data, asset=asset, frequency_radians=omega
-        )[asset]
 
-    return data.select(["date"]).hstack(pl.DataFrame(deseasoned))
-    # return pl.DataFrame(deseasoned)
+        adj = deterministic_seasonal_adjustment(
+            data=data,
+            asset=asset,
+            frequency_radians=omega,
+        )
+
+        out = out.join(adj, on="date", how="left")
+
+    return out
 
 
 def deseason_pipeline(
@@ -442,7 +453,6 @@ def overwrite_with_transforms(
     assets: list[str],
     suffix: str,
 ) -> pl.DataFrame:
-    # Join patch, keeping patch columns accessible with a suffix
     j = base.join(patch, on="date", how="left", suffix=suffix)
 
     exprs: list[pl.Expr] = []
@@ -473,13 +483,21 @@ def run_univariate_preprocess(
     Returns:
       UnivariatePreprocess
     """
+
     if assets is None:
         assets = get_assets_names(df=data, assets=assets)
 
-    increments_df = _diff_assets(data, assets)
+    logger.info(
+        "Starting univariate preprocess: rows=%d assets=%s",
+        data.height,
+        assets,
+    )
 
+    increments_df = _diff_assets(data, assets)
     assets_need_preprocess = _find_nonwhite_noise_assets(increments_df, assets)
+
     if not assets_need_preprocess:
+        logger.info("No preprocessing needed")
         return UnivariatePreprocess(data, {"trend": {}, "deseason": {}}, [])
 
     # Trend
@@ -488,15 +506,20 @@ def run_univariate_preprocess(
         assets=assets_need_preprocess,
         include_diagnostics=False,
     )
+    logger.info("Detrend decisions: %s", detrend.decision)
+
     after_detrend = overwrite_with_transforms(
         base=data, patch=detrend.updated_data, assets=assets, suffix="_detrend"
     )
 
+    # Seasonality
     deseason = deseason_pipeline(
-        data=detrend.updated_data,
+        data=after_detrend.select(["date", *assets]),
         assets=assets_need_preprocess,
         include_diagnostics=False,
     )
+    logger.info("Deseason decisions: %s", deseason.decision)
+
     final = overwrite_with_transforms(
         base=after_detrend,
         patch=deseason.updated_data,
@@ -505,4 +528,10 @@ def run_univariate_preprocess(
     )
 
     pipeline_decisions = {"trend": detrend.decision, "deseason": deseason.decision}
+
+    logger.info(
+        "Finished univariate preprocess: transformed_assets=%s",
+        assets_need_preprocess,
+    )
+
     return UnivariatePreprocess(final, pipeline_decisions, assets_need_preprocess)
