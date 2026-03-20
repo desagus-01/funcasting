@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from typing import Mapping
 
@@ -16,6 +17,8 @@ from maths.time_series.models import (
     auto_garch,
     by_criteria,
 )
+
+logger = logging.getLogger(__name__)
 
 MeanModelRes = AutoARMARes | DemeanRes
 
@@ -49,6 +52,32 @@ class UnivariateRes:
                 f"vs non_null_values={non_null_values.shape[0]} "
             )
         return invariant.astype(float)
+
+
+def _describe_mean_model(res: MeanModelRes | None) -> str:
+    if res is None:
+        return "random_walk"
+
+    if isinstance(res, DemeanRes):
+        return "demean"
+
+    if isinstance(res, AutoARMARes):
+        return f"ARMA{res.model_order}"
+
+    return type(res).__name__
+
+
+def _describe_vol_model(res: AutoGARCHRes | None) -> str:
+    if res is None:
+        return "none"
+
+    return f"GARCH{res.model_order}"
+
+
+def describe_univariate_result(res: UnivariateRes) -> str:
+    mean_label = _describe_mean_model(res.mean_res)
+    vol_label = _describe_vol_model(res.volatility_res)
+    return f"mean={mean_label}, vol={vol_label}"
 
 
 # TODO: Move to a more appropriate place
@@ -180,8 +209,10 @@ def run_best_arma(
             model.residuals, degrees_of_freedom=model.degrees_of_freedom
         ):
             return model
-    print(
-        f"Mean Modelling - For {asset_name} No model's residual has passed the ljung box test, please review your model, returning model with best information criteria for now."
+    logger.warning(
+        "Asset=%s no ARMA candidate passed residual diagnostics; falling back to best %s model",
+        asset_name,
+        information_criteria.upper(),
     )
 
     return min(candidate_models_res, key=by_criteria)
@@ -208,8 +239,9 @@ def run_best_garch(
             arch_lags=[5, 10, 15],
         ):
             return model
-    print(
-        f"Volatility Modelling - for {asset_name} No model's residual has passed the ljung box test, please review your model, returning model with best information criteria for now."
+    logger.warning(
+        "Asset=%s no GARCH candidate passed residual diagnostics; falling back to best information-criterion model",
+        asset_name,
     )
 
     return min(candidate_models_res, key=by_criteria)
@@ -225,22 +257,31 @@ def mean_modelling_pipeline(
     """
     assets_needing_arma = needs_mean_modelling(
         data=data, assets_to_test=assets, degrees_of_freedom=0
-    )  # At this point DOF is 0
+    )
+
     asset_mean_model_res: dict[str, MeanModelRes] = {}
     for asset in assets:
-        array = (
-            data.select(asset).drop_nulls().to_numpy().ravel()
-        )  # drop null if asset contains any
+        array = data.select(asset).drop_nulls().to_numpy().ravel()
+
         if asset in assets_needing_arma:
-            asset_mean_model_res[asset] = run_best_arma(array, asset_name=asset)
+            res = run_best_arma(array, asset_name=asset)
+            asset_mean_model_res[asset] = res
+            logger.info(
+                "Selected mean model for %s: %s", asset, _describe_mean_model(res)
+            )
         else:
             mean = array.mean().item()
-            asset_mean_model_res[asset] = DemeanRes(
+            res = DemeanRes(
                 model_order=None,
                 degrees_of_freedom=0,
                 params={"mean": mean},
                 residuals=array - mean,
             )
+            asset_mean_model_res[asset] = res
+            logger.info(
+                "Selected mean model for %s: %s", asset, _describe_mean_model(res)
+            )
+
     return asset_mean_model_res
 
 
@@ -248,10 +289,14 @@ def volatility_modelling_pipeline(
     mean_model_res: Mapping[str, MeanModelRes],
 ):
     assets_needing_garch = needs_volatility_modelling(mean_model_res)
+    logger.info("Assets needing volatility modelling: %s", assets_needing_garch)
+
     asset_vol_model_res = {}
     for asset in assets_needing_garch:
-        asset_vol_model_res[asset] = run_best_garch(
-            mean_model_res[asset].residuals, asset
+        res = run_best_garch(mean_model_res[asset].residuals, asset)
+        asset_vol_model_res[asset] = res
+        logger.info(
+            "Selected volatility model for %s: %s", asset, _describe_vol_model(res)
         )
 
     return asset_vol_model_res
@@ -262,12 +307,19 @@ def get_univariate_results(
 ) -> dict[str, UnivariateRes]:
     mean_modelling = mean_modelling_pipeline(data=data, assets=assets_to_model)
     volatility_modelling = volatility_modelling_pipeline(mean_model_res=mean_modelling)
+
     all_assets = [c for c in data.columns if c != "date"]
     asset_model = {}
+
     for asset in all_assets:
         asset_model[asset] = UnivariateRes(
             mean_res=mean_modelling.get(asset),
             volatility_res=volatility_modelling.get(asset),
+        )
+        logger.info(
+            "Final univariate result for %s: %s",
+            asset,
+            describe_univariate_result(asset_model[asset]),
         )
 
     return asset_model

@@ -1,3 +1,4 @@
+import logging
 from functools import reduce
 from typing import Literal, Mapping
 
@@ -20,14 +21,22 @@ from methods.simulation_forecasting import (
 from models.types import ProbVector
 from utils.helpers import drop_nulls_and_compensate_prob
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 
 def _build_innovations_df_from_models(
     post: DataFrame,
     model_map: dict[str, UnivariateRes],
-    assets=None,
+    assets: list[str] | None = None,
 ) -> DataFrame:
     if assets is None:
         assets = [c for c in post.columns if c != "date"]
+
+    logger.info("Building innovations dataframe for assets=%s", assets)
 
     base = post.select("date")
     patches: list[pl.DataFrame] = []
@@ -40,11 +49,15 @@ def _build_innovations_df_from_models(
         invariant = model.invariant(non_null_values)
 
         patch = used_dates.with_columns(pl.Series(asset, invariant))
-
         patches.append(patch)
 
     innovations_full = reduce(
         lambda acc, p: acc.join(p, on="date", how="left"), patches, base
+    )
+
+    logger.info(
+        "Built innovations dataframe with shape=%s",
+        innovations_full.shape,
     )
     return innovations_full
 
@@ -62,74 +75,46 @@ def draw_innovations(
     copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
     target_marginals: dict[str, Literal["t", "norm"]] | None = None,
 ) -> NDArray[np.floating]:
-    """
-    Draw joint invariant shocks for multiple assets and return a shock tensor.
-
-    Selects `assets` columns from `invariants_df`, drops null rows (with
-    probability re-normalization), optionally updates the joint distribution
-    using CMA, and then produces shocks using either historical scenarios or
-    weighted bootstrap resampling.
-
-    Parameters
-    ----------
-    invariants_df : polars.DataFrame
-        Historical invariants (one column per asset).
-    assets : list[str]
-        Asset columns to draw jointly. Output asset dimension follows this order.
-    prob_vector : ProbVector
-        Scenario probabilities for rows of `invariants_df`.
-    horizon : int
-        Forecast horizon (>= 1).
-    n_sims : int
-        Number of simulated paths (used for bootstrap/cma).
-    seed : int | None
-        RNG seed.
-    method : {"bootstrap", "historical", "cma"}
-        - "historical": return all scenarios as-is
-        - "bootstrap": resample scenarios with replacement using `prob_vector`
-        - "cma": CMA-update distribution, then bootstrap
-    target_copula : {"t", "norm"} | None
-        CMA-only: target copula family.
-    copula_fit_method : {"ml", "irho", "itau"} | None
-        CMA-only: copula fit method (defaults to "itau" if None).
-    target_marginals : dict[str, {"t", "norm"}] | None
-        CMA-only: per-asset marginal targets.
-
-    Returns
-    -------
-    simulated_draws : ndarray[float]
-        Shock tensor:
-        - method="historical": (n_scenarios, 1, n_assets)
-        - method in {"bootstrap","cma"}: (n_sims, horizon, n_assets)
-    prob : ProbVector
-        Probabilities aligned to the scenario rows used internally (after
-        null-dropping and CMA, if applied).
-
-    Raises
-    ------
-    ValueError
-        If horizon < 1, or CMA targets are provided when method != "cma".
-    """
     if horizon < 1:
         raise ValueError("horizon must be >= 1")
+
+    logger.info(
+        "Drawing innovations with method=%s, horizon=%d, n_sims=%d, assets=%s",
+        method,
+        horizon,
+        n_sims,
+        assets,
+    )
 
     invariants_df = invariants_df.select(assets)
     invariants, prob = drop_nulls_and_compensate_prob(invariants_df, prob_vector)
 
-    if (target_copula is not None or target_marginals is not None) and (
-        method != "cma"
-    ):
+    logger.info(
+        "Prepared invariant scenarios after null handling: n_scenarios=%d",
+        invariants.height,
+    )
+
+    if (target_copula is not None or target_marginals is not None) and method != "cma":
         raise ValueError(
             "You can only have target_marginal and/or target_copula when method is cma!"
         )
 
     if method == "cma":
         if copula_fit_method is None:
-            print("No copula fit method selected, using itau as default")
             copula_fit_method = "itau"
+            logger.info(
+                "No copula_fit_method provided; defaulting to '%s'", copula_fit_method
+            )
+
+        logger.info(
+            "Applying CMA update with target_copula=%s target_marginals=%s",
+            target_copula,
+            target_marginals,
+        )
 
         invariants_cma = CopulaMarginalModel.from_data_and_prob(
-            data=invariants, prob=prob
+            data=invariants,
+            prob=prob,
         )
 
         invariants, prob = invariants_cma.update_distribution(
@@ -139,15 +124,27 @@ def draw_innovations(
             copula_fit_method=copula_fit_method,
         )
 
+        logger.info("CMA update complete: n_scenarios=%d", invariants.height)
+
     invariants_vector = invariants.to_numpy()
 
     if method == "historical":
+        logger.info("Returning historical innovations without resampling")
         simulated_draws = invariants_vector[:, None, :]
         return simulated_draws
 
     n_draws = n_sims * horizon
-    idx = weighted_bootstrapping_idx(invariants, prob, n_samples=n_draws, seed=seed)
+    logger.info("Bootstrapping %d innovation draws", n_draws)
+
+    idx = weighted_bootstrapping_idx(
+        invariants,
+        prob,
+        n_samples=n_draws,
+        seed=seed,
+    )
     simulated_draws = invariants_vector[idx].reshape(n_sims, horizon, len(assets))
+
+    logger.info("Innovation draw complete with output shape=%s", simulated_draws.shape)
     return simulated_draws
 
 
@@ -162,6 +159,8 @@ def get_assets_models(
         else [c for c in post_process_df.columns if c != "date"]
     )
 
+    logger.info("Building forecast models for assets=%s", assets_)
+
     forecast_models: dict[str, ForecastModel] = {}
     for asset in assets_:
         post_series_non_null = (
@@ -172,10 +171,10 @@ def get_assets_models(
             post_series_non_null=post_series_non_null,
         )
 
+    logger.info("Built forecast models for %d assets", len(assets_))
     return forecast_models
 
 
-# TODO: make better name, this is shit
 def run_n_steps_forecast(
     data: DataFrame,
     prob: ProbVector,
@@ -189,6 +188,14 @@ def run_n_steps_forecast(
     copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
     target_marginals: dict[str, Literal["t", "norm"]] | None = None,
 ):
+    logger.info(
+        "Starting n-step forecast: assets=%s horizon=%d n_sims=%d method=%s seed=%s",
+        assets,
+        horizon,
+        n_sims,
+        method,
+        seed,
+    )
 
     if (horizon > 1) and (method == "historical"):
         raise ValueError(
@@ -196,20 +203,31 @@ def run_n_steps_forecast(
         )
 
     post_process = run_univariate_preprocess(data=data, assets=assets)
+    logger.info(
+        "Preprocessing complete: post_data_shape=%s assets_to_model=%s",
+        post_process.post_data.shape,
+        post_process.needs_further_modelling,
+    )
 
     univariate_results = get_univariate_results(
         data=post_process.post_data,
         assets_to_model=post_process.needs_further_modelling,
     )
+    logger.info(
+        "Univariate model selection complete for %d assets",
+        len(post_process.needs_further_modelling),
+    )
 
     assets_models = get_assets_models(
         post_process_df=post_process.post_data,
         assets_univariate_result=univariate_results,
+        assets=assets,
     )
 
     invariants_df = _build_innovations_df_from_models(
         post=post_process.post_data,
         model_map=univariate_results,
+        assets=assets,
     )
 
     innovations = draw_innovations(
@@ -225,10 +243,14 @@ def run_n_steps_forecast(
         copula_fit_method=copula_fit_method,
     )
 
+    logger.info("Simulating asset paths for %d assets", len(assets))
+
     assets_forecasts = {}
     for i, asset in enumerate(assets):
         assets_forecasts[asset] = simulate_asset_paths(
-            forecast_model=assets_models[asset], innovations=innovations[:, :, i]
+            forecast_model=assets_models[asset],
+            innovations=innovations[:, :, i],
         )
 
+    logger.info("Forecast complete")
     return assets_forecasts
