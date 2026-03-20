@@ -324,7 +324,3 @@ def clean_and_save_sample(sample_df: pl.DataFrame, path_to_save: str) -> None:
     )
 
     clean_df.write_csv(path_to_save)
-
-
-ex = get_sampled_ticker_prices(n_tickers=2)
-clean_and_save_sample(ex, "./data/tiingo_sample.csv")
