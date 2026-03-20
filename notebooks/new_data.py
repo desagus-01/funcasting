@@ -1,6 +1,7 @@
 # %%
 import logging
 import os
+from datetime import date, timedelta
 from typing import Any, Literal
 
 import matplotlib.pyplot as plt
@@ -132,8 +133,7 @@ def plot_ticker_lines(
             linewidth=1.5,
         )
 
-        ax.set_title(f"{ticker} {value_column} over time")
-        ax.set_xlabel("Date")
+        ax.set_title(f"{ticker}")
         ax.set_ylabel(value_column)
         ax.grid(True, alpha=0.3)
         fig.autofmt_xdate()
@@ -146,7 +146,32 @@ def plot_ticker_lines(
 
 
 # %%
-df = get_ticker_prices(start_date="2018-01-01", tickers=["AAPL", "MSFT", "GOOG"])
+df = get_ticker_prices(start_date="2010-01-01", tickers=["AAPL", "MSFT", "GOOG"])
 
 # %%
-plot_ticker_lines(df)
+df = df.with_columns(lg_adj_close=pl.col("adj_close").log())
+
+plot_ticker_lines(df, value_column="lg_adj_close")
+
+# %%
+tiingo_tickers = pl.read_csv("./data/supported_tickers.csv", try_parse_dates=True)
+
+# %%
+
+
+def previous_business_day(d: date) -> date:
+    d = d - timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
+
+
+target_enddate = previous_business_day(date.today())
+
+nas_uni = tiingo_tickers.filter(
+    (pl.col("priceCurrency") == "USD")
+    & (pl.col("exchange") == "NASDAQ")
+    & (pl.col("assetType") == "Stock")
+    & pl.col("startDate").is_not_null()
+    & (pl.col("endDate") == pl.lit(target_enddate))
+)
