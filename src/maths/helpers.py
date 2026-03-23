@@ -18,61 +18,71 @@ class AutoCorrelation:
 
 
 def deterministic_detrend(
-    data: NDArray[np.floating], polynomial_order: int = 1, axis: int = 0
+    data: NDArray[np.floating],
+    polynomial_order: int = 1,
+    axis: int = 0,
 ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
-    """
-    Fits a deterministic polynomial trend and subtracts it from the data.
+    if data.ndim > 2:
+        raise NotImplementedError("data.ndim > 2 is not implemented.")
 
-    Returns
-    -------
-    resid : detrended data
-    fitted_trend : the trend that was subtracted, which can be added back later
-    """
     transposed = False
 
-    if data.ndim == 2 and int(axis) == 1:
+    if data.ndim == 2 and axis == 1:
         data = data.T
         transposed = True
-    elif data.ndim > 2:
-        raise NotImplementedError("data.ndim > 2 is not implemented until it is needed")
 
-    if polynomial_order == 0:  # Special case, just de-mean
-        fitted_trend = np.broadcast_to(data.mean(axis=0), data.shape)
-        resid = data - fitted_trend
+    if polynomial_order < 0:
+        raise ValueError("polynomial_order must be >= 0")
+
+    if polynomial_order == 0:
+        beta = data.mean(axis=0)
+        fitted_trend = np.broadcast_to(beta, data.shape)
     else:
-        trends = np.vander(np.arange(float(data.shape[0])), N=polynomial_order + 1)
-        beta = np.linalg.pinv(trends).dot(data)
-        fitted_trend = np.dot(trends, beta)
-        resid = data - fitted_trend
+        t = np.arange(data.shape[0], dtype=float)
+        trends = np.vander(t, N=polynomial_order + 1)
+        beta = np.linalg.pinv(trends) @ data
+        fitted_trend = trends @ beta
+
+    resid = data - fitted_trend
 
     if transposed:
         resid = resid.T
-        fitted_trend = fitted_trend.T
 
-    return resid, fitted_trend
+    return resid, beta
 
 
 def add_detrend_column(
     original_data: pl.DataFrame,
     assets: list[str] | None = None,
-    polynomial_orders: list[int] = [0, 1, 2, 3],
+    polynomial_orders: list[int] | None = None,
 ) -> tuple[pl.DataFrame, dict[int, dict[str, NDArray[np.floating]]]]:
     if assets is None:
         assets = original_data.select(cs.numeric()).columns
 
+    if polynomial_orders is None:
+        polynomial_orders = [0, 1, 2, 3]
+
     asset_arrays = original_data.select(assets).to_numpy()
 
-    new_cols = []
-    fitted_trends_by_order = {}
+    new_cols: list[pl.Series] = []
+    betas_by_order: dict[int, dict[str, NDArray[np.floating]]] = {}
 
     for p in polynomial_orders:
-        resid, fitted_trend = deterministic_detrend(
-            asset_arrays, polynomial_order=p, axis=0
+        resid, beta = deterministic_detrend(
+            asset_arrays,
+            polynomial_order=p,
+            axis=0,
         )
 
-        fitted_trends_by_order[p] = {
-            asset: fitted_trend[:, i].copy() for i, asset in enumerate(assets)
-        }
+        if p == 0:
+            betas_by_order[p] = {
+                asset: np.array([beta[i]], dtype=float)
+                for i, asset in enumerate(assets)
+            }
+        else:
+            betas_by_order[p] = {
+                asset: beta[:, i].copy() for i, asset in enumerate(assets)
+            }
 
         for i, asset in enumerate(assets):
             new_cols.append(
@@ -82,7 +92,7 @@ def add_detrend_column(
                 ).cast(pl.Float64)
             )
 
-    return original_data.with_columns(new_cols), fitted_trends_by_order
+    return original_data.with_columns(new_cols), betas_by_order
 
 
 def add_detrend_columns_max(

@@ -45,7 +45,7 @@ class TransformDecision:
 @dataclass(frozen=True)
 class PolynomialInverseSpec:
     order: int
-    fitted_trend: NDArray[np.floating]
+    betas: NDArray[np.floating]
 
 
 @dataclass(frozen=True)
@@ -70,7 +70,6 @@ class AppliedTransform:
     inverse_spec: InverseSpec | None = None
 
 
-# asset specific
 @dataclass(frozen=True)
 class PipelineAssetBatchRes:
     type: Literal["trend", "seasonality"]
@@ -80,11 +79,10 @@ class PipelineAssetBatchRes:
     all_tests: dict | None
 
 
-# for all assets
 @dataclass(frozen=True)
 class UnivariatePreprocess:
     post_data: DataFrame
-    pipeline_decisions: dict[str, dict]
+    inverse_specs: dict[str, list[AppliedTransform]] | None
     needs_further_modelling: list[str]
 
 
@@ -236,18 +234,17 @@ def _apply_grouped_detrend(
                 )
 
         elif transform == "polynomial":
-            data, fitted_trends_by_order = add_detrend_column(
+            data, betas_by_order = add_detrend_column(
                 original_data=data,
                 assets=assets,
                 polynomial_orders=[order],
             )
 
-            fitted_trends = fitted_trends_by_order[order]
+            beta = betas_by_order[order]
 
             for asset in assets:
                 inverse_specs[asset] = PolynomialInverseSpec(
-                    order=order,
-                    fitted_trend=fitted_trends[asset].tolist(),
+                    order=order, betas=np.asarray(beta[asset], dtype=float)
                 )
 
         else:
@@ -436,7 +433,6 @@ def detrend_pipeline(
         data=data,
         decision=per_asset_decision,
     )
-    print(inverse_specs)
 
     return PipelineAssetBatchRes(
         type="trend",
@@ -511,10 +507,17 @@ def run_univariate_preprocess(
 
     increments_df = _diff_assets(data, assets)
     assets_need_preprocess = _find_nonwhite_noise_assets(increments_df, assets)
+    applied_transforms: dict[str, list[AppliedTransform]] = {
+        asset: [] for asset in assets_need_preprocess
+    }
 
     if not assets_need_preprocess:
         logger.info("No preprocessing needed")
-        return UnivariatePreprocess(data, {"trend": {}, "deseason": {}}, [])
+        return UnivariatePreprocess(
+            post_data=data,
+            inverse_specs=None,
+            needs_further_modelling=[],
+        )
 
     # Trend
     detrend = detrend_pipeline(
@@ -522,7 +525,16 @@ def run_univariate_preprocess(
         assets=assets_need_preprocess,
         include_diagnostics=False,
     )
-    logger.info("Detrend decisions: %s", detrend.decision)
+    for asset, decision in detrend.decision.items():
+        applied_transforms[asset].append(
+            AppliedTransform(
+                asset=asset,
+                decision=decision,
+                inverse_spec=detrend.inverse_spec[asset]
+                if detrend.inverse_spec
+                else None,
+            )
+        )
 
     after_detrend = overwrite_with_transforms(
         base=data, patch=detrend.updated_data, assets=assets, suffix="_detrend"
@@ -534,7 +546,6 @@ def run_univariate_preprocess(
         assets=assets_need_preprocess,
         include_diagnostics=False,
     )
-    logger.info("Deseason decisions: %s", deseason.decision)
 
     final = overwrite_with_transforms(
         base=after_detrend,
@@ -543,12 +554,10 @@ def run_univariate_preprocess(
         suffix="_deseason",
     )
 
-    pipeline_decisions = {"trend": detrend.decision, "deseason": deseason.decision}
-    print(pipeline_decisions)
+    logger.info("Finished univariate preprocess: results=%s", applied_transforms)
 
-    logger.info(
-        "Finished univariate preprocess: transformed_assets=%s",
-        assets_need_preprocess,
+    return UnivariatePreprocess(
+        post_data=final,
+        inverse_specs=applied_transforms,
+        needs_further_modelling=assets_need_preprocess,
     )
-
-    return UnivariatePreprocess(final, pipeline_decisions, assets_need_preprocess)
