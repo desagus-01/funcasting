@@ -9,8 +9,6 @@ from utils.visuals import plot_simulation_results
 
 # %%
 data = pl.read_csv("./data/tiingo_sample.csv")
-# assets = ["SMBC", "RDN", "BANC", "FCN"]
-
 assets = ["SMBC", "RDN", "BANC", "FCN"]
 data = data.select("date", *assets)
 
@@ -47,16 +45,16 @@ forecasts = run_n_steps_forecast(
 
 
 # %%
-asset = "BANC"
+asset = ["BANC"]
 
-post_process = run_univariate_preprocess(data=data, assets=assets)
+post_process = run_univariate_preprocess(data=data, assets=asset)
 
 orig = data.select(asset).to_numpy().ravel()
 post = post_process.post_data.select(asset).to_numpy().ravel()
 
 c = orig.mean() - post.mean()
 
-res = forecasts[asset]
+res = forecasts[asset[0]]
 logP_paths = res + c
 paths = np.exp(logP_paths)
 

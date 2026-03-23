@@ -4,7 +4,8 @@
 ## Priority
 - [ ] Sit down and figure our dataypes
 - [ ] Clean up all the polars-numpy conversion madness
-- [ ] 'Re-pricing'
+- [ ] Clean inversion of forecasts to prices
+- [ ] Add appropriate logs to debug
 
 **Clean uo todos**
 

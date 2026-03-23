@@ -1,3 +1,4 @@
+import logging
 import warnings
 from itertools import product
 from re import fullmatch
@@ -13,6 +14,12 @@ from statsmodels.tsa.stattools import arma_order_select_ic
 from typing_extensions import Literal
 
 from maths.helpers import get_akicc
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
 class AutoGARCHRes(NamedTuple):
@@ -285,9 +292,10 @@ def auto_arma(
                 )  # no integration order needed as we have done that in pre-processing
                 res = model.fit(method="statespace")
         except ConvergenceWarning:
-            # Skip models that fail to converge
-            print(
-                f"Model ({ar_order},{ma_order}) failed to converge. Will be dropped from candidates list"
+            logger.info(
+                "Model (%s, %s) failed to converge. Will be dropped from candidates list",
+                ar_order,
+                ma_order,
             )
             continue
 
