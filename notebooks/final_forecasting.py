@@ -26,7 +26,7 @@ data_long = (
 plot_ticker_lines(data_long)
 
 # %%
-assets = ["BANC", "RDN"]
+assets = ["BANC", "SMBC"]
 prob_ex = uniform_probs(data.height)
 forecasts = run_n_steps_forecast(
     data=data,
