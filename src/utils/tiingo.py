@@ -1,5 +1,8 @@
+import csv
+import io
 import logging
 import os
+import zipfile
 from datetime import date, datetime, timedelta
 from typing import Any, Iterable, Literal
 
@@ -15,8 +18,55 @@ _ = load_dotenv()
 session = requests.Session()
 
 BASE_URL = "https://api.tiingo.com"
-
 TIINGO_API = os.getenv("TIINGO_API")
+
+
+def get_zipfile_from_response(response: requests.Response) -> zipfile.ZipFile:
+    response.raise_for_status()
+    return zipfile.ZipFile(io.BytesIO(response.content))
+
+
+def get_buffer_from_zipfile(
+    zipdata: zipfile.ZipFile,
+    filename: str,
+    encoding: str = "utf-8",
+) -> io.StringIO:
+    with zipdata.open(filename) as f:
+        text = f.read().decode(encoding)
+    return io.StringIO(text)
+
+
+def get_tiingo_tickers(
+    asset_types: Iterable[str] = ("Stock",),
+) -> pl.DataFrame:
+    listing_file_url = (
+        "https://apimedia.tiingo.com/docs/tiingo/daily/supported_tickers.zip"
+    )
+
+    response = session.get(listing_file_url, timeout=30)
+    zipdata = get_zipfile_from_response(response)
+    raw_csv = get_buffer_from_zipfile(zipdata, "supported_tickers.csv")
+    reader = csv.DictReader(raw_csv)
+
+    rows = list(reader)
+    asset_types_set = set(asset_types)
+
+    return pl.DataFrame(
+        [row for row in rows if row.get("assetType") in asset_types_set]
+    ).with_columns(
+        [
+            pl.when(pl.col("startDate").str.strip_chars() == "")
+            .then(None)
+            .otherwise(pl.col("startDate"))
+            .str.strptime(pl.Date, format="%Y-%m-%d", strict=False)
+            .alias("startDate"),
+            pl.when(pl.col("endDate").str.strip_chars() == "")
+            .then(None)
+            .otherwise(pl.col("endDate"))
+            .str.strptime(pl.Date, format="%Y-%m-%d", strict=False)
+            .alias("endDate"),
+        ]
+    )
 
 
 def _request(
@@ -143,8 +193,10 @@ def plot_ticker_lines(
     return figs_axes
 
 
-def get_tiingo_tickers(csv_path: str = "./data/supported_tickers.csv") -> pl.DataFrame:
-    return pl.read_csv(csv_path, try_parse_dates=True)
+#
+# def get_tiingo_tickers(csv_path: str = "./data/supported_tickers.csv") -> pl.DataFrame:
+#     return pl.read_csv(csv_path, try_parse_dates=True)
+#
 
 
 def previous_business_day(d: date) -> date:
@@ -158,7 +210,6 @@ def business_day_x_years(target_bd: date, years: int) -> date:
     try:
         new_date = target_bd.replace(year=target_bd.year - years)
     except ValueError:
-        # leap year case
         new_date = target_bd.replace(year=target_bd.year - years, month=2, day=28)
 
     while new_date.weekday() >= 5:
@@ -222,8 +273,6 @@ def resolve_workflow_dates(
         if start_dt > end_dt:
             raise ValueError("start_date must be on or before end_date.")
 
-        # Keep your convention: universe end date is the prior business day
-        # relative to the reference endpoint.
         target_enddate = previous_business_day(end_dt + timedelta(days=1))
         target_startdate = start_dt
 
