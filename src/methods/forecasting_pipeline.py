@@ -201,6 +201,10 @@ def run_n_steps_forecast(
         raise ValueError(
             "Historical method for innovations can only be used for one step forecasts."
         )
+    if (len(assets) <= 1) and (method == "cma"):
+        raise ValueError(
+            "Must have more than one asset in order to use the copula method."
+        )
 
     post_process = run_univariate_preprocess(data=data, assets=assets)
     logger.info(

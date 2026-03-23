@@ -19,54 +19,70 @@ class AutoCorrelation:
 
 def deterministic_detrend(
     data: NDArray[np.floating], polynomial_order: int = 1, axis: int = 0
-) -> NDArray[np.floating]:
+) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
     """
-    Fits a deterministic polynomial trend and then subtracts it from the data
+    Fits a deterministic polynomial trend and subtracts it from the data.
+
+    Returns
+    -------
+    resid : detrended data
+    fitted_trend : the trend that was subtracted, which can be added back later
     """
+    transposed = False
+
     if data.ndim == 2 and int(axis) == 1:
         data = data.T
+        transposed = True
     elif data.ndim > 2:
         raise NotImplementedError("data.ndim > 2 is not implemented until it is needed")
 
     if polynomial_order == 0:  # Special case, just de-mean
-        resid = data - data.mean(axis=0)
+        fitted_trend = np.broadcast_to(data.mean(axis=0), data.shape)
+        resid = data - fitted_trend
     else:
         trends = np.vander(np.arange(float(data.shape[0])), N=polynomial_order + 1)
         beta = np.linalg.pinv(trends).dot(data)
-        resid = data - np.dot(trends, beta)
+        fitted_trend = np.dot(trends, beta)
+        resid = data - fitted_trend
 
-    if data.ndim == 2 and int(axis) == 1:
+    if transposed:
         resid = resid.T
+        fitted_trend = fitted_trend.T
 
-    return resid
+    return resid, fitted_trend
 
 
 def add_detrend_column(
-    data: pl.DataFrame,
+    original_data: pl.DataFrame,
     assets: list[str] | None = None,
     polynomial_orders: list[int] = [0, 1, 2, 3],
-    axis: int = 0,
-) -> pl.DataFrame:
+) -> tuple[pl.DataFrame, dict[int, dict[str, NDArray[np.floating]]]]:
     if assets is None:
-        assets = data.select(
-            cs.numeric()
-        ).columns  # only get numeric columns (ie no dates)
+        assets = original_data.select(cs.numeric()).columns
 
-    asset_arrays = data.select(assets).to_numpy()
+    asset_arrays = original_data.select(assets).to_numpy()
 
-    new_cols: list[pl.Series] = []
+    new_cols = []
+    fitted_trends_by_order = {}
+
     for p in polynomial_orders:
-        detrended = deterministic_detrend(asset_arrays, polynomial_order=p, axis=axis)
+        resid, fitted_trend = deterministic_detrend(
+            asset_arrays, polynomial_order=p, axis=0
+        )
+
+        fitted_trends_by_order[p] = {
+            asset: fitted_trend[:, i].copy() for i, asset in enumerate(assets)
+        }
 
         for i, asset in enumerate(assets):
             new_cols.append(
                 pl.Series(
                     name=f"{asset}_detrended_p{p}",
-                    values=detrended[:, i],
+                    values=resid[:, i],
                 ).cast(pl.Float64)
             )
 
-    return data.with_columns(new_cols)
+    return original_data.with_columns(new_cols), fitted_trends_by_order
 
 
 def add_detrend_columns_max(
@@ -76,8 +92,8 @@ def add_detrend_columns_max(
 ) -> pl.DataFrame:
     polynomial_orders = list(range(0, max_polynomial_order + 1))
     return add_detrend_column(
-        data=data, assets=assets, polynomial_orders=polynomial_orders
-    )
+        original_data=data, assets=assets, polynomial_orders=polynomial_orders
+    )[0]
 
 
 def add_differenced_columns(
