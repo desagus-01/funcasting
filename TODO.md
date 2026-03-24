@@ -1,10 +1,9 @@
 
-> [!ATTENTION] Update data with ADJUSTED prices (yfinance for now)
-
 ## Priority
 - [ ] Sit down and figure our dataypes
+- [ ] Add CRPS scores for forecasts
 - [ ] Clean up all the polars-numpy conversion madness
-- [ ] Clean inversion of forecasts to prices
+- [x] Clean inversion of forecasts to prices ✅ 2026-03-24
 - [ ] Add appropriate logs to debug
 
 **Clean uo todos**

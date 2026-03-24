@@ -22,7 +22,7 @@ from maths.time_series.iid_tests import (
     ellipsoid_lag_test,
     univariate_kolmogrov_smirnov_test,
 )
-from maths.time_series.operations import deterministic_seasonal_adjustment
+from maths.time_series.operations import HarmonicTerm, deterministic_seasonal_adjustment
 from methods.cma import CopulaMarginalModel
 from models.types import ProbVector
 from utils.helpers import (
@@ -52,11 +52,20 @@ class PolynomialInverseSpec:
         data: NDArray[np.floating],
         start_x: int,
     ) -> NDArray[np.floating]:
-        polynomials = self.betas.reshape(-1)
-        horizon = data.shape[1]
+        current = np.asarray(data, dtype=float)
+
+        if current.ndim != 2:
+            raise ValueError(
+                f"PolynomialInverseSpec expects 2D forecasts of shape "
+                f"(n_sims, horizon), got shape {current.shape}"
+            )
+
+        polynomials = np.asarray(self.betas, dtype=float).reshape(-1)
+        horizon = current.shape[1]
         future_x = np.arange(start_x, start_x + horizon)
         trend = np.polyval(polynomials, future_x)
-        return data + trend[None, :]
+
+        return current + trend[None, :]
 
 
 @dataclass(frozen=True)
@@ -68,17 +77,22 @@ class DifferenceInverseSpec:
         self,
         data: NDArray[np.floating],
     ) -> NDArray[np.floating]:
-        if self.order < 1:
-            raise ValueError("DifferenceInverseSpec.order must be >= 1")
+        current = np.asarray(data, dtype=float)
 
-        init = self.initial_values.reshape(-1)
+        if current.ndim != 2:
+            raise ValueError(
+                f"DifferenceInverseSpec expects 2D forecasts of shape "
+                f"(n_sims, horizon), got shape {current.shape}"
+            )
+
+        init = np.asarray(self.initial_values, dtype=float).reshape(-1)
 
         if init.shape[0] != self.order:
             raise ValueError(
-                f"Expected {self.order} initial values, got {init.shape[0]}"
+                f"Expected {self.order} initial values for differencing order "
+                f"{self.order}, got {init.shape[0]}"
             )
 
-        current = data
         for anchor in init[::-1]:
             current = np.cumsum(current, axis=1) + anchor
 
@@ -87,8 +101,49 @@ class DifferenceInverseSpec:
 
 @dataclass(frozen=True)
 class SeasonalInverseSpec:
-    frequencies_radians: NDArray[np.floating]
-    coefficients: NDArray[np.floating]
+    terms: list[HarmonicTerm]
+
+    @staticmethod
+    def evaluate_seasonal_terms(
+        terms: list[HarmonicTerm],
+        time: NDArray[np.int_],
+    ) -> NDArray[np.floating]:
+        time = np.asarray(time).reshape(-1)
+        seasonal = np.zeros_like(time, dtype=float)
+
+        for term in terms:
+            if term.kind == "cos":
+                if term.omega is None:
+                    raise ValueError("Cos must have omega")
+                seasonal += term.coefficient * np.cos(term.omega * time)
+            elif term.kind == "sin":
+                if term.omega is None:
+                    raise ValueError("Sin must have omega")
+                seasonal += term.coefficient * np.sin(term.omega * time)
+
+        return seasonal
+
+    def inverse_for_forecasts(
+        self,
+        data: NDArray[np.floating],
+        n_train: int,
+    ) -> NDArray[np.floating]:
+        current = np.asarray(data, dtype=float)
+
+        if current.ndim != 2:
+            raise ValueError(
+                f"SeasonalInverseSpec expects 2D forecasts of shape "
+                f"(n_sims, horizon), got shape {current.shape}"
+            )
+
+        horizon = current.shape[1]
+        future_t = np.arange(n_train, n_train + horizon, dtype=float)
+        seasonal_future = self.evaluate_seasonal_terms(
+            terms=self.terms,
+            time=future_t,
+        )
+
+        return current + seasonal_future[None, :]
 
 
 InverseSpec = PolynomialInverseSpec | DifferenceInverseSpec | SeasonalInverseSpec
@@ -250,6 +305,12 @@ def _apply_grouped_detrend(
 
     for (transform, order), assets in by_group.items():
         if transform == "difference":
+            # store anchors from the series BEFORE differencing
+            anchors_by_asset = {
+                asset: data.select(asset).to_series().tail(order).to_numpy()
+                for asset in assets
+            }
+
             data = add_differenced_columns(
                 data=data,
                 assets=assets,
@@ -258,12 +319,10 @@ def _apply_grouped_detrend(
             )
 
             for asset in assets:
-                initial_values = data.select(asset).to_series().head(order).to_numpy()
                 inverse_specs[asset] = DifferenceInverseSpec(
                     order=order,
-                    initial_values=initial_values,
+                    initial_values=np.asarray(anchors_by_asset[asset], dtype=float),
                 )
-
         elif transform == "polynomial":
             data, betas_by_order = add_detrend_column(
                 original_data=data,
@@ -381,27 +440,30 @@ def _deseason_decision_rule(
 
 
 def _deseason_apply(
-    data: pl.DataFrame, decision: dict[str, list[tuple[str, float]]]
-) -> pl.DataFrame:
+    data: pl.DataFrame,
+    decision: dict[str, list[tuple[str, float]]],
+) -> tuple[pl.DataFrame, dict[str, InverseSpec]]:
     assets = [asset for asset, seasons in decision.items() if seasons]
     if not assets:
-        return data.select(["date"])
+        return data.select(["date"]), {}
 
     out = data.select(["date"])
+    inverse_specs: dict[str, InverseSpec] = {}
 
     for asset in assets:
         seasons = decision[asset]
         omega = [rad for _, rad in seasons]
 
-        adj = deterministic_seasonal_adjustment(
+        seas_adj_res = deterministic_seasonal_adjustment(
             data=data,
             asset=asset,
             frequency_radians=omega,
         )
 
-        out = out.join(adj, on="date", how="left")
+        out = out.join(seas_adj_res.residuals, on="date", how="left")
+        inverse_specs[asset] = SeasonalInverseSpec(terms=seas_adj_res.terms)
 
-    return out
+    return out, inverse_specs
 
 
 def deseason_pipeline(
@@ -420,7 +482,7 @@ def deseason_pipeline(
 
     decision = _deseason_decision_rule(diagnostics)
 
-    updated = _deseason_apply(
+    updated, inverse_specs = _deseason_apply(
         data=data,
         decision=decision,
     )
@@ -428,7 +490,7 @@ def deseason_pipeline(
     return PipelineAssetBatchRes(
         type="seasonality",
         decision=decision,
-        inverse_spec=None,
+        inverse_spec=inverse_specs,
         updated_data=updated,
         all_tests=diagnostics if include_diagnostics else None,
     )
@@ -577,6 +639,17 @@ def run_univariate_preprocess(
         assets=assets_need_preprocess,
         include_diagnostics=False,
     )
+    for asset, seasons in deseason.decision.items():
+        if seasons:
+            applied_transforms[asset].append(
+                AppliedTransform(
+                    asset=asset,
+                    decision=TransformDecision(kind="seasonality", order=None),
+                    inverse_spec=deseason.inverse_spec[asset]
+                    if deseason.inverse_spec
+                    else None,
+                )
+            )
 
     final = overwrite_with_transforms(
         base=after_detrend,

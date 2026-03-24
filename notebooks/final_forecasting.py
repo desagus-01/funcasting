@@ -3,7 +3,11 @@ import polars as pl
 
 from maths.distributions import uniform_probs
 from methods.forecasting_pipeline import run_n_steps_forecast
-from methods.preprocess_pipeline import DifferenceInverseSpec, PolynomialInverseSpec
+from methods.preprocess_pipeline import (
+    DifferenceInverseSpec,
+    PolynomialInverseSpec,
+    SeasonalInverseSpec,
+)
 from utils.tiingo import plot_ticker_lines
 from utils.visuals import plot_simulation_results
 
@@ -27,7 +31,6 @@ data_long = (
 plot_ticker_lines(data_long)
 
 # %%
-assets = ["BANC", "SMBC"]
 prob_ex = uniform_probs(data.height)
 forecasts = run_n_steps_forecast(
     data=data,
@@ -43,27 +46,50 @@ forecasts = run_n_steps_forecast(
 
 # %%
 specs = forecasts[1].inverse_specs
-
 paths = forecasts[0]
-# %%
+
 if specs is not None:
+    restored_paths = {}
+
     for asset, transforms in specs.items():
-        for transform in transforms:
+        current = np.asarray(paths[asset], dtype=float)
+
+        if len(transforms) > 1:
+            ordered_transforms = sorted(
+                transforms,
+                key=lambda t: (
+                    0 if isinstance(t.inverse_spec, SeasonalInverseSpec) else 1
+                ),
+            )
+        else:
+            ordered_transforms = transforms
+
+        for transform in ordered_transforms:
             inverse_spec = transform.inverse_spec
-            if isinstance(inverse_spec, PolynomialInverseSpec):
-                trend_poly = inverse_spec.inverse_for_forecasts(
-                    paths[asset], data.height + 1
+
+            if isinstance(inverse_spec, SeasonalInverseSpec):
+                current = inverse_spec.inverse_for_forecasts(
+                    current,
+                    data.height + 1,
                 )
 
-                plot_simulation_results(np.exp(trend_poly), title=f"{asset}")
+            elif isinstance(inverse_spec, PolynomialInverseSpec):
+                current = inverse_spec.inverse_for_forecasts(
+                    current,
+                    data.height + 1,
+                )
 
-            if isinstance(inverse_spec, DifferenceInverseSpec):
-                trend_diff = inverse_spec.inverse_for_forecasts(paths[asset])
+            elif isinstance(inverse_spec, DifferenceInverseSpec):
+                current = inverse_spec.inverse_for_forecasts(current)
 
-                plot_simulation_results(np.exp(trend_diff), title=f"{asset}")
+        restored_paths[asset] = current
+        plot_simulation_results(current, title=f"{asset}")
 
-        # decision = transform.decision
-        # inverse_spec = transform.inverse_spec
-        #
-        # if isinstance(inverse_spec, PolynomialInverseSpec):
-        #     trend_banc = inverse_spec.inverse_for_forecasts(banc_paths, data.height + 1)
+# %%
+for asset in ["SMBC", "RDN", "FCN"]:
+    last_log = data.select(asset).to_numpy().reshape(-1)[-1]
+    print(asset, "last observed log price:", last_log)
+
+    for transform in specs[asset]:
+        if isinstance(transform.inverse_spec, DifferenceInverseSpec):
+            print(asset, "stored anchor:", transform.inverse_spec.initial_values)

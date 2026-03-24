@@ -1,5 +1,9 @@
+from dataclasses import dataclass
+from typing import Literal
+
 import numpy as np
 import polars as pl
+from numpy._typing import NDArray
 from polars.dataframe.frame import DataFrame
 
 from maths.time_series.estimation import (
@@ -10,6 +14,63 @@ from maths.time_series.estimation import (
 )
 
 
+@dataclass(frozen=True)
+class HarmonicTerm:
+    kind: Literal["const", "cos", "sin"]
+    coefficient: float
+    omega: float | None = None
+
+
+@dataclass(frozen=True)
+class DeterministicSeasonalAdjustmentResult:
+    residuals: pl.DataFrame
+    terms: list[HarmonicTerm]
+
+
+def build_harmonic_terms(
+    frequency_radians: list[float],
+    coefficients: NDArray[np.floating],
+) -> list[HarmonicTerm]:
+    terms: list[HarmonicTerm] = []
+
+    coef_idx = 0
+
+    # terms.append(HarmonicTerm(kind="const", coefficient=float(coefficients[coef_idx])))
+    # coef_idx += 1
+
+    for w in frequency_radians:
+        if np.isclose(w, 0.0):
+            continue
+        terms.append(
+            HarmonicTerm(
+                kind="cos",
+                omega=float(w),
+                coefficient=float(coefficients[coef_idx]),
+            )
+        )
+        coef_idx += 1
+
+    for w in frequency_radians:
+        if np.isclose(w, 0.0) or np.isclose(w, np.pi):
+            continue
+        terms.append(
+            HarmonicTerm(
+                kind="sin",
+                omega=float(w),
+                coefficient=float(coefficients[coef_idx]),
+            )
+        )
+        coef_idx += 1
+
+    if coef_idx != len(coefficients):
+        raise ValueError(
+            f"Coefficient count mismatch when building harmonic terms: "
+            f"used {coef_idx}, got {len(coefficients)}"
+        )
+
+    return terms
+
+
 def build_harmonic_regression_equation(
     data: DataFrame,
     frequency_radians: list[float],
@@ -17,22 +78,24 @@ def build_harmonic_regression_equation(
 ) -> OLSEquation:
     dependent_variable = data.select(pl.col(asset)).to_numpy()
 
-    # time index
     time_index_df = data.select(pl.col(asset)).with_row_index(name="t")
-    cos_cols = [
-        (pl.lit(w) * pl.col("t")).cos().alias(f"cos_w_{i}")
-        for i, w in enumerate(frequency_radians)
-        if not np.isclose(w, 0.0)
-    ]
-    sin_cols = [
-        (pl.lit(w) * pl.col("t")).sin().alias(f"sin_w_{i}")
-        for i, w in enumerate(frequency_radians)
-        if not np.isclose(w, 0.0)
-    ]
+
+    cos_cols = []
+    sin_cols = []
+
+    for i, w in enumerate(frequency_radians):
+        if np.isclose(w, 0.0):
+            continue
+
+        cos_cols.append((pl.lit(w) * pl.col("t")).cos().alias(f"cos_w_{i}"))
+
+        if not np.isclose(w, np.pi):
+            sin_cols.append((pl.lit(w) * pl.col("t")).sin().alias(f"sin_w_{i}"))
 
     independent_variables = time_index_df.select(cos_cols + sin_cols).to_numpy()
     independent_variables = add_deterministics_to_eq(
-        independent_vars=independent_variables, eq_type="c"
+        independent_vars=independent_variables,
+        eq_type="nc",  # this should be nc (ie no constant) as we remove any trend prior to this IF NEEDED
     )
 
     return OLSEquation(ind_var=independent_variables, dep_vars=dependent_variable)
@@ -52,15 +115,25 @@ def run_harmonic_regression(
 
 def deterministic_seasonal_adjustment(
     data: DataFrame, asset: str, frequency_radians: list[float]
-) -> pl.DataFrame:
+) -> DeterministicSeasonalAdjustmentResult:
     asset_df = data.select(["date", asset]).drop_nulls()
 
-    harmonic_residuals = run_harmonic_regression(
+    harmonic_ols = run_harmonic_regression(
         data=asset_df,
         asset=asset,
         frequency_radians=frequency_radians,
-    ).residuals.ravel()
+    )
 
-    return asset_df.select("date").with_columns(
-        pl.Series(name=asset, values=harmonic_residuals)
+    residuals = asset_df.select("date").with_columns(
+        pl.Series(name=asset, values=harmonic_ols.residuals.ravel())
+    )
+
+    terms = build_harmonic_terms(
+        frequency_radians=frequency_radians,
+        coefficients=harmonic_ols.res.ravel(),
+    )
+
+    return DeterministicSeasonalAdjustmentResult(
+        residuals=residuals,
+        terms=terms,
     )
