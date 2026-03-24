@@ -13,7 +13,13 @@ from methods.model_selection_pipeline import (
     UnivariateRes,
     get_univariate_results,
 )
-from methods.preprocess_pipeline import run_univariate_preprocess
+from methods.preprocess_pipeline import (
+    AppliedTransform,
+    DifferenceInverseSpec,
+    PolynomialInverseSpec,
+    SeasonalInverseSpec,
+    run_univariate_preprocess,
+)
 from methods.simulation_forecasting import (
     ForecastModel,
     simulate_asset_paths,
@@ -175,6 +181,52 @@ def get_assets_models(
     return forecast_models
 
 
+def apply_inverse_transforms(
+    forecasted_paths: dict[str, NDArray[np.floating]],
+    n_original: int,
+    specs: dict[str, list[AppliedTransform]],
+    back_to_price: bool = True,
+):
+    restored_paths = {}
+
+    for asset, transforms in specs.items():
+        current = np.asarray(forecasted_paths[asset], dtype=float)
+
+        if len(transforms) > 1:
+            ordered_transforms = sorted(
+                transforms,
+                key=lambda t: (
+                    0 if isinstance(t.inverse_spec, SeasonalInverseSpec) else 1
+                ),
+            )
+        else:
+            ordered_transforms = transforms
+
+        for transform in ordered_transforms:
+            inverse_spec = transform.inverse_spec
+
+            if isinstance(inverse_spec, SeasonalInverseSpec):
+                current = inverse_spec.inverse_for_forecasts(
+                    current,
+                    n_original + 1,
+                )
+
+            elif isinstance(inverse_spec, PolynomialInverseSpec):
+                current = inverse_spec.inverse_for_forecasts(
+                    current,
+                    n_original + 1,
+                )
+
+            elif isinstance(inverse_spec, DifferenceInverseSpec):
+                current = inverse_spec.inverse_for_forecasts(current)
+
+        if back_to_price:
+            current = np.exp(current)
+        restored_paths[asset] = current
+
+    return restored_paths
+
+
 def run_n_steps_forecast(
     data: DataFrame,
     prob: ProbVector,
@@ -184,6 +236,7 @@ def run_n_steps_forecast(
     seed: int | None = None,
     method: Literal["bootstrap", "historical", "cma"] = "bootstrap",
     *,
+    back_to_price: bool = True,
     target_copula: Literal["t", "norm"] | None = None,
     copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
     target_marginals: dict[str, Literal["t", "norm"]] | None = None,
@@ -256,5 +309,12 @@ def run_n_steps_forecast(
             innovations=innovations[:, :, i],
         )
 
-    logger.info("Forecast complete")
-    return assets_forecasts, post_process
+    logger.info("Forecast complete - will apply inverse transforms now")
+    transformed = apply_inverse_transforms(
+        forecasted_paths=assets_forecasts,
+        n_original=data.height,
+        specs=post_process.inverse_specs,
+        back_to_price=True if back_to_price else False,
+    )
+
+    return assets_forecasts, transformed

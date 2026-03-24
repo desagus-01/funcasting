@@ -168,7 +168,7 @@ class PipelineAssetBatchRes:
 @dataclass(frozen=True)
 class UnivariatePreprocess:
     post_data: DataFrame
-    inverse_specs: dict[str, list[AppliedTransform]] | None
+    inverse_specs: dict[str, list[AppliedTransform]]
     needs_further_modelling: list[str]
 
 
@@ -603,14 +603,6 @@ def run_univariate_preprocess(
     applied_transforms: dict[str, list[AppliedTransform]] = {
         asset: [] for asset in assets_need_preprocess
     }
-
-    if not assets_need_preprocess:
-        logger.info("No preprocessing needed")
-        return UnivariatePreprocess(
-            post_data=data,
-            inverse_specs=None,
-            needs_further_modelling=[],
-        )
 
     # Trend
     detrend = detrend_pipeline(
