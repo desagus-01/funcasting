@@ -1,3 +1,6 @@
+import cProfile
+import pstats
+
 import polars as pl
 
 from maths.distributions import uniform_probs
@@ -7,8 +10,15 @@ from utils.visuals import plot_simulation_results
 
 # %%
 data = pl.read_csv("./data/tiingo_sample.csv")
-assets = ["SMBC", "RDN", "BANC", "FCN"]
+
+
+data = data.select(
+    *[col for col in data.columns if data.select(col).null_count().item() == 0]
+)
+assets = data.columns[1:5]
 data = data.select("date", *assets)
+
+data
 
 # %%
 data_long = (
@@ -26,61 +36,23 @@ plot_ticker_lines(data_long)
 
 # %%
 prob_ex = uniform_probs(data.height)
+
+prof = cProfile.Profile()
+prof.enable()
 forecasts = run_n_steps_forecast(
     data=data,
     prob=prob_ex,
     horizon=30,
     n_sims=5000,
-    seed=1,
+    seed=2,
     assets=assets,
     method="bootstrap",
     # target_copula="t",
 )
-
-# %%
-forecasts[1]
+prof.disable()
+stats = pstats.Stats(prof)
+stats.sort_stats("cumulative")  # or "tottime"
+stats.print_stats(30)  # top 30 entries
 # %%
 for asset, forecast in forecasts[1].items():
     plot_simulation_results(forecast, title=f"{asset}")
-# %%
-# specs = forecasts[1].inverse_specs
-# paths = forecasts[0]
-#
-# if specs is not None:
-#     restored_paths = {}
-#
-#     for asset, transforms in specs.items():
-#         current = np.asarray(paths[asset], dtype=float)
-#
-#         if len(transforms) > 1:
-#             ordered_transforms = sorted(
-#                 transforms,
-#                 key=lambda t: (
-#                     0 if isinstance(t.inverse_spec, SeasonalInverseSpec) else 1
-#                 ),
-#             )
-#         else:
-#             ordered_transforms = transforms
-#
-#         for transform in ordered_transforms:
-#             inverse_spec = transform.inverse_spec
-#
-#             if isinstance(inverse_spec, SeasonalInverseSpec):
-#                 current = inverse_spec.inverse_for_forecasts(
-#                     current,
-#                     data.height + 1,
-#                 )
-#
-#             elif isinstance(inverse_spec, PolynomialInverseSpec):
-#                 current = inverse_spec.inverse_for_forecasts(
-#                     current,
-#                     data.height + 1,
-#                 )
-#
-#             elif isinstance(inverse_spec, DifferenceInverseSpec):
-#                 current = inverse_spec.inverse_for_forecasts(current)
-#
-#         restored_paths[asset] = current
-#         plot_simulation_results(current, title=f"{asset}")
-#
-# print(restored_paths)

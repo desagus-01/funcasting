@@ -11,31 +11,33 @@ from globals import ITERS, LAGS
 from maths.time_series.base import HypTestRes, format_hyp_test_result
 from models.types import ProbVector
 from utils.helpers import (
-    build_lag_df,
     compensate_prob,
     get_assets_names,
     split_df_in_half,
 )
 
-StatFunc = Callable[[np.ndarray, ProbVector, np.random.Generator | None], float]
+StatFunc = Callable[[np.ndarray, ProbVector, np.ndarray], float]
+PairTest = Callable[..., HypTestRes]
+TestResultByAsset = dict[str, "PerAssetTestResult"]
 
 
 @dataclass
 class PerAssetTestResult:
+    """Per-asset test results and rejected subtests."""
+
     results: dict[str, HypTestRes]
     rejected: list[str]
 
     @property
     def p_vals(self) -> list[float]:
+        """Return p-values for all subtests."""
         return [res.p_val for res in self.results.values()]
-
-
-TestResultByAsset = dict[str, PerAssetTestResult]
-PairTest = Callable[..., HypTestRes]
 
 
 @dataclass(frozen=True, slots=True)
 class MeanCovRes:
+    """Weighted mean and covariance result."""
+
     assets: list[str]
     means: NDArray[np.floating]
     cov: NDArray[np.floating]
@@ -49,25 +51,31 @@ def run_lagged_tests(
     lags: int = LAGS["testing"],
     **test_kwargs: Any,
 ) -> TestResultByAsset:
+    """Run a pairwise test over lags for each selected asset."""
     sel_assets = get_assets_names(data, assets)
     results: TestResultByAsset = {}
+
     for asset in sel_assets:
-        df_lagged = build_lag_df(data=data, asset=asset, lags=lags)
+        x = data.get_column(asset).to_numpy()
         per_lag: dict[str, HypTestRes] = {}
 
         for lag in range(1, lags + 1):
-            col_lag = f"{asset}_lag_{lag}"
-            # need to drop nulls created from lags and compensate probs
-            pair_df = df_lagged.select([asset, col_lag]).drop_nulls()
-            lag_prob = compensate_prob(
-                prob=prob,
-                n_remove=df_lagged.height - pair_df.height,
-            )
+            if lag >= x.shape[0]:
+                raise ValueError(
+                    f"Lag {lag} is too large for asset '{asset}' with "
+                    f"{x.shape[0]} observations."
+                )
+
+            pair_np = np.empty((x.shape[0] - lag, 2), dtype=float)
+            pair_np[:, 0] = x[lag:]
+            pair_np[:, 1] = x[:-lag]
+
+            lag_prob = compensate_prob(prob=prob, n_remove=lag)
 
             res = test_fn(
-                pair_df,
+                pair_np,
                 lag_prob,
-                assets=[asset, col_lag],  # must pass original and lag
+                assets=(asset, f"{asset}_lag_{lag}"),
                 **test_kwargs,
             )
             per_lag[f"lag_{lag}"] = res
@@ -82,40 +90,49 @@ def run_lagged_tests(
     return results
 
 
-def _sample_meancov(
-    data: pl.DataFrame,
+def _sample_meancov_np(
+    data_np: np.ndarray,
     prob: ProbVector,
-    assets: list[str],
+    assets: list[str] | tuple[str, str],
 ) -> MeanCovRes:
-    data_np = data.select(assets).to_numpy()
+    """Compute weighted mean and covariance for a 2D array."""
+    arr = np.asarray(data_np, dtype=float)
+    if arr.ndim != 2:
+        raise ValueError(f"Expected 2D array, got shape {arr.shape}")
 
-    weighted_mean = prob @ data_np
-    weighted_cov = ((data_np - weighted_mean).T * prob) @ (
-        data_np - weighted_mean
-    )  # TODO: check if this is right autocov function
+    p = np.asarray(prob, dtype=float).reshape(-1)
+    if arr.shape[0] != p.shape[0]:
+        raise ValueError(
+            f"Probability vector length {p.shape[0]} does not match "
+            f"number of observations {arr.shape[0]}"
+        )
+
+    weighted_mean = p @ arr
+    centered = arr - weighted_mean
+    weighted_cov = (centered.T * p) @ centered
 
     return MeanCovRes(
-        assets=assets,
+        assets=list(assets),
         means=weighted_mean,
         cov=weighted_cov,
     )
 
 
-# TODO: Check on the correctness of p-val, currently assumes normal although we weight...
 def autocorrelation_pair_test(
-    pair_df: pl.DataFrame, prob: ProbVector, assets: list[str]
+    pair_np: np.ndarray,
+    prob: ProbVector,
+    assets: tuple[str, str],
 ) -> HypTestRes:
-    """
-    Pairwise autocorrelation test on a 2-column DataFrame:
-    column 0 = X_t, column 1 = X_{t-k}.
-    """
-    cov = _sample_meancov(pair_df, prob, assets).cov
+    """Test linear dependence between a series and one lag."""
+    cov = _sample_meancov_np(pair_np, prob, assets).cov
     var_t = cov[0, 0]
     var_lag = cov[1, 1]
     cov_t_lag = cov[0, 1]
 
-    corr = float(cov_t_lag / np.sqrt(var_t * var_lag))
-    test_statistic = abs(corr) * np.sqrt(pair_df.height)
+    denom = np.sqrt(var_t * var_lag)
+    corr = 0.0 if np.isclose(denom, 0.0) else float(cov_t_lag / denom)
+
+    test_statistic = abs(corr) * np.sqrt(pair_np.shape[0])
     p_val = float(2 * (1 - st.norm.cdf(test_statistic)))
 
     return format_hyp_test_result(stat=corr, p_val=p_val, null="Independence")
@@ -127,23 +144,7 @@ def ellipsoid_lag_test(
     lags: int = LAGS["testing"],
     assets: list[str] | None = None,
 ) -> TestResultByAsset:
-    """
-    Ellipsoidal (Gaussian) autocorrelation test per asset and lag.
-
-    Returns:
-        LagTestResult:
-            {
-                "asset_name": {
-                    "per_lag": {
-                        "lag_1": HypTestRes,
-                        "lag_2": HypTestRes,
-                        ...
-                    },
-                    "rejected_lags": ["lag_1", ...],
-                },
-                ...
-            }
-    """
+    """Run the ellipsoid lag test for each asset and lag."""
     return run_lagged_tests(
         data=data,
         prob=prob,
@@ -153,63 +154,92 @@ def ellipsoid_lag_test(
     )
 
 
-def _copula_eval(pobs: np.ndarray, p: ProbVector, points: np.ndarray) -> np.ndarray:
-    """Evaluate empirical copula at given points."""
+def _copula_eval(
+    pobs: np.ndarray,
+    p: ProbVector,
+    points: np.ndarray,
+) -> np.ndarray:
+    """Evaluate the empirical copula at given points."""
     less_eq = pobs[:, None, :] <= points[None, :, :]
     inside = np.all(less_eq, axis=2)
     return p @ inside
 
 
-def _sw_stat(pobs: np.ndarray, p: ProbVector, u_points: np.ndarray) -> float:
-    """Compute the SW statistic for given uniform points."""
-    est = _copula_eval(pobs, p, u_points)
+def _copula_eval_2d(
+    pobs: np.ndarray,
+    p: ProbVector,
+    points: np.ndarray,
+) -> np.ndarray:
+    """Fast empirical copula evaluation for the 2D case."""
+    inside = (pobs[:, 0, None] <= points[None, :, 0]) & (
+        pobs[:, 1, None] <= points[None, :, 1]
+    )
+    return p @ inside
+
+
+def _sw_stat(
+    pobs: np.ndarray,
+    p: ProbVector,
+    u_points: np.ndarray,
+) -> float:
+    """Compute the Schweizer-Wolff statistic on a fixed grid."""
+    if pobs.shape[1] == 2:
+        est = _copula_eval_2d(pobs, p, u_points)
+    else:
+        est = _copula_eval(pobs, p, u_points)
+
     indep = u_points.prod(axis=1)
     return 12.0 * np.abs(est - indep).mean()
+
+
+def _draw_mc_points(
+    dim: int,
+    rng: np.random.Generator,
+    mc_iters: int = ITERS["MC"],
+) -> np.ndarray:
+    """Draw uniform Monte Carlo points once for a test."""
+    return rng.uniform(0.0, 1.0, size=(mc_iters, dim))
 
 
 def sw_mc(
     pobs: np.ndarray,
     p: ProbVector,
-    rng: np.random.Generator | None = None,
-    mc_iters: int = ITERS["MC"],
+    u_points: np.ndarray,
 ) -> float:
-    """Single Monte Carlo estimate of the SW statistic."""
-    if rng is None:
-        rng = np.random.default_rng()
-    u = rng.uniform(0.0, 1.0, size=(mc_iters, pobs.shape[1]))
-    return _sw_stat(pobs, p, u)
+    """Compute the SW statistic using pre-drawn Monte Carlo points."""
+    return _sw_stat(pobs, p, u_points)
 
 
-# TODO: Look at speeding this up with vectorization + multithreading
-# INFO: Heavily inspired by the hyppo package in python
 def independence_permutation_test(
-    pair_df: pl.DataFrame,
+    pair_np: np.ndarray,
     prob: ProbVector,
     assets: tuple[str, str],
     stat_fun: StatFunc = sw_mc,
     iter: int = ITERS["PERM_TEST"],
     rng: np.random.Generator | None = None,
 ) -> HypTestRes:
+    """Run a permutation independence test on a 2-column array."""
     if rng is None:
         rng = np.random.default_rng()
 
-    assets_np = pair_df.select(assets).to_numpy()
-    perm_asset = assets_np[:, 0].copy()
-    stat = stat_fun(assets_np, prob, rng)
+    arr = np.asarray(pair_np, dtype=float)
+    if arr.ndim != 2 or arr.shape[1] != 2:
+        raise ValueError(f"Expected pair array of shape (n_obs, 2), got {arr.shape}")
 
+    u_points = _draw_mc_points(dim=arr.shape[1], rng=rng)
+    stat = stat_fun(arr, prob, u_points)
+
+    n = arr.shape[0]
     null_dist = np.empty(iter, dtype=float)
 
+    permuted = arr.copy()
+    first_col = arr[:, 0]
+
     for i in range(iter):
-        new_order = rng.permutation(assets_np.shape[0])
-        new_p_asset = perm_asset[new_order]
+        permuted[:, 0] = first_col[rng.permutation(n)]
+        null_dist[i] = stat_fun(permuted, prob, u_points)
 
-        temp_df = pair_df.select(assets).with_columns(
-            pl.lit(new_p_asset).alias(assets[0])
-        )
-
-        null_dist[i] = stat_fun(temp_df.to_numpy(), prob, rng)
-
-    p_val = (1.0 + (null_dist >= stat).sum()) / (iter + 1.0)
+    p_val = (1.0 + np.count_nonzero(null_dist >= stat)) / (iter + 1.0)
 
     return format_hyp_test_result(stat=stat, p_val=p_val, null="Independence")
 
@@ -220,6 +250,7 @@ def copula_lag_independence_test(
     lags: int = LAGS["testing"],
     assets: list[str] | None = None,
 ) -> TestResultByAsset:
+    """Run the copula lag independence test for each asset and lag."""
     return run_lagged_tests(
         data=copula,
         prob=prob,
@@ -233,6 +264,7 @@ def kolmogrov_smirnov_2stest(
     dist_1: NDArray[np.floating],
     dist_2: NDArray[np.floating],
 ) -> HypTestRes:
+    """Run a two-sample KS test."""
     res = st.kstest(
         dist_1,
         dist_2,
@@ -240,13 +272,17 @@ def kolmogrov_smirnov_2stest(
     )
 
     return format_hyp_test_result(
-        stat=res.statistic, p_val=res.pvalue, null="Identically Distributed"
+        stat=res.statistic,
+        p_val=res.pvalue,
+        null="Identically Distributed",
     )
 
 
 def univariate_kolmogrov_smirnov_test(
-    data: pl.DataFrame, assets: list[str] | None = None
+    data: pl.DataFrame,
+    assets: list[str] | None = None,
 ) -> TestResultByAsset:
+    """Compare the two halves of each asset with a KS test."""
     sel_assets = get_assets_names(data, assets)
     out: TestResultByAsset = {}
 
@@ -265,23 +301,22 @@ def univariate_kolmogrov_smirnov_test(
     return out
 
 
-# TODO: Below is generally the same, abstract as some point
-# TODO: Write Ljung box test (use statsmodels for now)
 def ljung_box_test(
     data: pl.DataFrame | NDArray[np.floating],
     asset: str | None = None,
     lags: list[int] = [10, 20],
-    degrees_of_freedom=0,
+    degrees_of_freedom: int = 0,
 ) -> PerAssetTestResult:
+    """Run Ljung-Box tests on a 1D series."""
     if isinstance(data, pl.DataFrame):
         if asset is not None:
-            array = data.get_column(asset).to_numpy()  # 1D
+            array = data.get_column(asset).to_numpy()
         else:
             if data.width != 1:
                 raise ValueError(
                     "asset must be provided when data has multiple columns."
                 )
-            array = data.to_series(0).to_numpy()  # 1D
+            array = data.to_series(0).to_numpy()
     else:
         array = np.asarray(data)
         if array.ndim != 1:
@@ -290,17 +325,21 @@ def ljung_box_test(
             )
 
     lb = acorr_ljungbox(
-        x=array, lags=lags, boxpierce=False, model_df=degrees_of_freedom
+        x=array,
+        lags=lags,
+        boxpierce=False,
+        model_df=degrees_of_freedom,
     )
-    per_lag = {}
+
+    per_lag: dict[str, HypTestRes] = {}
     for lag in lb.index:
         per_lag[f"lag_{int(lag)}"] = format_hyp_test_result(
             stat=lb.loc[lag, "lb_stat"],
             p_val=lb.loc[lag, "lb_pvalue"],
             null=f"No autocorrelation up to lag {int(lag)}",
         )
-    rejected = [k for k, res in per_lag.items() if res.reject_null]
 
+    rejected = [k for k, res in per_lag.items() if res.reject_null]
     return PerAssetTestResult(results=per_lag, rejected=rejected)
 
 
@@ -308,8 +347,10 @@ def arch_test(
     residual_array: NDArray[np.floating],
     lags_to_test: list[int],
     degrees_of_freedom: int,
-):
-    arch_lag_res = {}
+) -> PerAssetTestResult:
+    """Run ARCH tests over the requested lags."""
+    arch_lag_res: dict[str, HypTestRes] = {}
+
     for lag in lags_to_test:
         arch_res = het_arch(residual_array, nlags=lag, ddof=degrees_of_freedom)
         arch_lag_res[f"{lag}"] = format_hyp_test_result(
@@ -317,6 +358,6 @@ def arch_test(
             p_val=arch_res[1],
             null=f"no ARCH effects up to lag {int(lag)}",
         )
-    rejected = [k for k, res in arch_lag_res.items() if res.reject_null]
 
+    rejected = [k for k, res in arch_lag_res.items() if res.reject_null]
     return PerAssetTestResult(results=arch_lag_res, rejected=rejected)
