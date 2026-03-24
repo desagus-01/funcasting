@@ -16,7 +16,7 @@ data = pl.read_csv("./data/tiingo_sample.csv")
 #     *[col for col in data.columns if data.select(col).null_count().item() == 0]
 # )
 # assets = data.columns[1:10]
-assets = ["IPDN", "MBOT", "FWONA"]
+assets = ["FWONA"]
 data = data.select("date", *assets)
 
 data
@@ -48,13 +48,14 @@ forecasts = run_n_steps_forecast(
     seed=2,
     assets=assets,
     method="bootstrap",
+    back_to_price=False,
     # target_copula="t",
 )
 prof.disable()
 stats = pstats.Stats(prof)
 stats.sort_stats("cumulative")  # or "tottime"
 stats.print_stats(30)  # top 30 entries
-# %%
+
 for asset, forecast in forecasts[1].items():
     plot_simulation_results(forecast, title=f"{asset}")
 # %%
