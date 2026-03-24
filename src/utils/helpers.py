@@ -8,7 +8,7 @@ import polars.selectors as cs
 from numpy.typing import NDArray
 from pydantic import validate_call
 
-from globals import LAGS, model_cfg, sign_operations
+from globals import model_cfg, sign_operations
 from models.types import CorrInfo, ProbVector, View
 
 
@@ -109,15 +109,6 @@ def compute_cdf_and_pobs(
         )
 
     return df
-
-
-def build_lag_df(
-    data: pl.DataFrame, asset: str, lags: int = LAGS["testing"]
-) -> pl.DataFrame:
-    return data.select(
-        asset,
-        *[pl.col(asset).shift(i).alias(f"{asset}_lag_{i}") for i in range(1, lags + 1)],
-    )
 
 
 def build_diff_df(data: pl.DataFrame, asset: str, diffs: int = 1) -> pl.DataFrame:

@@ -259,7 +259,7 @@ def run_n_steps_forecast(
             "Must have more than one asset in order to use the copula method."
         )
 
-    post_process = run_univariate_preprocess(data=data, assets=assets)
+    post_process = run_univariate_preprocess(data=data, prob=prob, assets=assets)
     logger.info(
         "Preprocessing complete: post_data_shape=%s assets_to_model=%s",
         post_process.post_data.shape,

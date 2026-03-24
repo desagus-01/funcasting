@@ -48,7 +48,7 @@ def run_lagged_tests(
     prob: ProbVector,
     assets: list[str] | None,
     test_fn: PairTest,
-    lags: int = LAGS["testing"],
+    lags: int = LAGS["simple"],
     **test_kwargs: Any,
 ) -> TestResultByAsset:
     """Run a pairwise test over lags for each selected asset."""
@@ -96,20 +96,19 @@ def _sample_meancov_np(
     assets: list[str] | tuple[str, str],
 ) -> MeanCovRes:
     """Compute weighted mean and covariance for a 2D array."""
-    arr = np.asarray(data_np, dtype=float)
-    if arr.ndim != 2:
-        raise ValueError(f"Expected 2D array, got shape {arr.shape}")
+    if data_np.ndim != 2:
+        raise ValueError(f"Expected 2D array, got shape {data_np.shape}")
 
-    p = np.asarray(prob, dtype=float).reshape(-1)
-    if arr.shape[0] != p.shape[0]:
+    prob = prob.reshape(-1)
+    if data_np.shape[0] != prob.shape[0]:
         raise ValueError(
-            f"Probability vector length {p.shape[0]} does not match "
-            f"number of observations {arr.shape[0]}"
+            f"Probability vector length {prob.shape[0]} does not match "
+            f"number of observations {data_np.shape[0]}"
         )
 
-    weighted_mean = p @ arr
-    centered = arr - weighted_mean
-    weighted_cov = (centered.T * p) @ centered
+    weighted_mean = prob @ data_np
+    centered = data_np - weighted_mean
+    weighted_cov = (centered.T * prob) @ centered
 
     return MeanCovRes(
         assets=list(assets),
@@ -141,7 +140,7 @@ def autocorrelation_pair_test(
 def ellipsoid_lag_test(
     data: pl.DataFrame,
     prob: ProbVector,
-    lags: int = LAGS["testing"],
+    lags: int = LAGS["simple"],
     assets: list[str] | None = None,
 ) -> TestResultByAsset:
     """Run the ellipsoid lag test for each asset and lag."""
@@ -247,7 +246,7 @@ def independence_permutation_test(
 def copula_lag_independence_test(
     copula: pl.DataFrame,
     prob: ProbVector,
-    lags: int = LAGS["testing"],
+    lags: int = LAGS["complex"],
     assets: list[str] | None = None,
 ) -> TestResultByAsset:
     """Run the copula lag independence test for each asset and lag."""

@@ -10,12 +10,13 @@ from utils.visuals import plot_simulation_results
 
 # %%
 data = pl.read_csv("./data/tiingo_sample.csv")
+# test IPDN, MBOT, FWONA
 
-
-data = data.select(
-    *[col for col in data.columns if data.select(col).null_count().item() == 0]
-)
-assets = data.columns[1:5]
+# data = data.select(
+#     *[col for col in data.columns if data.select(col).null_count().item() == 0]
+# )
+# assets = data.columns[1:10]
+assets = ["IPDN", "MBOT", "FWONA"]
 data = data.select("date", *assets)
 
 data
@@ -56,3 +57,4 @@ stats.print_stats(30)  # top 30 entries
 # %%
 for asset, forecast in forecasts[1].items():
     plot_simulation_results(forecast, title=f"{asset}")
+# %%

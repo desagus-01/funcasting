@@ -8,7 +8,6 @@ from numpy._typing import NDArray
 from polars.dataframe.frame import DataFrame
 
 from globals import LAGS
-from maths.distributions import uniform_probs
 from maths.helpers import add_detrend_column, add_differenced_columns
 from maths.time_series.diagnostics.seasonality import (
     SEASONAL_MAP,
@@ -26,6 +25,7 @@ from maths.time_series.operations import HarmonicTerm, deterministic_seasonal_ad
 from methods.cma import CopulaMarginalModel
 from models.types import ProbVector
 from utils.helpers import (
+    compensate_prob,
     get_assets_names,
 )
 
@@ -172,29 +172,40 @@ class UnivariatePreprocess:
     needs_further_modelling: list[str]
 
 
-def _run_all_iid_tests(
+def _run_iid_simple(
     data: DataFrame,
     prob: ProbVector,
     assets: list[str],
-    lags: int = LAGS["testing"],
+    lags: int = LAGS["simple"],
 ) -> dict[str, TestResultByAsset]:
-    """Execute all IID tests and return raw per-test, per-asset results.
+    """Run the cheaper IID screens."""
+    ellipsoid_test = ellipsoid_lag_test(
+        data=data,
+        prob=prob,
+        lags=lags,
+        assets=assets,
+    )
+    ks_test = univariate_kolmogrov_smirnov_test(
+        data=data,
+        assets=assets,
+    )
+    return {
+        "ellipsoid": ellipsoid_test,
+        "ks": ks_test,
+    }
 
-    Args:
-        data: Input DataFrame with asset columns.
-        prob: Probability vector aligned to rows.
-        assets: Asset column names to test.
-        lags: Max lag to evaluate.
 
-    Returns:
-        {
-          "ellipsoid": {asset -> TestResultByAsset},
-          "copula":    {asset -> TestResultByAsset},
-          "ks":        {asset -> TestResultByAsset},
-        }
-    """
-    ellipsoid_test = ellipsoid_lag_test(data=data, prob=prob, lags=lags, assets=assets)
-    copula_marginal_model = CopulaMarginalModel.from_data_and_prob(data=data, prob=prob)
+def _run_iid_complex(
+    data: DataFrame,
+    prob: ProbVector,
+    assets: list[str],
+    lags: int = LAGS["complex"],
+) -> dict[str, TestResultByAsset]:
+    """Run the expensive copula IID screen."""
+    copula_marginal_model = CopulaMarginalModel.from_data_and_prob(
+        data=data.select(assets),
+        prob=prob,
+    )
 
     copula_lag_test_res = copula_lag_independence_test(
         copula=copula_marginal_model.copula,
@@ -203,48 +214,56 @@ def _run_all_iid_tests(
         assets=assets,
     )
 
-    ks_test = univariate_kolmogrov_smirnov_test(data=data, assets=assets)
-
     return {
-        "ellipsoid": ellipsoid_test,
         "copula": copula_lag_test_res,
-        "ks": ks_test,
     }
 
 
 def check_white_noise(
     data: DataFrame,
-    prob: ProbVector | None = None,
-    assets: list[str] | None = None,
-    lags: int = LAGS["testing"],
+    prob: ProbVector,
+    assets: list[str],
+    lags_simple: int = LAGS["simple"],
+    lags_complex: int = LAGS["complex"],
 ) -> dict[str, bool]:
-    """Run three IID tests and summarize white-noise by asset.
+    """Return whether each asset passes the white-noise screen."""
 
-    Tests:
-        1) Copula-based lag independence
-        2) Kolmogorov–Smirnov (two-sample, split)
-        3) Ellipsoid (Gaussian) lag test
+    simple_tests = _run_iid_simple(
+        data=data,
+        prob=prob,
+        assets=assets,
+        lags=lags_simple,
+    )
 
-    Args:
-        data: Input DataFrame with asset columns.
-        prob: Optional probability vector aligned to rows. If None, uniform.
-        assets: Asset columns to test; inferred if None.
-        lags: Max lag to test for the lag-based tests.
-
-    Returns:
-        Mapping {asset -> True if all tests pass across all lags, else False}.
-    """
-    if prob is None:
-        prob = uniform_probs(data.height)
-
-    if assets is None:
-        assets = get_assets_names(df=data, assets=assets)
-
-    wn_tests = _run_all_iid_tests(data=data, prob=prob, assets=assets, lags=lags)
-    return {
-        a: not any(wn_tests[t][a].rejected for t in ("ellipsoid", "copula", "ks"))
-        for a in assets
+    simple_pass = {
+        asset: not any(
+            simple_tests[test_name][asset].rejected for test_name in ("ellipsoid", "ks")
+        )
+        for asset in assets
     }
+
+    assets_for_copula = [asset for asset, passed in simple_pass.items() if passed]
+
+    if not assets_for_copula:
+        return simple_pass
+
+    complex_tests = _run_iid_complex(
+        data=data,
+        prob=prob,
+        assets=assets_for_copula,
+        lags=lags_complex,
+    )
+
+    copula_pass = {
+        asset: not complex_tests["copula"][asset].rejected
+        for asset in assets_for_copula
+    }
+
+    final_pass = simple_pass.copy()
+    for asset in assets_for_copula:
+        final_pass[asset] = final_pass[asset] and copula_pass[asset]
+
+    return final_pass
 
 
 def _detrend_decision_rule(
@@ -545,10 +564,10 @@ def _diff_assets(data: DataFrame, assets: list[str]) -> DataFrame:
 
 
 def _find_nonwhite_noise_assets(
-    increments_df: pl.DataFrame, assets: list[str]
+    increments_df: pl.DataFrame, prob: ProbVector, assets: list[str]
 ) -> list[str]:
     """Return assets whose increments fail white-noise tests."""
-    wn = check_white_noise(data=increments_df.select(assets))
+    wn = check_white_noise(data=increments_df.select(assets), assets=assets, prob=prob)
     return [a for a, ok in wn.items() if not ok]
 
 
@@ -574,10 +593,22 @@ def overwrite_with_transforms(
     return j.with_columns(exprs).drop(drop_cols)
 
 
+def test_increments_idd(
+    data: pl.DataFrame, original_prob: ProbVector, assets: list[str]
+) -> list[str]:
+    increments_df = _diff_assets(data, assets)
+    increments_prob = compensate_prob(original_prob, data.height - increments_df.height)
+    assets_need_preprocess = _find_nonwhite_noise_assets(
+        increments_df=increments_df, prob=increments_prob, assets=assets
+    )
+    return assets_need_preprocess
+
+
 # TODO: Make sure date is also returned
 # TODO: Review dropping nulls blankly - prob is a better way
 def run_univariate_preprocess(
     data: pl.DataFrame,
+    prob: ProbVector,
     assets: list[str] | None = None,
 ) -> UnivariatePreprocess:
     """
@@ -598,8 +629,9 @@ def run_univariate_preprocess(
         assets,
     )
 
-    increments_df = _diff_assets(data, assets)
-    assets_need_preprocess = _find_nonwhite_noise_assets(increments_df, assets)
+    assets_need_preprocess = test_increments_idd(
+        data=data, original_prob=prob, assets=assets
+    )
     applied_transforms: dict[str, list[AppliedTransform]] = {
         asset: [] for asset in assets_need_preprocess
     }
