@@ -76,12 +76,13 @@ def add_detrend_column(
 
         if p == 0:
             betas_by_order[p] = {
-                asset: np.array([beta[i]], dtype=float)
+                asset: np.array([beta[i]], dtype=float).reshape(-1)
                 for i, asset in enumerate(assets)
             }
         else:
             betas_by_order[p] = {
-                asset: beta[:, i].copy() for i, asset in enumerate(assets)
+                asset: np.asarray(beta[:, i], dtype=float).reshape(-1)
+                for i, asset in enumerate(assets)
             }
 
         for i, asset in enumerate(assets):

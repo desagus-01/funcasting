@@ -257,4 +257,4 @@ def run_n_steps_forecast(
         )
 
     logger.info("Forecast complete")
-    return assets_forecasts
+    return assets_forecasts, post_process

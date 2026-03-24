@@ -47,11 +47,42 @@ class PolynomialInverseSpec:
     order: int
     betas: NDArray[np.floating]
 
+    def inverse_for_forecasts(
+        self,
+        data: NDArray[np.floating],
+        start_x: int,
+    ) -> NDArray[np.floating]:
+        polynomials = self.betas.reshape(-1)
+        horizon = data.shape[1]
+        future_x = np.arange(start_x, start_x + horizon)
+        trend = np.polyval(polynomials, future_x)
+        return data + trend[None, :]
+
 
 @dataclass(frozen=True)
 class DifferenceInverseSpec:
     order: int
     initial_values: NDArray[np.floating]
+
+    def inverse_for_forecasts(
+        self,
+        data: NDArray[np.floating],
+    ) -> NDArray[np.floating]:
+        if self.order < 1:
+            raise ValueError("DifferenceInverseSpec.order must be >= 1")
+
+        init = self.initial_values.reshape(-1)
+
+        if init.shape[0] != self.order:
+            raise ValueError(
+                f"Expected {self.order} initial values, got {init.shape[0]}"
+            )
+
+        current = data
+        for anchor in init[::-1]:
+            current = np.cumsum(current, axis=1) + anchor
+
+        return current
 
 
 @dataclass(frozen=True)
