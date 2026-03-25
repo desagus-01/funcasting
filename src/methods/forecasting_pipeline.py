@@ -208,13 +208,13 @@ def apply_inverse_transforms(
             if isinstance(inverse_spec, SeasonalInverseSpec):
                 current = inverse_spec.inverse_for_forecasts(
                     current,
-                    n_original + 1,
+                    n_original,
                 )
 
             elif isinstance(inverse_spec, PolynomialInverseSpec):
                 current = inverse_spec.inverse_for_forecasts(
                     current,
-                    n_original + 1,
+                    n_original,
                 )
 
             elif isinstance(inverse_spec, DifferenceInverseSpec):

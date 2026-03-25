@@ -7,28 +7,29 @@ from models.types import ProbVector
 
 
 def kernel_smoothing(
-    data_array: NDArray[np.floating],
+    n: int,
     half_life: float,
     kernel_type: int,
     reference: float | None,
     time_based: bool = False,
 ) -> NDArray[np.float64]:
-    """
-    General function for kernel smoothing, allows for exponential, gaussian among other through the kernel_type parameter.
-    """
-    if kernel_type < 0:
-        raise ValueError("Kernel type must be positive integer")
+    if kernel_type <= 0:
+        raise ValueError("kernel_type must be a positive integer")
+    if n <= 0:
+        raise ValueError("n must be positive")
+    if half_life <= 0:
+        raise ValueError("half_life must be positive")
+
+    data = np.arange(n, dtype=np.float64)
 
     if time_based:
-        data_n = len(data_array)
-        data = np.arange(data_n)
-        dist_to_ref = data_n - 1 - data  # uses last data point as ref
-    elif not time_based and reference is not None:
-        dist_to_ref = np.abs(reference - data_array)
+        dist_to_ref = (n - 1) - data  # distance from most recent point
+    elif reference is not None:
+        dist_to_ref = np.abs(data - reference)
     else:
-        raise ValueError("You must choose correct parameters")
+        raise ValueError("reference must be provided when time_based=False")
 
-    bandwidth: float = half_life / (np.log(2.0) ** (1.0 / kernel_type))
+    bandwidth = half_life / (np.log(2.0) ** (1.0 / kernel_type))
     return np.exp(-((dist_to_ref / bandwidth) ** kernel_type))
 
 
@@ -58,20 +59,17 @@ def state_crisp_probs(length: int, condition_vector: NDArray[np.bool_]) -> ProbV
 
 @validate_call(config=model_cfg, validate_return=True)
 def state_smooth_probs(
-    data_array: NDArray[np.floating],
-    half_life: float,
-    kernel_type: int,
-    reference: float | None,
-    time_based: bool = False,
-) -> ProbVector:
-    """
-    Applies kernel based smoothing based on reference target and normalises to probability.
-    """
-    full_decay = kernel_smoothing(
-        data_array=data_array,
+    n: int,
+    half_life: float = 5.0,
+    kernel_type: int = 1,
+    reference: float | None = None,
+    time_based: bool = True,
+) -> NDArray[np.float64]:
+    w = kernel_smoothing(
+        n=n,
         half_life=half_life,
         kernel_type=kernel_type,
         reference=reference,
         time_based=time_based,
     )
-    return full_decay / np.sum(full_decay)
+    return w / w.sum()

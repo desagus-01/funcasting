@@ -43,6 +43,7 @@ class AutoARMARes(NamedTuple):
     params: dict[str, float]
     p_values: NDArray[np.floating]
     residuals: NDArray[np.floating]
+    residual_scale: float
     kind: Literal["arma"] = "arma"
 
 
@@ -51,6 +52,7 @@ class DemeanRes(NamedTuple):
     degrees_of_freedom: int
     params: dict[str, float]
     residuals: NDArray[np.floating]
+    residual_scale: float
     kind: Literal["demean"] = "demean"
 
 
@@ -255,7 +257,6 @@ def by_criteria(res: AutoARMARes | AutoGARCHRes) -> float:
     return res.criteria_res
 
 
-# TODO: Filter out p-vals?
 def auto_arma(
     asset_array: NDArray[np.floating],
     max_ar_order: int,
@@ -312,6 +313,7 @@ def auto_arma(
                 criteria_res=float(getattr(res, information_criteria)),
                 p_values=res.pvalues,  # type: ignore[attr-defined]
                 residuals=res.resid,  # type: ignore[attr-defined]
+                residual_scale=float(np.std(res.resid, ddof=1)),  # type: ignore[attr-defined]
             )
         )
     if not arma_res:

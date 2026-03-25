@@ -28,28 +28,51 @@ class UnivariateRes:
     mean_res: MeanModelRes | None
     volatility_res: AutoGARCHRes | None
 
-    def invariant(self, non_null_values: NDArray[np.floating]) -> NDArray[np.floating]:
+    def innovation_scale(self, non_null_values: NDArray[np.floating]) -> float:
         """
-        Returns the correct invariant to be used downstream for forecasting purposes.
-
-        Rules are:
-        - If volatility_model exists: invariants are already aligned to non-null fit sample.
-        - If only mean_model exists: residuals are aligned to non-null fit sample.
-        - Random Walk (no mean, no vol): innovations = [nan] + diff(non_null_values)
-          so length matches non-null sample, like Polars diff does.
+        Scale used to standardize / unstandardize innovations for non-GARCH assets.
+        For GARCH assets, innovations are already standardized dynamically.
         """
         if self.volatility_res is not None:
-            invariant = self.volatility_res.invariants
+            return 1.0
+
+        if self.mean_res is not None:
+            scale = float(self.mean_res.residual_scale)
+            return 1.0 if (not np.isfinite(scale) or scale <= 0) else scale
+
+        diff = np.diff(non_null_values)
+        if diff.size == 0:
+            return 1.0
+
+        scale = float(np.std(diff, ddof=1))
+        return 1.0 if (not np.isfinite(scale) or scale <= 0) else scale
+
+    def invariant(self, non_null_values: NDArray[np.floating]) -> NDArray[np.floating]:
+        """
+        Return standardized innovations for all asset types.
+
+        - GARCH asset: standardized residuals from GARCH fit
+        - mean-only asset: residuals / residual_scale
+        - no-model asset: [nan] + diff(series) / diff_scale
+        """
+        if self.volatility_res is not None:
+            invariant = np.asarray(self.volatility_res.invariants, dtype=float)
+
         elif self.mean_res is not None:
-            invariant = self.mean_res.residuals
+            scale = self.innovation_scale(non_null_values)
+            invariant = np.asarray(self.mean_res.residuals, dtype=float) / scale
+
         else:
-            invariant = np.concatenate(
+            diff = np.concatenate(
                 [np.array([np.nan], dtype=float), np.diff(non_null_values)]
             )
+            scale = self.innovation_scale(non_null_values)
+            invariant = diff / scale
+
         if invariant.shape[0] != non_null_values.shape[0]:
             raise ValueError(
                 f"Innovation length mismatch: innov={invariant.shape[0]} "
-                f"vs non_null_values={non_null_values.shape[0]} "
+                f"vs non_null_values={non_null_values.shape[0]}"
             )
         return invariant.astype(float)
 
@@ -271,11 +294,13 @@ def mean_modelling_pipeline(
             )
         else:
             mean = array.mean().item()
+            residuals = array - mean
             res = DemeanRes(
                 model_order=None,
                 degrees_of_freedom=0,
                 params={"mean": mean},
-                residuals=array - mean,
+                residuals=residuals,
+                residual_scale=float(np.std(residuals, ddof=1)),
             )
             asset_mean_model_res[asset] = res
             logger.info(

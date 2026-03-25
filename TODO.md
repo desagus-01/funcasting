@@ -1,13 +1,21 @@
 
-## Priority
+## Re-factor
+- [ ] Change files and directories to something more logical
 - [ ] Sit down and figure our dataypes
-- [ ] Add CRPS scores for forecasts
 - [ ] Clean up all the polars-numpy conversion madness
-- [x] Clean inversion of forecasts to prices ✅ 2026-03-24
-- [ ] Check if random walk model is correctly being choose when approps
-- [ ] Add appropriate logs to debug
+- [ ] Add appropriate logs to debug (but not too many)
+    - [ ] Add logging files etc as well
 
-**Clean uo todos**
+
+## Forecasting pipeline
+- [ ] Add metrics to evaluate forecast:
+    - [ ] Add CRPS scores 
+- [ ] Change model selection pipeline to drop bad forecast models
+- [ ] Add check whether final innovs are iid?
+- [ ] Add 'block' resampling instead to better preserve dynamics
+- [ ] Add back probabilities for forecasts that were used from MC
+- [ ] Simplify seasonality as currently just noise fitting
+- [ ] Check whether random walk model is being activated correctly
 
 
 ## Lower Priority

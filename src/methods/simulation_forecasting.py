@@ -30,6 +30,7 @@ class UnivariateModel:
     mean_kind: MeanKind
     mean_params: dict[str, float]
     vol_params: dict[str, float]
+    innovation_scale: float = 1.0
     mean_order: tuple[int, int] = (0, 0)
     vol_kind: VolKind = "none"
     vol_order: tuple[int, int, int] = (0, 0, 0)
@@ -54,10 +55,15 @@ class UnivariateModel:
             vol_kind: VolKind = "none"
             vol_order = (0, 0, 0)
             vol_params = {}
+            if fitting_results.mean_res is not None:
+                innovation_scale = float(fitting_results.mean_res.residual_scale)
+            else:
+                innovation_scale = 1.0
         else:
             vol_kind = "garch"
             vol_order = fitting_results.volatility_res.model_order
             vol_params = fitting_results.volatility_res.params
+            innovation_scale = 1.0
 
         return cls(
             mean_kind=mean_kind,
@@ -65,6 +71,7 @@ class UnivariateModel:
             mean_params=mean_params,
             vol_kind=vol_kind,
             vol_order=vol_order,
+            innovation_scale=innovation_scale,
             vol_params=vol_params,
         )
 
@@ -219,6 +226,23 @@ class ForecastModel:
             raise ValueError("post_series_non_null is empty")
 
         model = UnivariateModel.from_fitting_results(fitting_results=fitting_results)
+
+        if fitting_results.mean_res is None and fitting_results.volatility_res is None:
+            diff = np.diff(post_series_non_null)
+            scale = float(np.std(diff, ddof=1)) if diff.size > 0 else 1.0
+            if not np.isfinite(scale) or scale <= 0:
+                scale = 1.0
+
+            model = UnivariateModel(
+                mean_kind=model.mean_kind,
+                mean_order=model.mean_order,
+                mean_params=model.mean_params,
+                vol_kind=model.vol_kind,
+                vol_order=model.vol_order,
+                vol_params=model.vol_params,
+                innovation_scale=scale,
+            )
+
         return cls(
             model=model,
             state0=UnivariateState.from_fitting_results_and_model(
@@ -579,7 +603,7 @@ def simulate_asset_paths(
     innovations, n_sims, horizon = as_sims_by_horizon(innovations)
 
     if model.vol_kind == "none":
-        eps_paths = innovations
+        eps_paths = model.innovation_scale * innovations
     elif model.vol_kind == "garch":
         _, eps_paths = garch_simulation_paths(
             params=params,
