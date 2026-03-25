@@ -46,9 +46,9 @@ forecasts = run_n_steps_forecast(
     n_sims=5000,
     seed=2,
     assets=assets,
-    method="cma",
-    back_to_price=False,
-    target_copula="t",
+    method="bootstrap",
+    # target_copula="t",
+    back_to_price=True,
 )
 price_forecasts = forecasts[1]
 

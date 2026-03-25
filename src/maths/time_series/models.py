@@ -362,6 +362,55 @@ def _garch_base_model(
     return base_model
 
 
+def _garch_persistence_calc(params: dict[str, float]) -> float:
+    alpha_sum = sum(v for k, v in params.items() if k.startswith("alpha"))
+    beta_sum = sum(v for k, v in params.items() if k.startswith("beta"))
+    gamma_sum = sum(v for k, v in params.items() if k.startswith("gamma"))
+    return alpha_sum + beta_sum + 0.5 + gamma_sum
+
+
+def _garch_boundaries_check(
+    params: dict[str, float],
+    tolerance_zero: float = 1e-10,
+    tolerance_dups: float = 1e-6,
+) -> bool:
+    vals = {k: float(v) for k, v in params.items()}
+
+    # zero higher order lags
+    for k, v in vals.items():
+        if (
+            k.startswith("alpha") or k.startswith("beta") or k.startswith("gamma")
+        ) and abs(v) < tolerance_zero:
+            return True
+
+    # duplicated betas mean weak identification
+    betas = [v for k, v in vals.items() if k.startswith("beta")]
+    if len(betas) >= 2:
+        for i in range(len(betas)):
+            for j in range(i + 1, len(betas)):
+                if abs(betas[i] - betas[j]) < tolerance_dups:
+                    return True
+
+    return False
+
+
+def _admissable_garch_model(
+    params: dict[str, float], max_persistence: float = 0.98
+) -> bool:
+    persistence = _garch_persistence_calc(params)
+
+    if persistence >= max_persistence:
+        return False
+    if _garch_boundaries_check(params):
+        return False
+
+    omega = params.get("omega", 0.0)
+    if omega <= 0:
+        return False
+
+    return True
+
+
 def auto_garch(
     asset_array: NDArray[np.floating],
     max_p_order: int = 2,
@@ -395,6 +444,9 @@ def auto_garch(
             continue
 
         if proposed_model.bic < base_model.bic:
+            params = proposed_model.params.to_dict()  # type: ignore[attr-defined]
+            if not _admissable_garch_model(params):
+                continue
             garch_candidates.append(
                 AutoGARCHRes(
                     model_order=key,
