@@ -257,6 +257,17 @@ def by_criteria(res: AutoARMARes | AutoGARCHRes) -> float:
     return res.criteria_res
 
 
+def _arma_filter(
+    params: dict[str, float], max_abs_ar1: float = 0.98, max_sum_ar: float = 0.98
+) -> bool:
+    ar_vals = [float(v) for k, v in params.items() if k.startswith("ar.L")]
+    if len(ar_vals) == 1 and abs(ar_vals[0]) >= max_abs_ar1:
+        return False
+    if len(ar_vals) >= 2 and sum(ar_vals) >= max_sum_ar:
+        return False
+    return True
+
+
 def auto_arma(
     asset_array: NDArray[np.floating],
     max_ar_order: int,
@@ -300,14 +311,21 @@ def auto_arma(
             )
             continue
 
+        params = _build_arma_parameters(model.param_names, res.arparams, res.maparams)  # type: ignore[attr-defined]
+
+        if not _arma_filter(params):
+            logger.info(
+                "Model (%s, %s) ar vals are close to 1, will drop it",
+                ar_order,
+                ma_order,
+            )
+
+            continue
+
         arma_res.append(
             AutoARMARes(
                 model_order=(ar_order, ma_order),
-                params=_build_arma_parameters(
-                    model.param_names,
-                    res.arparams,  # type: ignore[attr-defined]
-                    res.maparams,  # type: ignore[attr-defined]
-                ),
+                params=params,
                 degrees_of_freedom=ar_order + ma_order,
                 criteria=information_criteria,
                 criteria_res=float(getattr(res, information_criteria)),

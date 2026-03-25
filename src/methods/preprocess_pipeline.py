@@ -279,12 +279,14 @@ def check_white_noise(
 
 
 def _detrend_decision_rule(
-    detrend_res: dict[str, dict[str, TrendTest]], assets: list[str]
+    detrend_res: dict[str, dict[str, TrendTest]],
+    assets: list[str],
+    tie_break: Literal["polynomial", "difference"] = "difference",
 ) -> dict[str, TransformDecision]:
     """Choose the lowest-order winning trend transform per asset.
 
     Strategy:
-        Prefer the smallest order; tie-break in favor of "polynomial".
+        Prefer the smallest order; tie-break
     """
     trend_trans = {}
     for asset in assets:
@@ -304,9 +306,7 @@ def _detrend_decision_rule(
         if not candidates:
             continue
 
-        transformation, order = min(
-            candidates, key=lambda x: (x[1], x[0] != "polynomial")
-        )
+        transformation, order = min(candidates, key=lambda x: (x[1], x[0] != tie_break))
 
         trend_trans[asset] = TransformDecision(kind=transformation, order=order)
 

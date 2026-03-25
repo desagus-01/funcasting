@@ -176,6 +176,7 @@ def get_assets_models(
             fitting_results=assets_univariate_result[asset],
             post_series_non_null=post_series_non_null,
         )
+        print(f"{asset}: model: {forecast_models[asset].model}")
 
     logger.info("Built forecast models for %d assets", len(assets_))
     return forecast_models

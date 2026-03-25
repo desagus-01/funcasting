@@ -204,26 +204,46 @@ def needs_mean_modelling(
     return needs_mean_modelling
 
 
-def run_best_arma(
+def _demean_fallback(asset_array: NDArray[np.floating]) -> DemeanRes:
+    mean = float(np.mean(asset_array))
+    residuals = asset_array - mean
+    scale = float(np.std(residuals, ddof=1))
+    if not np.isfinite(scale) or scale <= 0:
+        scale = 1.0
+
+    return DemeanRes(
+        model_order=None,
+        degrees_of_freedom=0,
+        params={"mean": mean},
+        residuals=residuals,
+        residual_scale=scale,
+    )
+
+
+def get_appropriate_mean_model(
     asset_array: NDArray[np.floating],
     asset_name: str,
     search_n_models: int = 5,
     information_criteria: Literal["bic", "aic"] = "bic",
-) -> AutoARMARes:
+) -> MeanModelRes:
     """
-    Selects the best ARMA model by information criterion (AIC/BIC) among those
-    whose residuals pass the Ljung–Box test for no autocorrelation.
-
-    Falls back to the best information criterion model if none pass.
+    Select the best admissible ARMA model whose residuals pass Ljung-Box.
+    Fall back to demean if no admissible ARMA candidate exists.
     """
-
-    candidate_models_res = auto_arma(
-        asset_array=asset_array,
-        max_ar_order=3,
-        max_ma_order=3,
-        information_criteria=information_criteria,
-        top_n_models=search_n_models,
-    )
+    try:
+        candidate_models_res = auto_arma(
+            asset_array=asset_array,
+            max_ar_order=3,
+            max_ma_order=3,
+            information_criteria=information_criteria,
+            top_n_models=search_n_models,
+        )
+    except ValueError:
+        logger.warning(
+            "Asset=%s no admissible ARMA models found; falling back to demean",
+            asset_name,
+        )
+        return _demean_fallback(asset_array)
 
     candidates_by_information_criteria = sorted(candidate_models_res, key=by_criteria)
 
@@ -232,12 +252,12 @@ def run_best_arma(
             model.residuals, degrees_of_freedom=model.degrees_of_freedom
         ):
             return model
+
     logger.warning(
         "Asset=%s no ARMA candidate passed residual diagnostics; falling back to best %s model",
         asset_name,
         information_criteria.upper(),
     )
-
     return min(candidate_models_res, key=by_criteria)
 
 
@@ -287,7 +307,7 @@ def mean_modelling_pipeline(
         array = data.select(asset).drop_nulls().to_numpy().ravel()
 
         if asset in assets_needing_arma:
-            res = run_best_arma(array, asset_name=asset)
+            res = get_appropriate_mean_model(array, asset_name=asset)
             asset_mean_model_res[asset] = res
             logger.info(
                 "Selected mean model for %s: %s", asset, _describe_mean_model(res)

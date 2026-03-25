@@ -591,7 +591,6 @@ def mean_simulation_paths(
     return simulation_results
 
 
-# TODO: Write inversion of process based on pre_process to get back to correct prices
 def simulate_asset_paths(
     forecast_model: ForecastModel,
     innovations: NDArray[np.floating],
