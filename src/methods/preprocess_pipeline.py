@@ -8,22 +8,25 @@ from numpy._typing import NDArray
 from polars.dataframe.frame import DataFrame
 
 from globals import LAGS
-from maths.helpers import add_detrend_column, add_differenced_columns
-from maths.time_series.diagnostics.seasonality import (
+from methods.cma import CopulaMarginalModel
+from models.types import ProbVector
+from time_series.diagnostics.seasonality import (
     SEASONAL_MAP,
     SeasonalityPeriodTest,
     seasonality_diagnostic,
 )
-from maths.time_series.diagnostics.trends import TrendTest, trend_diagnostic
-from maths.time_series.iid_tests import (
+from time_series.diagnostics.trend import TrendTest, trend_diagnostic
+from time_series.tests.iid import (
     TestResultByAsset,
     copula_lag_independence_test,
     ellipsoid_lag_test,
     univariate_kolmogrov_smirnov_test,
 )
-from maths.time_series.operations import HarmonicTerm, deterministic_seasonal_adjustment
-from methods.cma import CopulaMarginalModel
-from models.types import ProbVector
+from time_series.transforms.deseason import (
+    HarmonicTerm,
+    deterministic_seasonal_adjustment,
+)
+from time_series.transforms.detrend import add_detrend_column, add_differenced_columns
 from utils.helpers import (
     compensate_prob,
     get_assets_names,
@@ -616,7 +619,6 @@ def test_increments_idd(
     return assets_need_preprocess
 
 
-# TODO: Make sure date is also returned
 # TODO: Review dropping nulls blankly - prob is a better way
 def run_univariate_preprocess(
     data: pl.DataFrame,

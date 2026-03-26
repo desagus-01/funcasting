@@ -8,7 +8,6 @@ from polars import DataFrame
 from statsmodels.stats.multitest import multipletests
 from typing_extensions import Literal
 
-from maths.time_series.iid_tests import arch_test, ljung_box_test
 from maths.time_series.models import (
     AutoARMARes,
     AutoGARCHRes,
@@ -17,6 +16,7 @@ from maths.time_series.models import (
     auto_garch,
     by_criteria,
 )
+from time_series.tests.iid import arch_test, ljung_box_test
 
 logger = logging.getLogger(__name__)
 

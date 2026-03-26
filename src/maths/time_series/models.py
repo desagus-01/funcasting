@@ -250,6 +250,7 @@ def _arma_top_candidates(
     return [(int(ar_order), int(ma_order)) for (ar_order, ma_order) in top.index]
 
 
+# TODO: MOVE THIS TO SELECTION PIPELINE
 def by_criteria(res: AutoARMARes | AutoGARCHRes) -> float:
     """
     Extract the information criterion value from an AutoARMARes object.

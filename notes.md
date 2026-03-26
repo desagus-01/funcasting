@@ -92,16 +92,82 @@ Working outline:
    - arma $\to$ ARMA recursion from `MeanState.series`
      and `MeanState.mean_residuals`
 
-1. Compute $\sigma_{t+1}^2$ if vol exists; else `None`
+2. Compute $\sigma_{t+1}^2$ if vol exists; else `None`
 
 1. Convert bootstrapped invariant draw $z_{t+1}$ into
    residual $\varepsilon_{t+1}$
    - if no vol: $\varepsilon_{t+1} = z_{t+1}$
    - if vol: $\varepsilon_{t+1} = \sqrt{\sigma_{t+1}^2}\, z_{t+1}$
 
-1. Output:
+2. Output:
 
    $x_{t+1} = \mu_{t+1} + \varepsilon_{t+1}.$
 
 That's it for returns.
+
+---
+Re-factor structure
+src/funcasting/
+  core/
+    aliases.py
+    constants.py
+    types.py
+    exceptions.py
+
+  probability/
+    distributions.py
+    sampling.py
+    weighting.py
+    criteria.py
+    types.py
+
+  scenarios/
+    copula_marginal.py
+    innovations.py
+    scenario_distribution.py
+    types.py
+
+  time_series/
+    diagnostics/
+      iid.py
+      trends.py
+      seasonality.py
+
+    transforms/
+      detrend.py
+      deseason.py
+      difference.py
+      invert.py
+      types.py
+
+    models/
+      mean.py
+      volatility.py
+      selection.py
+      invariants.py
+      types.py
+
+  forecasting/
+    engine.py
+    asset_dynamics.py
+    state.py
+    outputs.py
+    types.py
+
+  portfolio/
+    optimization.py
+    risk.py
+    attribution.py
+
+  data/
+    loaders.py
+    cleaning.py
+    validation.py
+
+  utils/
+    arrays.py
+    polars.py
+    logging.py
+
+
 

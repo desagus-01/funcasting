@@ -1,6 +1,7 @@
 
 ## Re-factor
 - [ ] Change files and directories to something more logical
+- [ ] apply multiple tests to iid pipeline?
 - [ ] Sit down and figure our dataypes
 - [ ] Clean up all the polars-numpy conversion madness
 - [ ] Add appropriate logs to debug (but not too many)
