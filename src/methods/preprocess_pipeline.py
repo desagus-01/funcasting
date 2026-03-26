@@ -10,18 +10,18 @@ from polars.dataframe.frame import DataFrame
 from globals import LAGS
 from methods.cma import CopulaMarginalModel
 from models.types import ProbVector
-from time_series.diagnostics.seasonality import (
-    SEASONAL_MAP,
+from time_series.selection.seasonality import (
     SeasonalityPeriodTest,
     seasonality_diagnostic,
 )
-from time_series.diagnostics.trend import TrendTest, trend_diagnostic
+from time_series.selection.trend import TrendTest, trend_diagnostic
 from time_series.tests.iid import (
     TestResultByAsset,
     copula_lag_independence_test,
     ellipsoid_lag_test,
     univariate_kolmogrov_smirnov_test,
 )
+from time_series.tests.seasonality import SEASONAL_MAP
 from time_series.transforms.deseason import (
     HarmonicTerm,
     deterministic_seasonal_adjustment,

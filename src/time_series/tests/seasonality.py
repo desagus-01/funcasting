@@ -1,11 +1,10 @@
 from dataclasses import dataclass
-from typing import NamedTuple, Sequence
+from typing import NamedTuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from numpy._typing._array_like import NDArray
-from polars.dataframe.frame import DataFrame
 from scipy.stats import f as f_dist
 from typing_extensions import Literal
 
@@ -228,28 +227,3 @@ def periodogram_seasonality_test(
         evidence_of_seasonality=hypothesis_test_res.reject_null,
         res=hypothesis_test_res,
     )
-
-
-def seasonality_diagnostic(
-    data: DataFrame,
-    assets: list[str],
-    *,
-    seasonal_periods: Sequence[SEASONAL_PERIODS] | None = None,
-) -> dict[str, list[SeasonalityPeriodTest]]:
-    if seasonal_periods is None:
-        seasonal_periods = ["weekly", "monthly", "quarterly", "semi-annual", "annual"]
-
-    asset_seasonality_res = {}
-    for asset in assets:
-        data_array = (
-            data.select(asset).drop_nulls().to_numpy().flatten()
-        )  # we drop any nulls if there are any for that asset
-        seasonal_res = [
-            periodogram_seasonality_test(
-                data=data_array, seasonal_period=seasonal_period
-            )
-            for seasonal_period in seasonal_periods
-        ]
-        asset_seasonality_res[asset] = seasonal_res
-
-    return asset_seasonality_res
