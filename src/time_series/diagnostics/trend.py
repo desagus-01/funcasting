@@ -60,7 +60,7 @@ class TrendTest:
 
 
 @dataclass(frozen=True)
-class StationarityRunner:
+class TrendStationarityRunner:
     lags: int
 
     def __call__(self, df: DataFrame, col: str) -> StationarityInference:
@@ -71,7 +71,7 @@ class StationarityRunner:
         )
 
     @classmethod
-    def trend(cls) -> "StationarityRunner":
+    def trend(cls) -> "TrendStationarityRunner":
         return cls(lags=10)
 
 
@@ -98,14 +98,14 @@ def _lowest_stationary_order(results: list[TrendRes]) -> int | None:
     return None
 
 
-def run_stationary(
+def run_trend_stationarity(
     data: DataFrame,
     asset: str,
     orders: list[int],
     *,
     transform_type: TransformTypes,
     col_builder: ColBuilder,
-    runner: StationarityRunner,
+    runner: TrendStationarityRunner,
 ):
     res: list[TrendRes] = []
 
@@ -137,7 +137,7 @@ def _run_trend_diagnostic(
     trend_type: TrendTypes,
     order_max: int,
     threshold_order: int,
-    runner: StationarityRunner,
+    runner: TrendStationarityRunner,
 ) -> dict[str, TrendTest]:
     spec = TRANSFORMS[trend_type]
     orders: list[int] = spec["order_range"](order_max)
@@ -187,7 +187,7 @@ def trend_diagnostic(
     *,
     trend_type: Literal["deterministic", "stochastic", "both"],
 ) -> dict[str, dict[str, TrendTest]]:
-    runner = StationarityRunner.trend()
+    runner = TrendStationarityRunner.trend()
 
     out: dict[str, dict[str, TrendTest]] = {"deterministic": {}, "stochastic": {}}
 
