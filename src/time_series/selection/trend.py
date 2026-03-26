@@ -14,7 +14,6 @@ TransformTypes = Literal["polynomial", "difference"]
 TrendTypes = Literal["deterministic", "stochastic"]
 
 ColBuilder = Callable[[str, int], str]
-AddColumnsFn = Callable[[DataFrame, list[str], int], DataFrame]
 
 
 @dataclass(frozen=True)

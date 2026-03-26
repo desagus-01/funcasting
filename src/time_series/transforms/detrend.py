@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 import polars as pl
@@ -61,6 +62,23 @@ class DifferenceInverseSpec:
             current = np.cumsum(current, axis=1) + anchor
 
         return current
+
+
+TrendTypes = Literal["polynomial", "difference"]
+
+
+@dataclass(frozen=True)
+class TrendCandidate:
+    asset: str
+    transform_type: TrendTypes
+    order: int
+    column_name: str
+
+
+@dataclass(frozen=True)
+class CandidateBatch:
+    data: pl.DataFrame
+    candidates_by_asset: dict[str, list[TrendCandidate]]
 
 
 def polynomial_detrend(
