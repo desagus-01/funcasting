@@ -1,7 +1,66 @@
+from dataclasses import dataclass
+
 import numpy as np
 import polars as pl
 import polars.selectors as cs
 from numpy._typing import NDArray
+
+
+@dataclass(frozen=True)
+class PolynomialInverseSpec:
+    order: int
+    betas: NDArray[np.floating]
+
+    def inverse_for_forecasts(
+        self,
+        data: NDArray[np.floating],
+        start_x: int,
+    ) -> NDArray[np.floating]:
+        current = np.asarray(data, dtype=float)
+
+        if current.ndim != 2:
+            raise ValueError(
+                f"PolynomialInverseSpec expects 2D forecasts of shape "
+                f"(n_sims, horizon), got shape {current.shape}"
+            )
+
+        polynomials = np.asarray(self.betas, dtype=float).reshape(-1)
+        horizon = current.shape[1]
+        future_x = np.arange(start_x, start_x + horizon)
+        trend = np.polyval(polynomials, future_x)
+
+        return current + trend[None, :]
+
+
+@dataclass(frozen=True)
+class DifferenceInverseSpec:
+    order: int
+    initial_values: NDArray[np.floating]
+
+    def inverse_for_forecasts(
+        self,
+        data: NDArray[np.floating],
+    ) -> NDArray[np.floating]:
+        current = np.asarray(data, dtype=float)
+
+        if current.ndim != 2:
+            raise ValueError(
+                f"DifferenceInverseSpec expects 2D forecasts of shape "
+                f"(n_sims, horizon), got shape {current.shape}"
+            )
+
+        init = np.asarray(self.initial_values, dtype=float).reshape(-1)
+
+        if init.shape[0] != self.order:
+            raise ValueError(
+                f"Expected {self.order} initial values for differencing order "
+                f"{self.order}, got {init.shape[0]}"
+            )
+
+        for anchor in init[::-1]:
+            current = np.cumsum(current, axis=1) + anchor
+
+        return current
 
 
 def polynomial_detrend(
