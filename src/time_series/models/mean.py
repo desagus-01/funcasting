@@ -38,6 +38,9 @@ class DemeanRes(NamedTuple):
     kind: Literal["demean"] = "demean"
 
 
+MeanModelRes = AutoARMARes | DemeanRes
+
+
 def _build_arma_parameters(
     parameter_names: list[str],
     ar_estimates: NDArray[np.floating],

@@ -8,19 +8,23 @@ from polars import DataFrame
 from statsmodels.stats.multitest import multipletests
 from typing_extensions import Literal
 
-from maths.time_series.models import (
+from time_series.models.mean import (
     AutoARMARes,
-    AutoGARCHRes,
     DemeanRes,
+    MeanModelRes,
     auto_arma,
+)
+from time_series.models.volatility import (
+    AutoGARCHRes,
     auto_garch,
-    by_criteria,
 )
 from time_series.tests.iid import arch_test, ljung_box_test
 
 logger = logging.getLogger(__name__)
 
-MeanModelRes = AutoARMARes | DemeanRes
+
+def by_criteria(res: AutoARMARes | AutoGARCHRes) -> float:
+    return res.criteria_res
 
 
 @dataclass
