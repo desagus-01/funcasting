@@ -6,7 +6,7 @@ from arch import arch_model
 from arch.univariate.base import ARCHModelResult
 from numpy._typing import NDArray
 
-from time_series.models.types import GARCH_DISTRIBUTIONS, AutoGARCHRes
+from time_series.models.fitted_types import GARCH_DISTRIBUTIONS, AutoGARCHRes
 
 logging.basicConfig(
     level=logging.INFO,

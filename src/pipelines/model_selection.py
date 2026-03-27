@@ -6,10 +6,15 @@ from numpy._typing import NDArray
 from polars import DataFrame
 from typing_extensions import Literal
 
+from time_series.models.fitted_types import (
+    AutoARMARes,
+    DemeanRes,
+    MeanModelRes,
+    UnivariateRes,
+)
 from time_series.models.mean import (
     auto_arma,
 )
-from time_series.models.types import AutoARMARes, DemeanRes, MeanModelRes, UnivariateRes
 from time_series.models.volatility import (
     AutoGARCHRes,
     auto_garch,

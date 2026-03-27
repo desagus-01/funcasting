@@ -20,7 +20,7 @@ from simulation.simulation_forecasting import (
     ForecastModel,
     simulate_asset_paths,
 )
-from time_series.models.types import UnivariateRes
+from time_series.models.fitted_types import UnivariateRes
 from time_series.preprocessing.types import (
     AppliedTransform,
 )

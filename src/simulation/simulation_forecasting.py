@@ -6,7 +6,8 @@ from typing import Mapping
 import numpy as np
 from numpy._typing import NDArray
 
-from time_series.models.types import CompiledParams, UnivariateModel, UnivariateRes
+from time_series.models.fitted_types import UnivariateRes
+from time_series.models.model_types import CompiledParams, UnivariateModel
 
 
 @dataclass(slots=True)

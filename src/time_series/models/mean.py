@@ -9,7 +9,7 @@ from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.stattools import arma_order_select_ic
 from typing_extensions import Literal
 
-from time_series.models.types import AutoARMARes
+from time_series.models.fitted_types import AutoARMARes
 
 logging.basicConfig(
     level=logging.INFO,
