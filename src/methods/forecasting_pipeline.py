@@ -7,7 +7,6 @@ import polars as pl
 from numpy._typing import NDArray
 from polars import DataFrame
 
-from methods.cma import CopulaMarginalModel
 from methods.model_selection_pipeline import (
     UnivariateRes,
     get_univariate_results,
@@ -24,7 +23,8 @@ from methods.simulation_forecasting import (
     simulate_asset_paths,
 )
 from models.types import ProbVector
-from probability.sampling import weighted_bootstrapping_idx
+from scenarios.copula_marginal import CopulaMarginalModel
+from scenarios.resampling import weighted_bootstrapping_idx
 from utils.helpers import drop_nulls_and_compensate_prob
 
 logging.basicConfig(

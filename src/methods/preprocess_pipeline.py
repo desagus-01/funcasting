@@ -7,8 +7,8 @@ import polars as pl
 from polars.dataframe.frame import DataFrame
 
 from globals import LAGS
-from methods.cma import CopulaMarginalModel
 from models.types import ProbVector
+from scenarios.copula_marginal import CopulaMarginalModel
 from time_series.selection.seasonality import (
     SeasonalityPeriodTest,
     seasonality_diagnostic,

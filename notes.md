@@ -107,67 +107,65 @@ That's it for returns.
 
 ---
 Re-factor structure
-src/funcasting/
-  core/
-    aliases.py
-    constants.py
-    types.py
-    exceptions.py
+src/
+  config/
+    preprocess.py
+    univariate.py
+    forecasting.py
+
+  data/
+    vendors/
+      tiingo.py
+    cleaning.py
+    schemas.py
 
   probability/
     distributions.py
     sampling.py
-    weighting.py
-    criteria.py
-    types.py
 
-  scenarios/
+  scenario/
     copula_marginal.py
-    innovations.py
-    scenario_distribution.py
-    types.py
+    entropy_pooling.py
+    distribution.py
+    resampling.py
 
   time_series/
+    estimation.py
+    types.py
+
     diagnostics/
+      stationarity.py
       iid.py
-      trends.py
       seasonality.py
+      trend.py
+      residuals.py
 
     transforms/
       detrend.py
       deseason.py
-      difference.py
-      invert.py
-      types.py
+      differencing.py
 
     models/
       mean.py
       volatility.py
-      selection.py
-      invariants.py
-      types.py
 
-  forecasting/
-    engine.py
-    asset_dynamics.py
-    state.py
-    outputs.py
-    types.py
+    policies/
+      preprocess.py
+      model_selection.py
+
+  simulation/
+    univariate.py
+    multivariate.py
+
+  workflows/
+    preprocess.py
+    univariate_modeling.py
+    forecasting.py
 
   portfolio/
     optimization.py
+    constraints.py
     risk.py
-    attribution.py
-
-  data/
-    loaders.py
-    cleaning.py
-    validation.py
 
   utils/
-    arrays.py
-    polars.py
-    logging.py
-
-
-
+    helpers.py

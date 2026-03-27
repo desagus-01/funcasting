@@ -5,15 +5,15 @@ from typing import Literal
 
 import numpy as np
 import polars as pl
+from methods.ep import entropy_pooling_probs
 from polars import DataFrame
 
 from globals import ITERS
-from maths.distributions import uniform_probs
-from maths.time_series.base import HypTestRes
-from maths.time_series.iid_tests import independence_permutation_test, sw_mc
-from methods.cma import CopulaMarginalModel
-from methods.ep import entropy_pooling_probs
 from models.types import ProbVector, View
+from probability.distributions import uniform_probs
+from scenarios.copula_marginal import CopulaMarginalModel
+from time_series.tests.iid import independence_permutation_test, sw_mc
+from time_series.tests.types import HypTestRes
 
 
 @dataclass(frozen=True)

@@ -48,8 +48,8 @@ forecasts = run_n_steps_forecast(
     n_sims=5000,
     seed=2,
     assets=assets,
-    method="bootstrap",
-    # target_copula="t",
+    method="cma",
+    target_copula="t",
     back_to_price=False,
 )
 price_forecasts = forecasts[1]
