@@ -1,5 +1,4 @@
 import logging
-from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
@@ -9,6 +8,12 @@ from polars.dataframe.frame import DataFrame
 from globals import LAGS
 from models.types import ProbVector
 from scenarios.copula_marginal import CopulaMarginalModel
+from time_series.preprocessing.types import (
+    AppliedTransform,
+    PipelineAssetBatchRes,
+    TransformDecision,
+    UnivariatePreprocess,
+)
 from time_series.selection.seasonality import (
     SeasonalityPeriodTest,
     seasonality_diagnostic,
@@ -22,14 +27,17 @@ from time_series.tests.iid import (
 )
 from time_series.tests.seasonality import SEASONAL_MAP
 from time_series.transforms.deseason import (
-    SeasonalInverseSpec,
     deterministic_seasonal_adjustment,
 )
 from time_series.transforms.detrend import (
-    DifferenceInverseSpec,
-    PolynomialInverseSpec,
     add_detrend_column,
     add_differenced_columns,
+)
+from time_series.transforms.inverses import (
+    DifferenceInverseSpec,
+    InverseSpec,
+    PolynomialInverseSpec,
+    SeasonalInverseSpec,
 )
 from utils.helpers import (
     compensate_prob,
@@ -41,38 +49,6 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class TransformDecision:
-    kind: Literal["none", "polynomial", "difference", "seasonality"]
-    order: int | None = None
-
-
-InverseSpec = PolynomialInverseSpec | DifferenceInverseSpec | SeasonalInverseSpec
-
-
-@dataclass(frozen=True)
-class AppliedTransform:
-    asset: str
-    decision: TransformDecision
-    inverse_spec: InverseSpec | None = None
-
-
-@dataclass(frozen=True)
-class PipelineAssetBatchRes:
-    type: Literal["trend", "seasonality"]
-    decision: dict
-    inverse_spec: dict[str, InverseSpec] | None
-    updated_data: DataFrame
-    all_tests: dict | None
-
-
-@dataclass(frozen=True)
-class UnivariatePreprocess:
-    post_data: DataFrame
-    inverse_specs: dict[str, list[AppliedTransform]]
-    needs_further_modelling: list[str]
 
 
 def _run_iid_simple(

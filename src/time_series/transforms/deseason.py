@@ -27,53 +27,6 @@ class DeterministicSeasonalAdjustmentResult:
     terms: list[HarmonicTerm]
 
 
-@dataclass(frozen=True)
-class SeasonalInverseSpec:
-    terms: list[HarmonicTerm]
-
-    @staticmethod
-    def evaluate_seasonal_terms(
-        terms: list[HarmonicTerm],
-        time: NDArray[np.int_],
-    ) -> NDArray[np.floating]:
-        time = np.asarray(time).reshape(-1)
-        seasonal = np.zeros_like(time, dtype=float)
-
-        for term in terms:
-            if term.kind == "cos":
-                if term.omega is None:
-                    raise ValueError("Cos must have omega")
-                seasonal += term.coefficient * np.cos(term.omega * time)
-            elif term.kind == "sin":
-                if term.omega is None:
-                    raise ValueError("Sin must have omega")
-                seasonal += term.coefficient * np.sin(term.omega * time)
-
-        return seasonal
-
-    def inverse_for_forecasts(
-        self,
-        data: NDArray[np.floating],
-        n_train: int,
-    ) -> NDArray[np.floating]:
-        current = np.asarray(data, dtype=float)
-
-        if current.ndim != 2:
-            raise ValueError(
-                f"SeasonalInverseSpec expects 2D forecasts of shape "
-                f"(n_sims, horizon), got shape {current.shape}"
-            )
-
-        horizon = current.shape[1]
-        future_t = np.arange(n_train, n_train + horizon, dtype=float)
-        seasonal_future = self.evaluate_seasonal_terms(
-            terms=self.terms,
-            time=future_t,
-        )
-
-        return current + seasonal_future[None, :]
-
-
 def build_harmonic_terms(
     frequency_radians: list[float],
     coefficients: NDArray[np.floating],
