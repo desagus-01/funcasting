@@ -162,3 +162,25 @@ def apply_deseason(
         inverse_specs[asset] = SeasonalInverseSpec(terms=seas_adj_res.terms)
 
     return out, inverse_specs
+
+
+def overwrite_with_transforms(
+    base: pl.DataFrame,
+    patch: pl.DataFrame,
+    assets: list[str],
+    suffix: str,
+) -> pl.DataFrame:
+    j = base.join(patch, on="date", how="left", suffix=suffix)
+
+    exprs: list[pl.Expr] = []
+    drop_cols: list[str] = []
+
+    for a in assets:
+        pa = f"{a}{suffix}"
+        if pa in j.columns:
+            exprs.append(pl.col(pa).alias(a))
+            drop_cols.append(pa)
+        else:
+            exprs.append(pl.col(a))
+
+    return j.with_columns(exprs).drop(drop_cols)

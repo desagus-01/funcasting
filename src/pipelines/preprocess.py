@@ -5,7 +5,11 @@ import polars as pl
 from polars.dataframe.frame import DataFrame
 
 from models.types import ProbVector
-from time_series.preprocessing.apply import apply_deseason, apply_detrend
+from time_series.preprocessing.apply import (
+    apply_deseason,
+    apply_detrend,
+    overwrite_with_transforms,
+)
 from time_series.preprocessing.decisions import (
     deseason_decision_rule,
     detrend_decision_rule,
@@ -16,13 +20,12 @@ from time_series.preprocessing.types import (
     TransformDecision,
     UnivariatePreprocess,
 )
-from time_series.preprocessing.white_noise import check_white_noise
+from time_series.preprocessing.white_noise import test_increments_idd
 from time_series.selection.seasonality import (
     seasonality_diagnostic,
 )
 from time_series.selection.trend import trend_diagnostic
 from utils.helpers import (
-    compensate_prob,
     get_assets_names,
 )
 
@@ -101,55 +104,6 @@ def detrend_pipeline(
         updated_data=updated,
         all_tests=diagnostics if include_diagnostics else None,
     )
-
-
-def _diff_assets(data: DataFrame, assets: list[str]) -> DataFrame:
-    """First-difference selected asset columns; drop the leading null via slice."""
-    df = data.select(list(assets)).with_columns(
-        [pl.col(a).diff().alias(a) for a in assets]
-    )
-    return df.slice(1)  # removes the first null introduced by diff
-
-
-def _find_nonwhite_noise_assets(
-    increments_df: pl.DataFrame, prob: ProbVector, assets: list[str]
-) -> list[str]:
-    """Return assets whose increments fail white-noise tests."""
-    wn = check_white_noise(data=increments_df.select(assets), assets=assets, prob=prob)
-    return [a for a, ok in wn.items() if not ok]
-
-
-def overwrite_with_transforms(
-    base: pl.DataFrame,
-    patch: pl.DataFrame,
-    assets: list[str],
-    suffix: str,
-) -> pl.DataFrame:
-    j = base.join(patch, on="date", how="left", suffix=suffix)
-
-    exprs: list[pl.Expr] = []
-    drop_cols: list[str] = []
-
-    for a in assets:
-        pa = f"{a}{suffix}"
-        if pa in j.columns:
-            exprs.append(pl.col(pa).alias(a))
-            drop_cols.append(pa)
-        else:
-            exprs.append(pl.col(a))
-
-    return j.with_columns(exprs).drop(drop_cols)
-
-
-def test_increments_idd(
-    data: pl.DataFrame, original_prob: ProbVector, assets: list[str]
-) -> list[str]:
-    increments_df = _diff_assets(data, assets)
-    increments_prob = compensate_prob(original_prob, data.height - increments_df.height)
-    assets_need_preprocess = _find_nonwhite_noise_assets(
-        increments_df=increments_df, prob=increments_prob, assets=assets
-    )
-    return assets_need_preprocess
 
 
 # TODO: Review dropping nulls blankly - prob is a better way

@@ -7,18 +7,18 @@ import polars as pl
 from numpy._typing import NDArray
 from polars import DataFrame
 
-from methods.model_selection_pipeline import (
+from models.types import ProbVector
+from pipelines.model_selection import (
     UnivariateRes,
     get_univariate_results,
 )
-from methods.preprocess_pipeline import (
+from pipelines.preprocess import (
     run_univariate_preprocess,
 )
-from methods.simulation_forecasting import (
+from pipelines.simulation_forecasting import (
     ForecastModel,
     simulate_asset_paths,
 )
-from models.types import ProbVector
 from scenarios.copula_marginal import CopulaMarginalModel
 from scenarios.resampling import weighted_bootstrapping_idx
 from time_series.preprocessing.types import (

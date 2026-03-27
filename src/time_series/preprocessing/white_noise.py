@@ -1,5 +1,6 @@
 import logging
 
+import polars as pl
 from polars.dataframe.frame import DataFrame
 
 from globals import LAGS
@@ -10,6 +11,9 @@ from time_series.tests.iid import (
     copula_lag_independence_test,
     ellipsoid_lag_test,
     univariate_kolmogrov_smirnov_test,
+)
+from utils.helpers import (
+    compensate_prob,
 )
 
 logging.basicConfig(
@@ -123,3 +127,30 @@ def check_white_noise(
     )
 
     return final_pass
+
+
+def _diff_assets(data: DataFrame, assets: list[str]) -> DataFrame:
+    """First-difference selected asset columns; drop the leading null via slice."""
+    df = data.select(list(assets)).with_columns(
+        [pl.col(a).diff().alias(a) for a in assets]
+    )
+    return df.slice(1)  # removes the first null introduced by diff
+
+
+def _find_nonwhite_noise_assets(
+    increments_df: pl.DataFrame, prob: ProbVector, assets: list[str]
+) -> list[str]:
+    """Return assets whose increments fail white-noise tests."""
+    wn = check_white_noise(data=increments_df.select(assets), assets=assets, prob=prob)
+    return [a for a, ok in wn.items() if not ok]
+
+
+def test_increments_idd(
+    data: pl.DataFrame, original_prob: ProbVector, assets: list[str]
+) -> list[str]:
+    increments_df = _diff_assets(data, assets)
+    increments_prob = compensate_prob(original_prob, data.height - increments_df.height)
+    assets_need_preprocess = _find_nonwhite_noise_assets(
+        increments_df=increments_df, prob=increments_prob, assets=assets
+    )
+    return assets_need_preprocess

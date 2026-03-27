@@ -6,7 +6,7 @@ from typing import Literal, Mapping
 import numpy as np
 from numpy._typing import NDArray
 
-from methods.model_selection_pipeline import (
+from pipelines.model_selection import (
     UnivariateRes,
 )
 

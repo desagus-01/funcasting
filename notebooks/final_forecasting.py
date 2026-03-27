@@ -3,7 +3,7 @@ from datetime import datetime
 import numpy as np
 import polars as pl
 
-from methods.forecasting_pipeline import run_n_steps_forecast
+from pipelines.forecasting import run_n_steps_forecast
 from probability.distributions import state_smooth_probs
 from utils.tiingo import plot_ticker_lines
 from utils.visuals import plot_simulation_results
