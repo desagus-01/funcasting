@@ -1,181 +1,153 @@
-from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
-from polars.dataframe.frame import DataFrame
+from polars import DataFrame
 
-from maths.helpers import add_detrend_columns_max, add_differenced_columns
 from time_series.tests.stationarity import (
     StationarityInference,
     stationarity_tests,
 )
+from time_series.transforms.detrend import (
+    CandidateBatch,
+    TrendCandidate,
+    build_difference_candidates,
+    build_polynomial_candidates,
+)
 
-TransformTypes = Literal["polynomial", "difference"]
 TrendTypes = Literal["deterministic", "stochastic"]
 
-ColBuilder = Callable[[str, int], str]
+
+@dataclass(frozen=True)
+class TrendCandidateEvaluation:
+    candidate: TrendCandidate
+    stationarity_inf: StationarityInference
+
+    @property
+    def is_stationary(self) -> bool:
+        return self.stationarity_inf.label == "stationary"
 
 
 @dataclass(frozen=True)
-class TrendRes:
+class TrendSelection:
     asset: str
-    transform_type: TransformTypes
-    order: int
-    stationarity_inf: str
-    full_test_res: StationarityInference = field(repr=False)
-
-
-@dataclass(frozen=True)
-class TrendTest:
     trend_type: TrendTypes
     lowest_order_threshold: int
-    transformation_order_needed: int | None
-    results: list[TrendRes]
+    selected: TrendCandidate | None
+    evaluations: list[TrendCandidateEvaluation]
+
+    @property
+    def transformation_order_needed(self) -> int | None:
+        return None if self.selected is None else self.selected.order
 
     @property
     def transformation_needed(self) -> bool:
         return (
-            self.transformation_order_needed is not None
-            and self.transformation_order_needed <= self.lowest_order_threshold
+            self.selected is not None
+            and self.selected.order <= self.lowest_order_threshold
         )
 
     @property
     def description(self) -> str:
-        if self.transformation_order_needed is None:
+        if self.selected is None:
             return (
-                f"No stationary transform found up to order {self.lowest_order_threshold} "
-                f"for {self.trend_type}."
+                f"No stationary transform found up to order "
+                f"{self.lowest_order_threshold} for {self.trend_type}."
             )
+
         if self.transformation_needed:
             return (
                 f"Transformation needed: {self.trend_type} "
-                f"({self.results[0].transform_type}) of order "
-                f"{self.transformation_order_needed}."
+                f"({self.selected.transform_type}) of order "
+                f"{self.selected.order}."
             )
+
         return (
-            f"Stationarity achieved at order {self.transformation_order_needed}, "
-            f"but exceeds acceptance threshold (tested up to {self.lowest_order_threshold})."
+            f"Stationarity achieved at order {self.selected.order}, "
+            f"but exceeds acceptance threshold "
+            f"(tested up to {self.lowest_order_threshold})."
         )
 
 
 @dataclass(frozen=True)
-class TrendStationarityRunner:
-    lags: int
-
-    def __call__(self, df: DataFrame, col: str) -> StationarityInference:
-        return stationarity_tests(
-            data=df.select(col).drop_nulls(),
-            asset=col,
-            lags=self.lags,
-        )
-
-    @classmethod
-    def trend(cls) -> "TrendStationarityRunner":
-        return cls(lags=10)
+class AssetTrendDiagnostic:
+    asset: str
+    deterministic: TrendSelection | None = None
+    stochastic: TrendSelection | None = None
 
 
-TRANSFORMS: dict[TrendTypes, dict] = {
-    "deterministic": {
-        "transform_type": "polynomial",
-        "add_columns": add_detrend_columns_max,
-        "col_builder": lambda a, p: f"{a}_detrended_p{p}",
-        "order_range": lambda max_order: range(0, max_order + 1),
-    },
-    "stochastic": {
-        "transform_type": "difference",
-        "add_columns": add_differenced_columns,
-        "col_builder": lambda a, d: f"{a}_diff_{d}",
-        "order_range": lambda max_order: range(1, max_order + 1),
-    },
-}
+def evaluate_candidates(
+    batch: CandidateBatch,
+) -> dict[str, list[TrendCandidateEvaluation]]:
+    out: dict[str, list[TrendCandidateEvaluation]] = {}
 
+    for asset, candidates in batch.candidates_by_asset.items():
+        evaluations: list[TrendCandidateEvaluation] = []
 
-def _lowest_stationary_order(results: list[TrendRes]) -> int | None:
-    for res in sorted(results, key=lambda x: x.order):
-        if res.stationarity_inf == "stationary":
-            return res.order
-    return None
-
-
-def run_trend_stationarity(
-    data: DataFrame,
-    asset: str,
-    orders: list[int],
-    *,
-    transform_type: TransformTypes,
-    col_builder: ColBuilder,
-    runner: TrendStationarityRunner,
-):
-    res: list[TrendRes] = []
-
-    for order in orders:
-        column = col_builder(asset, order)
-
-        if column not in data.columns:
-            raise ValueError(f"Column {column} not found in data {data.columns}")
-
-        stationary_res = runner(data, column)
-
-        res.append(
-            TrendRes(
-                asset=asset,
-                transform_type=transform_type,
-                order=order,
-                stationarity_inf=stationary_res.label,
-                full_test_res=stationary_res,
-            )
-        )
-
-    return res
-
-
-def _run_trend_diagnostic(
-    *,
-    data: DataFrame,
-    assets: list[str],
-    trend_type: TrendTypes,
-    order_max: int,
-    threshold_order: int,
-    runner: TrendStationarityRunner,
-) -> dict[str, TrendTest]:
-    spec = TRANSFORMS[trend_type]
-    orders: list[int] = spec["order_range"](order_max)
-
-    transformed_df = spec["add_columns"](data, assets, max(orders))
-    col_builder: ColBuilder = spec["col_builder"]
-    transform_type: TransformTypes = spec["transform_type"]
-
-    asset_trend_res: dict[str, TrendTest] = {}
-
-    for asset in assets:
-        results: list[TrendRes] = []
-        for order in orders:
-            col = col_builder(asset, order)
-            if col not in transformed_df.columns:
+        for candidate in candidates:
+            if candidate.column_name not in batch.data.columns:
                 raise ValueError(
-                    f"Column {col} not found in data {transformed_df.columns}"
+                    f"Column {candidate.column_name} not found in candidate batch data."
                 )
 
-            inf = runner(transformed_df, col)
-            results.append(
-                TrendRes(
-                    asset=asset,
-                    transform_type=transform_type,
-                    order=order,
-                    stationarity_inf=inf.label,
-                    full_test_res=inf,
+            stationarity_inference = stationarity_tests(
+                batch.data, candidate.column_name
+            )
+
+            evaluations.append(
+                TrendCandidateEvaluation(
+                    candidate=candidate,
+                    stationarity_inf=stationarity_inference,
                 )
             )
 
-        stationary_order = _lowest_stationary_order(results)
-        asset_trend_res[asset] = TrendTest(
-            trend_type=trend_type,
-            lowest_order_threshold=threshold_order,
-            transformation_order_needed=stationary_order,
-            results=results,
-        )
+        out[asset] = evaluations
 
-    return asset_trend_res
+    return out
+
+
+def select_lowest_stationary_candidate(
+    asset: str,
+    trend_type: TrendTypes,
+    evaluations: list[TrendCandidateEvaluation],
+    threshold_order: int,
+) -> TrendSelection:
+    stationary_candidates_by_order = [
+        evaluation
+        for evaluation in sorted(evaluations, key=lambda x: x.candidate.order)
+        if evaluation.is_stationary
+    ]
+
+    selected = (
+        None
+        if not stationary_candidates_by_order
+        else stationary_candidates_by_order[0].candidate
+    )
+
+    return TrendSelection(
+        asset=asset,
+        trend_type=trend_type,
+        lowest_order_threshold=threshold_order,
+        selected=selected,
+        evaluations=evaluations,
+    )
+
+
+def run_asset_trend_selection(
+    batch: CandidateBatch,
+    trend_type: TrendTypes,
+    threshold_order: int,
+) -> dict[str, TrendSelection]:
+    evaluated = evaluate_candidates(batch=batch)
+
+    return {
+        asset: select_lowest_stationary_candidate(
+            asset=asset,
+            trend_type=trend_type,
+            evaluations=evaluations,
+            threshold_order=threshold_order,
+        )
+        for asset, evaluations in evaluated.items()
+    }
 
 
 def trend_diagnostic(
@@ -185,28 +157,43 @@ def trend_diagnostic(
     threshold_order: int,
     *,
     trend_type: Literal["deterministic", "stochastic", "both"],
-) -> dict[str, dict[str, TrendTest]]:
-    runner = TrendStationarityRunner.trend()
-
-    out: dict[str, dict[str, TrendTest]] = {"deterministic": {}, "stochastic": {}}
+) -> dict[str, AssetTrendDiagnostic]:
+    out = {asset: AssetTrendDiagnostic(asset=asset) for asset in assets}
 
     if trend_type in ("deterministic", "both"):
-        out["deterministic"] = _run_trend_diagnostic(
+        deterministic_batch = build_polynomial_candidates(
             data=data,
             assets=assets,
-            trend_type="deterministic",
-            order_max=order_max,
-            threshold_order=threshold_order,
-            runner=runner,
+            max_order=order_max,
         )
+        deterministic_selection = run_asset_trend_selection(
+            batch=deterministic_batch,
+            trend_type="deterministic",
+            threshold_order=threshold_order,
+        )
+        for asset, selection in deterministic_selection.items():
+            out[asset] = AssetTrendDiagnostic(
+                asset=asset,
+                deterministic=selection,
+                stochastic=out[asset].stochastic,
+            )
 
     if trend_type in ("stochastic", "both"):
-        out["stochastic"] = _run_trend_diagnostic(
+        stochastic_batch = build_difference_candidates(
             data=data,
             assets=assets,
-            trend_type="stochastic",
-            order_max=order_max,
-            threshold_order=threshold_order,
-            runner=runner,
+            max_order=order_max,
         )
+        stochastic_selection = run_asset_trend_selection(
+            batch=stochastic_batch,
+            trend_type="stochastic",
+            threshold_order=threshold_order,
+        )
+        for asset, selection in stochastic_selection.items():
+            out[asset] = AssetTrendDiagnostic(
+                asset=asset,
+                deterministic=out[asset].deterministic,
+                stochastic=selection,
+            )
+
     return out

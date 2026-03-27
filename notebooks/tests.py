@@ -1,21 +1,17 @@
-import numpy as np
 import polars as pl
 
-from maths.helpers import add_detrend_column
+from time_series.selection.trend import trend_diagnostic
 
 data = pl.read_csv("./data/tiingo_sample.csv")
 
-assets = ["SMBC", "RDN", "BANC", "FCN"]
+assets = ["SMBC", "RDN"]
 data = data.select("date", *assets)
 
 
 # %%
-ex, betas = add_detrend_column(data, ["BANC"], polynomial_orders=[0, 1, 2, 3])
 
-coeffs = betas[2]["BANC"]  # shape should now be (3,)
-x = data.height + 1
-y = np.polyval(coeffs, x)
+ex = trend_diagnostic(
+    data, assets=["SMBC", "RDN"], order_max=3, threshold_order=0, trend_type="both"
+)
 
-print(coeffs)
-print(coeffs.shape)
-print(y)
+# %%

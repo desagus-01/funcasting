@@ -13,7 +13,7 @@ from time_series.selection.seasonality import (
     SeasonalityPeriodTest,
     seasonality_diagnostic,
 )
-from time_series.selection.trend import TrendTest, trend_diagnostic
+from time_series.selection.trend import AssetTrendDiagnostic, trend_diagnostic
 from time_series.tests.iid import (
     TestResultByAsset,
     copula_lag_independence_test,
@@ -182,29 +182,31 @@ def check_white_noise(
 
 
 def _detrend_decision_rule(
-    detrend_res: dict[str, dict[str, TrendTest]],
+    detrend_res: dict[str, AssetTrendDiagnostic],
     assets: list[str],
     tie_break: Literal["polynomial", "difference"] = "difference",
 ) -> dict[str, TransformDecision]:
     """Choose the lowest-order winning trend transform per asset.
 
     Strategy:
-        Prefer the smallest order; tie-break
+        Prefer the smallest order tie-break
     """
     trend_trans = {}
-    for asset in assets:
-        deterministic_res = detrend_res["deterministic"][
-            asset
-        ].transformation_order_needed
-        stochastic_res = detrend_res["stochastic"][asset].transformation_order_needed
 
+    for asset in assets:
+        deterministic = detrend_res[asset].deterministic
+        stochastic = detrend_res[asset].stochastic
+        deterministic_res = (
+            deterministic.selected if deterministic is not None else None
+        )
+        stochastic_res = stochastic.selected if stochastic is not None else None
         candidates = []
 
         if deterministic_res is not None:
-            candidates.append(("polynomial", deterministic_res))
+            candidates.append(("polynomial", deterministic_res.order))
 
         if stochastic_res is not None:
-            candidates.append(("difference", stochastic_res))
+            candidates.append(("difference", stochastic_res.order))
 
         if not candidates:
             continue

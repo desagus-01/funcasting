@@ -152,7 +152,7 @@ def add_detrend_column(
         for i, asset in enumerate(assets):
             new_cols.append(
                 pl.Series(
-                    name=f"{asset}_detrended_p{p}",
+                    name=f"{asset}_detrended_p_{p}",
                     values=resid[:, i],
                 ).cast(pl.Float64)
             )
@@ -184,4 +184,73 @@ def add_differenced_columns(
 
     return data.with_columns(
         [pl.col(assets).diff(d).name.suffix(f"_diff_{d}") for d in diffs]
+    )
+
+
+def build_polynomial_candidates(
+    data: pl.DataFrame, assets: list[str], max_order: int = 3
+) -> CandidateBatch:
+    if max_order < 0:
+        raise ValueError("max order must be >= 0, duh")
+
+    polynomial_orders = list(range(0, max_order + 1))
+
+    transformed_df, betas_by_order = add_detrend_column(
+        original_data=data, assets=assets, polynomial_orders=polynomial_orders
+    )
+
+    candidates_by_asset = {}
+
+    for asset in assets:
+        candidates = []
+
+        for order in polynomial_orders:
+            column_name = f"{asset}_detrended_p_{order}"
+
+            candidates.append(
+                TrendCandidate(
+                    asset=asset,
+                    transform_type="polynomial",
+                    order=order,
+                    column_name=column_name,
+                )
+            )
+
+        candidates_by_asset[asset] = candidates
+
+    return CandidateBatch(data=transformed_df, candidates_by_asset=candidates_by_asset)
+
+
+def build_difference_candidates(
+    data: pl.DataFrame, assets: list[str], max_order: int = 3, drop_nulls: bool = True
+) -> CandidateBatch:
+    if max_order < 0:
+        raise ValueError("max order must be >= 0, duh")
+
+    transformed_df = add_differenced_columns(
+        data=data, assets=assets, difference=max_order
+    )
+
+    candidates_by_asset = {}
+
+    for asset in assets:
+        candidates = []
+
+        for order in range(1, max_order + 1):
+            column_name = f"{asset}_diff_{order}"
+
+            candidates.append(
+                TrendCandidate(
+                    asset=asset,
+                    transform_type="difference",
+                    order=order,
+                    column_name=column_name,
+                )
+            )
+
+        candidates_by_asset[asset] = candidates
+
+    return CandidateBatch(
+        data=transformed_df.drop_nulls() if drop_nulls else transformed_df,
+        candidates_by_asset=candidates_by_asset,
     )
