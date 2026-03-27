@@ -1,6 +1,6 @@
 import logging
 from functools import reduce
-from typing import Literal, Mapping
+from typing import Literal
 
 import numpy as np
 import polars as pl
@@ -16,10 +16,10 @@ from pipelines.preprocess import (
 )
 from scenarios.copula_marginal import CopulaMarginalModel
 from scenarios.resampling import weighted_bootstrapping_idx
-from simulation.simulation_forecasting import (
-    ForecastModel,
+from simulation.simulate_paths import (
     simulate_asset_paths,
 )
+from simulation.state import get_assets_models
 from time_series.models.fitted_types import UnivariateRes
 from time_series.preprocessing.types import (
     AppliedTransform,
@@ -156,33 +156,6 @@ def draw_innovations(
 
     logger.info("Innovation draw complete with output shape=%s", simulated_draws.shape)
     return simulated_draws
-
-
-def get_assets_models(
-    post_process_df: DataFrame,
-    assets_univariate_result: Mapping[str, UnivariateRes],
-    assets: list[str] | None = None,
-):
-    assets_ = (
-        assets
-        if assets is not None
-        else [c for c in post_process_df.columns if c != "date"]
-    )
-
-    logger.info("Building forecast models for assets=%s", assets_)
-
-    forecast_models: dict[str, ForecastModel] = {}
-    for asset in assets_:
-        post_series_non_null = (
-            post_process_df.select(asset).drop_nulls().to_numpy().ravel()
-        )
-        forecast_models[asset] = ForecastModel.from_res_and_series(
-            fitting_results=assets_univariate_result[asset],
-            post_series_non_null=post_series_non_null,
-        )
-
-    logger.info("Built forecast models for %d assets", len(assets_))
-    return forecast_models
 
 
 def apply_inverse_transforms(
