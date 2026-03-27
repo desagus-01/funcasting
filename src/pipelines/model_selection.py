@@ -1,84 +1,27 @@
 import logging
-from dataclasses import dataclass
 from typing import Mapping
 
 import numpy as np
 from numpy._typing import NDArray
 from polars import DataFrame
-from statsmodels.stats.multitest import multipletests
 from typing_extensions import Literal
 
 from time_series.models.mean import (
-    AutoARMARes,
-    DemeanRes,
-    MeanModelRes,
     auto_arma,
 )
+from time_series.models.types import AutoARMARes, DemeanRes, MeanModelRes, UnivariateRes
 from time_series.models.volatility import (
     AutoGARCHRes,
     auto_garch,
 )
 from time_series.tests.iid import arch_test, ljung_box_test
+from time_series.tests.multiple import multiple_tests_rejected
 
 logger = logging.getLogger(__name__)
 
 
 def by_criteria(res: AutoARMARes | AutoGARCHRes) -> float:
     return res.criteria_res
-
-
-@dataclass
-class UnivariateRes:
-    mean_res: MeanModelRes | None
-    volatility_res: AutoGARCHRes | None
-
-    def innovation_scale(self, non_null_values: NDArray[np.floating]) -> float:
-        """
-        Scale used to standardize / unstandardize innovations for non-GARCH assets.
-        For GARCH assets, innovations are already standardized dynamically.
-        """
-        if self.volatility_res is not None:
-            return 1.0
-
-        if self.mean_res is not None:
-            scale = float(self.mean_res.residual_scale)
-            return 1.0 if (not np.isfinite(scale) or scale <= 0) else scale
-
-        diff = np.diff(non_null_values)
-        if diff.size == 0:
-            return 1.0
-
-        scale = float(np.std(diff, ddof=1))
-        return 1.0 if (not np.isfinite(scale) or scale <= 0) else scale
-
-    def invariant(self, non_null_values: NDArray[np.floating]) -> NDArray[np.floating]:
-        """
-        Return standardized innovations for all asset types.
-
-        - GARCH asset: standardized residuals from GARCH fit
-        - mean-only asset: residuals / residual_scale
-        - no-model asset: [nan] + diff(series) / diff_scale
-        """
-        if self.volatility_res is not None:
-            invariant = np.asarray(self.volatility_res.invariants, dtype=float)
-
-        elif self.mean_res is not None:
-            scale = self.innovation_scale(non_null_values)
-            invariant = np.asarray(self.mean_res.residuals, dtype=float) / scale
-
-        else:
-            diff = np.concatenate(
-                [np.array([np.nan], dtype=float), np.diff(non_null_values)]
-            )
-            scale = self.innovation_scale(non_null_values)
-            invariant = diff / scale
-
-        if invariant.shape[0] != non_null_values.shape[0]:
-            raise ValueError(
-                f"Innovation length mismatch: innov={invariant.shape[0]} "
-                f"vs non_null_values={non_null_values.shape[0]}"
-            )
-        return invariant.astype(float)
 
 
 def _describe_mean_model(res: MeanModelRes | None) -> str:
@@ -105,18 +48,6 @@ def describe_univariate_result(res: UnivariateRes) -> str:
     mean_label = _describe_mean_model(res.mean_res)
     vol_label = _describe_vol_model(res.volatility_res)
     return f"mean={mean_label}, vol={vol_label}"
-
-
-# TODO: Move to a more appropriate place
-def multiple_tests_rejected(
-    p_values: list[float], significance_level: float = 0.05
-) -> list[bool]:
-    """
-    Adjusts p-values for multiple tests then compares to alpha to determine rejection
-    """
-    return multipletests(p_values, alpha=significance_level, method="holm-sidak")[
-        0
-    ].tolist()
 
 
 def asset_needs_volatility_model(

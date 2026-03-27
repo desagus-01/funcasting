@@ -1,7 +1,6 @@
 import logging
 import warnings
 from re import fullmatch
-from typing import NamedTuple
 
 import numpy as np
 from numpy._typing import NDArray
@@ -10,35 +9,13 @@ from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.stattools import arma_order_select_ic
 from typing_extensions import Literal
 
+from time_series.models.types import AutoARMARes
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-class AutoARMARes(NamedTuple):
-    model_order: tuple[int, int]
-    degrees_of_freedom: int
-    criteria: Literal["aic", "bic"]
-    criteria_res: float
-    params: dict[str, float]
-    p_values: NDArray[np.floating]
-    residuals: NDArray[np.floating]
-    residual_scale: float
-    kind: Literal["arma"] = "arma"
-
-
-class DemeanRes(NamedTuple):
-    model_order: None
-    degrees_of_freedom: int
-    params: dict[str, float]
-    residuals: NDArray[np.floating]
-    residual_scale: float
-    kind: Literal["demean"] = "demean"
-
-
-MeanModelRes = AutoARMARes | DemeanRes
 
 
 def _build_arma_parameters(

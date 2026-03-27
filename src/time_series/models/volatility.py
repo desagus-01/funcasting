@@ -1,34 +1,18 @@
 import logging
 from itertools import product
-from typing import NamedTuple
 
 import numpy as np
 from arch import arch_model
 from arch.univariate.base import ARCHModelResult
 from numpy._typing import NDArray
-from typing_extensions import Literal
+
+from time_series.models.types import GARCH_DISTRIBUTIONS, AutoGARCHRes
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-class AutoGARCHRes(NamedTuple):
-    model_order: tuple[int, int, int]
-    degrees_of_freedom: int
-    criteria: Literal["aic", "bic"]
-    criteria_res: float
-    params: dict[str, float]
-    p_values: NDArray[np.floating]
-    residuals: NDArray[np.floating]
-    conditional_volatility: NDArray[np.floating]
-    invariants: NDArray[np.floating]
-    kind: Literal["garch"] = "garch"
-
-
-GARCH_DISTRIBUTIONS = Literal["t", "normal"]
 
 
 def _garch_base_model(
