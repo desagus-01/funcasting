@@ -111,3 +111,42 @@ class DifferenceInverseSpec:
 
 
 InverseSpec = PolynomialInverseSpec | DifferenceInverseSpec | SeasonalInverseSpec
+
+
+def _choose_inverse_application_order(
+    inverse_specs: list[InverseSpec],
+) -> list[InverseSpec]:
+    if len(inverse_specs) > 1:
+        return sorted(
+            inverse_specs,
+            key=lambda t: 0 if isinstance(t, SeasonalInverseSpec) else 1,
+        )
+    return inverse_specs
+
+
+def apply_inverse_transforms(
+    asset_data_dict: dict[str, NDArray[np.floating]],
+    n_original: int,
+    inverse_specs: dict[str, list[InverseSpec]],
+    back_to_price: bool = True,
+) -> dict[str, NDArray[np.floating]]:
+    restored_paths: dict[str, NDArray[np.floating]] = {}
+
+    for asset, transforms in inverse_specs.items():
+        current = np.asarray(asset_data_dict[asset], dtype=float)
+        ordered_transforms = _choose_inverse_application_order(transforms)
+
+        for inverse_spec in ordered_transforms:
+            if isinstance(inverse_spec, SeasonalInverseSpec):
+                current = inverse_spec.inverse_for_forecasts(current, n_original)
+            elif isinstance(inverse_spec, PolynomialInverseSpec):
+                current = inverse_spec.inverse_for_forecasts(current, n_original)
+            elif isinstance(inverse_spec, DifferenceInverseSpec):
+                current = inverse_spec.inverse_for_forecasts(current)
+
+        if back_to_price:
+            current = np.exp(current)
+
+        restored_paths[asset] = current
+
+    return restored_paths

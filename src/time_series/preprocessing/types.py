@@ -14,11 +14,13 @@ class TransformDecision:
     order: int | None = None
 
 
-@dataclass(frozen=True)
-class AppliedTransform:
-    asset: str
-    decision: TransformDecision
-    inverse_spec: InverseSpec | None = None
+#
+# @dataclass(frozen=True)
+# class AppliedTransform:
+#     asset: str
+#     decision: TransformDecision
+#     inverse_spec: InverseSpec | None = None
+#
 
 
 @dataclass(frozen=True)
@@ -33,5 +35,5 @@ class PipelineAssetBatchRes:
 @dataclass(frozen=True)
 class UnivariatePreprocess:
     post_data: DataFrame
-    inverse_specs: dict[str, list[AppliedTransform]]
+    inverse_specs: dict[str, list[InverseSpec]]
     needs_further_modelling: list[str]

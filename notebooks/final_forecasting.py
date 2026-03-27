@@ -28,9 +28,7 @@ data_long = data.unpivot(
     on=assets,
     variable_name="ticker",
     value_name="adj_close",
-).with_columns(
-    pl.col("date").cast(pl.Date)
-)  # fixed: date is already datetime, just cast
+).with_columns(pl.col("date").cast(pl.Date))
 plot_ticker_lines(data_long)
 
 # %%

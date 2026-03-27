@@ -15,9 +15,7 @@ from time_series.preprocessing.decisions import (
     detrend_decision_rule,
 )
 from time_series.preprocessing.types import (
-    AppliedTransform,
     PipelineAssetBatchRes,
-    TransformDecision,
     UnivariatePreprocess,
 )
 from time_series.preprocessing.white_noise import test_increments_idd
@@ -25,6 +23,7 @@ from time_series.selection.seasonality import (
     seasonality_diagnostic,
 )
 from time_series.selection.trend import trend_diagnostic
+from time_series.transforms.inverses import InverseSpec
 from utils.helpers import (
     get_assets_names,
 )
@@ -117,10 +116,17 @@ def run_univariate_preprocess(
       1) Screen assets by increments white-noise
       2) Detrend selected assets
       3) Deseason selected assets
-    Returns:
-      UnivariatePreprocess
-    """
 
+    Returns
+    -------
+    UnivariatePreprocess
+        post_data:
+            Data after selected preprocessing steps have been applied.
+        inverse_specs:
+            Per-asset inverse transforms to restore forecasts later.
+        needs_further_modelling:
+            Assets whose increments failed the white-noise screen.
+    """
     if assets is None:
         assets = get_assets_names(df=data, assets=assets)
 
@@ -131,9 +137,12 @@ def run_univariate_preprocess(
     )
 
     assets_need_preprocess = test_increments_idd(
-        data=data, original_prob=prob, assets=assets
+        data=data,
+        original_prob=prob,
+        assets=assets,
     )
-    applied_transforms: dict[str, list[AppliedTransform]] = {
+
+    inverse_specs: dict[str, list[InverseSpec]] = {
         asset: [] for asset in assets_need_preprocess
     }
 
@@ -143,19 +152,16 @@ def run_univariate_preprocess(
         assets=assets_need_preprocess,
         include_diagnostics=False,
     )
-    for asset, decision in detrend.decision.items():
-        applied_transforms[asset].append(
-            AppliedTransform(
-                asset=asset,
-                decision=decision,
-                inverse_spec=detrend.inverse_spec[asset]
-                if detrend.inverse_spec
-                else None,
-            )
-        )
+
+    if detrend.inverse_spec is not None:
+        for asset, spec in detrend.inverse_spec.items():
+            inverse_specs[asset].append(spec)
 
     after_detrend = overwrite_with_transforms(
-        base=data, patch=detrend.updated_data, assets=assets, suffix="_detrend"
+        base=data,
+        patch=detrend.updated_data,
+        assets=assets,
+        suffix="_detrend",
     )
 
     # Seasonality
@@ -164,17 +170,10 @@ def run_univariate_preprocess(
         assets=assets_need_preprocess,
         include_diagnostics=False,
     )
-    for asset, seasons in deseason.decision.items():
-        if seasons:
-            applied_transforms[asset].append(
-                AppliedTransform(
-                    asset=asset,
-                    decision=TransformDecision(kind="seasonality", order=None),
-                    inverse_spec=deseason.inverse_spec[asset]
-                    if deseason.inverse_spec
-                    else None,
-                )
-            )
+
+    if deseason.inverse_spec is not None:
+        for asset, spec in deseason.inverse_spec.items():
+            inverse_specs[asset].append(spec)
 
     final = overwrite_with_transforms(
         base=after_detrend,
@@ -183,10 +182,10 @@ def run_univariate_preprocess(
         suffix="_deseason",
     )
 
-    logger.info("Finished univariate preprocess: results=%s", applied_transforms)
+    logger.info("Finished univariate preprocess: inverse_specs=%s", inverse_specs)
 
     return UnivariatePreprocess(
         post_data=final,
-        inverse_specs=applied_transforms,
+        inverse_specs=inverse_specs,
         needs_further_modelling=assets_need_preprocess,
     )

@@ -5,7 +5,6 @@ from typing import Mapping
 
 import numpy as np
 from numpy._typing import NDArray
-from polars import DataFrame
 
 from time_series.models.fitted_types import UnivariateRes
 from time_series.models.model_types import UnivariateModel
@@ -109,27 +108,3 @@ class SimulationForecast:
                 x_hist_len=x_hist_len,
             ),
         )
-
-
-def get_assets_models(
-    post_process_df: DataFrame,
-    assets_univariate_result: Mapping[str, UnivariateRes],
-    assets: list[str] | None = None,
-):
-    assets_ = (
-        assets
-        if assets is not None
-        else [c for c in post_process_df.columns if c != "date"]
-    )
-
-    forecast_models: dict[str, SimulationForecast] = {}
-    for asset in assets_:
-        post_series_non_null = (
-            post_process_df.select(asset).drop_nulls().to_numpy().ravel()
-        )
-        forecast_models[asset] = SimulationForecast.from_res_and_series(
-            fitting_results=assets_univariate_result[asset],
-            post_series_non_null=post_series_non_null,
-        )
-
-    return forecast_models

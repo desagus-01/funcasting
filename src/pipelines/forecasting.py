@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import logging
 from functools import reduce
-from typing import Literal
+from typing import Literal, Mapping
 
 import numpy as np
 import polars as pl
@@ -19,16 +21,9 @@ from scenarios.resampling import weighted_bootstrapping_idx
 from simulation.simulate_paths import (
     simulate_asset_paths,
 )
-from simulation.state import get_assets_models
+from simulation.state import SimulationForecast
 from time_series.models.fitted_types import UnivariateRes
-from time_series.preprocessing.types import (
-    AppliedTransform,
-)
-from time_series.transforms.inverses import (
-    DifferenceInverseSpec,
-    PolynomialInverseSpec,
-    SeasonalInverseSpec,
-)
+from time_series.transforms.inverses import apply_inverse_transforms
 from utils.helpers import drop_nulls_and_compensate_prob
 
 logging.basicConfig(
@@ -158,50 +153,22 @@ def draw_innovations(
     return simulated_draws
 
 
-def apply_inverse_transforms(
-    forecasted_paths: dict[str, NDArray[np.floating]],
-    n_original: int,
-    specs: dict[str, list[AppliedTransform]],
-    back_to_price: bool = True,
-):
-    restored_paths = {}
+def get_assets_models(
+    data: DataFrame,
+    assets_univariate_result: Mapping[str, UnivariateRes],
+    assets: list[str] | None = None,
+) -> dict[str, SimulationForecast]:
+    assets_ = assets if assets is not None else [c for c in data.columns if c != "date"]
 
-    for asset, transforms in specs.items():
-        current = np.asarray(forecasted_paths[asset], dtype=float)
+    forecast_models: dict[str, SimulationForecast] = {}
+    for asset in assets_:
+        post_series_non_null = data.select(asset).drop_nulls().to_numpy().ravel()
+        forecast_models[asset] = SimulationForecast.from_res_and_series(
+            fitting_results=assets_univariate_result[asset],
+            post_series_non_null=post_series_non_null,
+        )
 
-        if len(transforms) > 1:
-            ordered_transforms = sorted(
-                transforms,
-                key=lambda t: (
-                    0 if isinstance(t.inverse_spec, SeasonalInverseSpec) else 1
-                ),
-            )
-        else:
-            ordered_transforms = transforms
-
-        for transform in ordered_transforms:
-            inverse_spec = transform.inverse_spec
-
-            if isinstance(inverse_spec, SeasonalInverseSpec):
-                current = inverse_spec.inverse_for_forecasts(
-                    current,
-                    n_original,
-                )
-
-            elif isinstance(inverse_spec, PolynomialInverseSpec):
-                current = inverse_spec.inverse_for_forecasts(
-                    current,
-                    n_original,
-                )
-
-            elif isinstance(inverse_spec, DifferenceInverseSpec):
-                current = inverse_spec.inverse_for_forecasts(current)
-
-        if back_to_price:
-            current = np.exp(current)
-        restored_paths[asset] = current
-
-    return restored_paths
+    return forecast_models
 
 
 def run_n_steps_forecast(
@@ -253,7 +220,7 @@ def run_n_steps_forecast(
     )
 
     assets_models = get_assets_models(
-        post_process_df=post_process.post_data,
+        data=post_process.post_data,
         assets_univariate_result=univariate_results,
         assets=assets,
     )
@@ -288,9 +255,9 @@ def run_n_steps_forecast(
 
     logger.info("Forecast complete - will apply inverse transforms now")
     transformed = apply_inverse_transforms(
-        forecasted_paths=assets_forecasts,
+        asset_data_dict=assets_forecasts,
         n_original=data.height,
-        specs=post_process.inverse_specs,
+        inverse_specs=post_process.inverse_specs,
         back_to_price=True if back_to_price else False,
     )
 
