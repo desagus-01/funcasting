@@ -12,10 +12,6 @@ from methods.model_selection_pipeline import (
     get_univariate_results,
 )
 from methods.preprocess_pipeline import (
-    AppliedTransform,
-    DifferenceInverseSpec,
-    PolynomialInverseSpec,
-    SeasonalInverseSpec,
     run_univariate_preprocess,
 )
 from methods.simulation_forecasting import (
@@ -25,6 +21,14 @@ from methods.simulation_forecasting import (
 from models.types import ProbVector
 from scenarios.copula_marginal import CopulaMarginalModel
 from scenarios.resampling import weighted_bootstrapping_idx
+from time_series.preprocessing.types import (
+    AppliedTransform,
+)
+from time_series.transforms.inverses import (
+    DifferenceInverseSpec,
+    PolynomialInverseSpec,
+    SeasonalInverseSpec,
+)
 from utils.helpers import drop_nulls_and_compensate_prob
 
 logging.basicConfig(

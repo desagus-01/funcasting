@@ -1,44 +1,26 @@
 import logging
 from typing import Literal
 
-import numpy as np
 import polars as pl
 from polars.dataframe.frame import DataFrame
 
-from globals import LAGS
 from models.types import ProbVector
-from scenarios.copula_marginal import CopulaMarginalModel
+from time_series.preprocessing.apply import apply_deseason, apply_detrend
+from time_series.preprocessing.decisions import (
+    deseason_decision_rule,
+    detrend_decision_rule,
+)
 from time_series.preprocessing.types import (
     AppliedTransform,
     PipelineAssetBatchRes,
     TransformDecision,
     UnivariatePreprocess,
 )
+from time_series.preprocessing.white_noise import check_white_noise
 from time_series.selection.seasonality import (
-    SeasonalityPeriodTest,
     seasonality_diagnostic,
 )
-from time_series.selection.trend import AssetTrendDiagnostic, trend_diagnostic
-from time_series.tests.iid import (
-    TestResultByAsset,
-    copula_lag_independence_test,
-    ellipsoid_lag_test,
-    univariate_kolmogrov_smirnov_test,
-)
-from time_series.tests.seasonality import SEASONAL_MAP
-from time_series.transforms.deseason import (
-    deterministic_seasonal_adjustment,
-)
-from time_series.transforms.detrend import (
-    add_detrend_column,
-    add_differenced_columns,
-)
-from time_series.transforms.inverses import (
-    DifferenceInverseSpec,
-    InverseSpec,
-    PolynomialInverseSpec,
-    SeasonalInverseSpec,
-)
+from time_series.selection.trend import trend_diagnostic
 from utils.helpers import (
     compensate_prob,
     get_assets_names,
@@ -49,333 +31,6 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-def _run_iid_simple(
-    data: DataFrame,
-    prob: ProbVector,
-    assets: list[str],
-    lags: int = LAGS["simple"],
-) -> dict[str, TestResultByAsset]:
-    """Run the cheaper IID screens."""
-    ellipsoid_test = ellipsoid_lag_test(
-        data=data,
-        prob=prob,
-        lags=lags,
-        assets=assets,
-    )
-    ks_test = univariate_kolmogrov_smirnov_test(
-        data=data,
-        assets=assets,
-    )
-    return {
-        "ellipsoid": ellipsoid_test,
-        "ks": ks_test,
-    }
-
-
-def _run_iid_complex(
-    data: DataFrame,
-    prob: ProbVector,
-    assets: list[str],
-    lags: int = LAGS["complex"],
-) -> dict[str, TestResultByAsset]:
-    """Run the expensive copula IID screen."""
-    copula_marginal_model = CopulaMarginalModel.from_data_and_prob(
-        data=data.select(assets),
-        prob=prob,
-    )
-
-    copula_lag_test_res = copula_lag_independence_test(
-        copula=copula_marginal_model.copula,
-        prob=copula_marginal_model.prob,
-        lags=lags,
-        assets=assets,
-    )
-
-    return {
-        "copula": copula_lag_test_res,
-    }
-
-
-def check_white_noise(
-    data: DataFrame,
-    prob: ProbVector,
-    assets: list[str],
-    lags_simple: int = LAGS["simple"],
-    lags_complex: int = LAGS["complex"],
-) -> dict[str, bool]:
-    """Return whether each asset passes the white-noise screen."""
-
-    simple_tests = _run_iid_simple(
-        data=data,
-        prob=prob,
-        assets=assets,
-        lags=lags_simple,
-    )
-
-    simple_pass = {
-        asset: not any(
-            simple_tests[test_name][asset].rejected for test_name in ("ellipsoid", "ks")
-        )
-        for asset in assets
-    }
-
-    assets_for_copula = [asset for asset, passed in simple_pass.items() if passed]
-
-    logger.info(
-        "White-noise simple screen: passed_simple=%s, sent_to_complex=%s",
-        assets_for_copula,
-        assets_for_copula,
-    )
-
-    if not assets_for_copula:
-        logger.info("White-noise final screen: passed_all=[]")
-        return simple_pass
-
-    complex_tests = _run_iid_complex(
-        data=data,
-        prob=prob,
-        assets=assets_for_copula,
-        lags=lags_complex,
-    )
-
-    copula_pass = {
-        asset: not complex_tests["copula"][asset].rejected
-        for asset in assets_for_copula
-    }
-
-    final_pass = simple_pass.copy()
-    for asset in assets_for_copula:
-        final_pass[asset] = final_pass[asset] and copula_pass[asset]
-
-    logger.info(
-        "White-noise final screen: passed_all=%s",
-        [asset for asset, passed in final_pass.items() if passed],
-    )
-
-    return final_pass
-
-
-def _detrend_decision_rule(
-    detrend_res: dict[str, AssetTrendDiagnostic],
-    assets: list[str],
-    tie_break: Literal["polynomial", "difference"] = "difference",
-) -> dict[str, TransformDecision]:
-    """Choose the lowest-order winning trend transform per asset.
-
-    Strategy:
-        Prefer the smallest order tie-break
-    """
-    trend_trans = {}
-
-    for asset in assets:
-        deterministic = detrend_res[asset].deterministic
-        stochastic = detrend_res[asset].stochastic
-        deterministic_res = (
-            deterministic.selected if deterministic is not None else None
-        )
-        stochastic_res = stochastic.selected if stochastic is not None else None
-        candidates = []
-
-        if deterministic_res is not None:
-            candidates.append(("polynomial", deterministic_res.order))
-
-        if stochastic_res is not None:
-            candidates.append(("difference", stochastic_res.order))
-
-        if not candidates:
-            continue
-
-        transformation, order = min(candidates, key=lambda x: (x[1], x[0] != tie_break))
-
-        trend_trans[asset] = TransformDecision(kind=transformation, order=order)
-
-    return trend_trans
-
-
-def _group_detrend_assets(
-    decision: dict[str, TransformDecision],
-) -> dict[tuple[str, int], list[str]]:
-    """Group assets by (transform kind, order)."""
-    by_group: dict[tuple[str, int], list[str]] = {}
-
-    for asset, dec in decision.items():
-        if dec.order is None:
-            continue
-        by_group.setdefault((dec.kind, dec.order), []).append(asset)
-
-    return by_group
-
-
-def _apply_grouped_detrend(
-    data: DataFrame,
-    by_group: dict[tuple[str, int], list[str]],
-) -> tuple[DataFrame, dict[str, InverseSpec]]:
-    """Apply each grouped transform to the data and retain inverse specs."""
-    inverse_specs: dict[str, InverseSpec] = {}
-
-    for (transform, order), assets in by_group.items():
-        if transform == "difference":
-            # store anchors from the series BEFORE differencing
-            anchors_by_asset = {
-                asset: data.select(asset).to_series().tail(order).to_numpy()
-                for asset in assets
-            }
-
-            data = add_differenced_columns(
-                data=data,
-                assets=assets,
-                difference=order,
-                keep_all=True,
-            )
-
-            for asset in assets:
-                inverse_specs[asset] = DifferenceInverseSpec(
-                    order=order,
-                    initial_values=np.asarray(anchors_by_asset[asset], dtype=float),
-                )
-        elif transform == "polynomial":
-            data, betas_by_order = add_detrend_column(
-                original_data=data,
-                assets=assets,
-                polynomial_orders=[order],
-            )
-
-            beta = betas_by_order[order]
-
-            for asset in assets:
-                inverse_specs[asset] = PolynomialInverseSpec(
-                    order=order, betas=np.asarray(beta[asset], dtype=float)
-                )
-
-        else:
-            raise ValueError(f"Unknown transform '{transform}' for assets {assets}")
-
-    return data, inverse_specs
-
-
-def _select_and_rename_detrended_columns(
-    data: DataFrame,
-    decision: dict[str, TransformDecision],
-) -> DataFrame:
-    """Keep only date + transformed asset columns, renamed back to asset names."""
-    transformed_cols: list[str] = []
-    rename_map: dict[str, str] = {}
-
-    for asset, dec in decision.items():
-        if dec.order is None:
-            continue
-
-        if dec.kind == "difference":
-            col = f"{asset}_diff_{dec.order}"
-        elif dec.kind == "polynomial":
-            col = f"{asset}_detrended_p{dec.order}"
-        else:
-            raise ValueError(f"Unknown transform '{dec.kind}' for asset '{asset}'")
-
-        if col not in data.columns:
-            raise ValueError(
-                f"Expected transformed column '{col}' not found. "
-                f"Available columns: {data.columns}"
-            )
-
-        transformed_cols.append(col)
-        rename_map[col] = asset
-
-    return data.select(["date", *transformed_cols]).rename(rename_map)
-
-
-def _apply_detrend(
-    data: DataFrame,
-    decision: dict[str, TransformDecision],
-) -> tuple[DataFrame, dict[str, InverseSpec]]:
-    """Apply detrending decisions and return date + transformed asset columns."""
-    if not decision:
-        return data.select(["date"]), {}
-
-    by_group = _group_detrend_assets(decision)
-    if not by_group:
-        return data.select(["date"]), {}
-
-    transformed, inverse_specs = _apply_grouped_detrend(data, by_group)
-    selected = _select_and_rename_detrended_columns(transformed, decision)
-    return selected, inverse_specs
-
-
-def _expand_period_to_harmonics(period_label: str) -> list[tuple[str, float]]:
-    """
-    Given a period label ('weekly', 'monthly', ...), return a list of
-    (label_for_harmonic, omega_radians) covering the full harmonic set.
-    The label is augmented (e.g., 'monthly_h2'); _deseason_apply ignores labels anyway.
-    """
-    P = SEASONAL_MAP[period_label]
-    base = 2 * np.pi / P
-
-    out: list[tuple[str, float]] = []
-    H = (P - 1) // 2
-    for h in range(1, H + 1):
-        out.append((f"{period_label}_h{h}", h * base))
-
-    if P % 2 == 0:
-        out.append((f"{period_label}_nyq", np.pi))  # Nyquist cosine
-
-    return out
-
-
-def _deseason_decision_rule(
-    seasonality_diagnostic: dict[str, list[SeasonalityPeriodTest]],
-) -> dict[str, list[tuple[str, float]]]:
-    """
-    Extract significant seasonal periods and expand each to its harmonic set.
-    """
-    decision: dict[str, list[tuple[str, float]]] = {}
-
-    for asset, tests in seasonality_diagnostic.items():
-        freqs: list[tuple[str, float]] = []
-        for t in tests:
-            if t.evidence_of_seasonality:
-                freqs.extend(_expand_period_to_harmonics(t.seasonal_period))
-
-        #  deduplicate angular frequencies if multiple periods collide
-        if freqs:
-            freqs_sorted = sorted(freqs, key=lambda kv: kv[1])
-            dedup: list[tuple[str, float]] = []
-            for lab, w in freqs_sorted:
-                if not dedup or not np.isclose(w, dedup[-1][1], rtol=0, atol=1e-12):
-                    dedup.append((lab, w))
-            decision[asset] = dedup
-        else:
-            decision[asset] = []
-
-    return decision
-
-
-def _deseason_apply(
-    data: pl.DataFrame,
-    decision: dict[str, list[tuple[str, float]]],
-) -> tuple[pl.DataFrame, dict[str, InverseSpec]]:
-    assets = [asset for asset, seasons in decision.items() if seasons]
-    if not assets:
-        return data.select(["date"]), {}
-
-    out = data.select(["date"])
-    inverse_specs: dict[str, InverseSpec] = {}
-
-    for asset in assets:
-        seasons = decision[asset]
-        omega = [rad for _, rad in seasons]
-
-        seas_adj_res = deterministic_seasonal_adjustment(
-            data=data,
-            asset=asset,
-            frequency_radians=omega,
-        )
-
-        out = out.join(seas_adj_res.residuals, on="date", how="left")
-        inverse_specs[asset] = SeasonalInverseSpec(terms=seas_adj_res.terms)
-
-    return out, inverse_specs
 
 
 def deseason_pipeline(
@@ -392,9 +47,9 @@ def deseason_pipeline(
         assets=assets,
     )
 
-    decision = _deseason_decision_rule(diagnostics)
+    decision = deseason_decision_rule(diagnostics)
 
-    updated, inverse_specs = _deseason_apply(
+    updated, inverse_specs = apply_deseason(
         data=data,
         decision=decision,
     )
@@ -429,12 +84,12 @@ def detrend_pipeline(
         trend_type=trend_type,
     )
 
-    per_asset_decision = _detrend_decision_rule(
+    per_asset_decision = detrend_decision_rule(
         detrend_res=diagnostics,
         assets=assets,
     )
 
-    updated, inverse_specs = _apply_detrend(
+    updated, inverse_specs = apply_detrend(
         data=data,
         decision=per_asset_decision,
     )
