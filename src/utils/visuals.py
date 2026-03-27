@@ -11,8 +11,6 @@ import numpy as np
 import polars as pl
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 
-from maths.helpers import autocorrelation
-
 
 def _unique_dates_np(dates: pl.DataFrame) -> np.ndarray:
     return dates.select(pl.col("date")).unique(maintain_order=True).to_numpy().ravel()
@@ -218,60 +216,6 @@ def scatter_compare(base, cma, x, y):
 
     plt.suptitle(f"Dependence Structure: {x} vs {y}")
     plt.tight_layout()
-    plt.show()
-
-
-def plot_acf_simple(
-    data: pl.DataFrame,
-    asset: str,
-    lag_length=10,
-    use_fft=True,
-    alpha=0.05,
-    ax=None,
-) -> None:
-    x = data.select(asset).to_numpy().ravel()
-    acf_dict = autocorrelation(
-        x, lag_length=lag_length, use_fft=use_fft, confint_alpha=alpha
-    )
-
-    # order by lag
-    items = sorted(acf_dict.items(), key=lambda kv: int(kv[0].split("_")[1]))
-    lags = np.array([int(k.split("_")[1]) for k, _ in items])
-    acf_vals = np.array([v.value for _, v in items], dtype=float)
-
-    conf_lo = np.array([v.lower for _, v in items], dtype=float)
-    conf_hi = np.array([v.upper for _, v in items], dtype=float)
-
-    # band centered at 0
-    band_lo = conf_lo - acf_vals
-    band_hi = conf_hi - acf_vals
-
-    if ax is None:
-        _, ax = plt.subplots()
-
-    ax.axhline(0)
-
-    # --- draw the CI band (skip lag 0 if you want)
-    if len(lags) > 1:
-        ax.fill_between(lags[1:], band_lo[1:], band_hi[1:], alpha=0.25)
-
-    # --- determine which spikes are significant (outside the band)
-    sig = (acf_vals < band_lo) | (acf_vals > band_hi)
-    sig[0] = False  # ignore lag 0
-
-    # --- draw all spikes (baseline)
-    ax.vlines(lags, 0, acf_vals, linewidth=1, color="C0")
-    ax.plot(lags, acf_vals, "o", markersize=4, color="C0")
-
-    # --- highlight significant spikes in red
-    if np.any(sig):
-        ax.vlines(lags[sig], 0, acf_vals[sig], linewidth=1.5, color="red")
-        ax.plot(lags[sig], acf_vals[sig], "o", markersize=5, color="red")
-
-    ax.set_title(f"{asset} - Autocorrelation")
-    ax.set_xlabel("Lag")
-    ax.set_ylabel("ACF")
-    ax.set_ylim(-1.05, 1.05)
     plt.show()
 
 

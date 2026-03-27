@@ -160,7 +160,7 @@ def run_harmonic_regression(
 def deterministic_seasonal_adjustment(
     data: DataFrame, asset: str, frequency_radians: list[float]
 ) -> DeterministicSeasonalAdjustmentResult:
-    asset_df = data.select(["date", asset]).drop_nulls()
+    asset_df = data.drop_nulls()
 
     harmonic_ols = run_harmonic_regression(
         data=asset_df,

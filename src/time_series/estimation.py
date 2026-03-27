@@ -4,8 +4,6 @@ from typing import Literal, NamedTuple
 import numpy as np
 from numpy.typing import NDArray
 
-from maths.helpers import get_aic, get_bic
-
 EquationTypes = Literal["nc", "c", "ct", "ctt"]
 
 
@@ -43,6 +41,14 @@ class OLSResults:
 class AICBIC(NamedTuple):
     aic: float
     bic: float
+
+
+def get_aic(log_likelihood: float, n_parameters: int) -> float:
+    return -2 * log_likelihood + 2 * n_parameters
+
+
+def get_bic(log_likelihood: float, n_obs: int, n_parameters: int) -> float:
+    return -2 * log_likelihood + np.log(n_obs) * n_parameters
 
 
 def add_deterministics_to_eq(

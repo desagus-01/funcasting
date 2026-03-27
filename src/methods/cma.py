@@ -7,9 +7,9 @@ import polars as pl
 from numpy import interp
 from polars import DataFrame
 
-from maths.distributions import uniform_probs
-from maths.sampling import marginal_quantile_mapping, sample_copula
 from models.types import ProbVector
+from probability.distributions import uniform_probs
+from probability.sampling import marginal_quantile_mapping, sample_copula
 from utils.helpers import compute_cdf_and_pobs
 
 
