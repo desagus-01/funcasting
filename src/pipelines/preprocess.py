@@ -4,7 +4,7 @@ from typing import Literal
 import polars as pl
 from polars.dataframe.frame import DataFrame
 
-from models.types import ProbVector
+from scenarios.types import ProbVector
 from time_series.preprocessing.apply import (
     apply_deseason,
     apply_detrend,

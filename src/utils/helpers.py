@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 from pydantic import validate_call
 
 from globals import model_cfg, sign_operations
-from models.types import CorrInfo, ProbVector, View
+from scenarios.types import CorrInfo, ProbVector, View
 
 
 class SplitDF(NamedTuple):

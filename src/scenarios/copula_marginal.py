@@ -7,7 +7,7 @@ import polars as pl
 from numpy import interp
 from polars import DataFrame
 
-from models.types import ProbVector
+from scenarios.types import ProbVector
 from probability.distributions import uniform_probs
 from probability.sampling import marginal_quantile_mapping, sample_copula
 from utils.helpers import compute_cdf_and_pobs

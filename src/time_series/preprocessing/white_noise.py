@@ -4,7 +4,7 @@ import polars as pl
 from polars.dataframe.frame import DataFrame
 
 from globals import LAGS
-from models.types import ProbVector
+from scenarios.types import ProbVector
 from scenarios.copula_marginal import CopulaMarginalModel
 from time_series.tests.iid import (
     TestResultByAsset,

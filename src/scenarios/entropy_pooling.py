@@ -5,7 +5,7 @@ from numpy._typing import NDArray
 from pydantic import validate_call
 
 from globals import model_cfg
-from models.types import ProbVector, View
+from scenarios.types import ProbVector, View
 from utils.helpers import select_operator, weighted_moments
 
 

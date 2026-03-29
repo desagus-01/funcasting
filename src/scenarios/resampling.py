@@ -3,7 +3,7 @@ from numpy import random
 from numpy._typing import NDArray
 from polars import DataFrame
 
-from models.types import ProbVector
+from scenarios.types import ProbVector
 
 
 def weighted_bootstrapping_idx(

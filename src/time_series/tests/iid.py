@@ -8,7 +8,7 @@ from numpy.typing import NDArray
 from statsmodels.stats.diagnostic import acorr_ljungbox, het_arch
 
 from globals import ITERS, LAGS
-from models.types import ProbVector
+from scenarios.types import ProbVector
 from time_series.tests.types import HypTestRes, format_hyp_test_result
 from utils.helpers import (
     compensate_prob,

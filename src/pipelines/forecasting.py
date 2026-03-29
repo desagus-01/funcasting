@@ -9,7 +9,7 @@ import polars as pl
 from numpy._typing import NDArray
 from polars import DataFrame
 
-from models.types import ProbVector
+from scenarios.types import ProbVector
 from pipelines.model_selection import (
     get_univariate_results,
 )

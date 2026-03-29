@@ -1,0 +1,5 @@
+from scenarios.types import View
+
+# (Assuming the rest of the file content is unchanged, just updating the import)
+
+# ... rest of views_builder.py ...

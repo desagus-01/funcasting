@@ -1,9 +1,9 @@
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import validate_call
+from scenarios.types import ProbVector
 
 from globals import model_cfg
-from models.types import ProbVector
 
 
 def kernel_smoothing(
