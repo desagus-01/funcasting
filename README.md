@@ -1,57 +1,117 @@
-#  Funcasting
+# Funcasting
 
-**Flexible Probability Scenario Modeling & Portfolio Construction Toolkit**
+**Flexible probability scenario modeling, forecasting, and portfolio construction toolkit (research-focused).**
 
-*funcasting* is a research-oriented Python library for building end-to-end scenario models and constructing portfolios using flexible probabilities. Inspired by Attilio Meucci’s work, it allows users to encode subjective market views numerically and transform data-driven scenarios into probability-weighted forecasts using entropy pooling and copula marginal models.
+`funcasting` is a Python codebase for building scenario distributions, encoding views, and running univariate-to-multivariate forecast workflows with probability-weighted sampling.
 
-> **Disclaimer**: This tool is strictly for research and educational purposes. It is not intended for actual investment or financial decision-making.
+The long-term ambition is to provide an end-to-end portfolio construction pipeline where forecasting, scenario generation, and risk management are integrated into one coherent workflow.
 
-
----
-
-## Current Features
-
--  **Scenario Modeling**: Combine financial data with assigned probabilities to build custom scenario models.
--  **Flexible Probabilities**: Use **entropy pooling** to adjust base probabilities while satisfying user-defined constraints.
--  **Copula Marginals**: Apply copula and marginal distribution assumptions to generate new plausible scenarios.
--  **Forecasting Pipeline**: An automated pipeline (currently supports detrending & deseasonalizing) to prepare data for scenario analysis.
--  **Lightweight & Focused**: Only uses `numpy` and `scipy` as core dependencies.
+> **Disclaimer**: Research and educational use only. Not investment advice.
 
 ---
 
-## Examples
+## What is in the repository now
 
-The best way to see current capabilities is through the example notebooks.
+The project has moved beyond notebooks-only experiments and now contains a modular `src/` architecture:
 
-Examples include:
-- Applying **Copula Marginal Approximation (CMA)** to generate joint scenarios  
-- Using **entropy pooling** to impose subjective market views  
-- Building probability-adjusted forecasts from historical data (still not done!)
+- `src/pipelines/`
+  - End-to-end orchestration (`preprocess`, `model_selection`, `forecasting`).
+- `src/time_series/`
+  - Diagnostics, stationarity/seasonality tests, transforms, and univariate model wrappers.
+- `src/scenarios/`
+  - Scenario distribution types, entropy pooling, copula-marginal updates.
+- `src/simulation/`
+  - Simulation state objects and path engines.
+- `src/probability/`
+  - Probability distributions and sampling utilities.
+- `src/utils/`
+  - Shared helpers and data-source connectors (e.g., Tiingo).
 
-can be found in: notebooks/examples/
+---
+
+## Project ambition
+
+Beyond forecasting, the project is being developed toward a full portfolio construction stack with a risk-first design:
+
+1. Build robust, probability-weighted scenario forecasts
+2. Convert scenarios into risk diagnostics and constraints
+3. Construct and stress-test portfolios under explicit risk budgets
+4. Support iterative view updates and re-optimization
+
+## Core forecasting entrypoint
+
+Main pipeline entrypoint:
+
+- `src/pipelines/forecasting.py::run_n_steps_forecast(...)`
+
+High-level flow:
+
+1. Univariate preprocessing (white-noise screen, detrend, deseason)
+2. Mean/volatility model selection
+3. Innovation extraction and scenario drawing (`bootstrap`, `historical`, `cma`)
+4. Path simulation
+5. Optional inverse transforms back to price-like scale
+
+---
+
+## Data contract
+
+Expected tabular input for pipeline functions:
+
+- A `date` column
+- One numeric column per asset
+- Optional probability vector (`ProbVector`) with:
+  - shape `(n_rows,)`
+  - non-negative entries
+  - sum approximately `1.0`
+
+Recommended before running pipelines:
+
+- Sort by `date`
+- Ensure unique dates
+- Ensure numeric asset columns only
+- Resolve nulls explicitly
+
+---
+
+## Null handling (current behavior)
+
+The current codebase has mixed null handling strategies (asset-level and full-row drops depending on module).
+
+Practical recommendation for now:
+
+- Clean data before modeling (drop/fill policy chosen explicitly)
+- Re-check probability alignment after any row filtering
 
 ---
 
 ## Installation
 
-Make sure you have [uv](https://github.com/astral-sh/uv) installed, then run:
+Requires Python `>=3.13` and [uv](https://github.com/astral-sh/uv):
+
 ```bash
 git clone https://github.com/desagus-01/funcasting.git
 cd funcasting
 uv sync
 uv pip install -e .
 ```
+
 ---
 
-## Roadmap
+## Examples
 
-See `TODO.md`.
+See:
 
-In general:
-1. Finish automated univariate forecasting pipeline.
-2. Add resampling based on flexible probabilities.
-3. Multivariate modelling/foreacasting using monte carlo.
-4. Work on optimization approach(es) based on forecasted model
-5. Add risk factor implementation
-6. Add visuals etc.
+- `notebooks/examples/simple_entropy_pooling.py`
+- `notebooks/examples/simple_cma_example.py`
+- `notebooks/examples/advanced_entropy_pooling.py`
 
+---
+
+## Roadmap (short)
+
+- Harden data validation and null-policy consistency across modules
+- Expand test coverage for pipeline and simulation entrypoints
+- Extend multivariate forecasting and optimization workflows
+- Add risk-budgeting and portfolio-construction modules on top of scenario forecasts
+- Improve documentation for scenario/view APIs and portfolio workflow design
