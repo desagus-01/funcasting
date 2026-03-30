@@ -38,6 +38,30 @@ def _build_innovations_df_from_models(
     model_map: dict[str, UnivariateRes],
     assets: list[str] | None = None,
 ) -> DataFrame:
+    """
+    Build a dataframe of invariant (innovation) series for given assets.
+
+    This function extracts the invariant (innovation) series from fitted
+    univariate models for each asset and aligns them with the dates present
+    in the provided `post` dataframe. Missing values are preserved using a
+    left-join on the date index.
+
+    Parameters
+    ----------
+    post : DataFrame
+        Preprocessed dataframe containing per-asset post series and a ``date`` column.
+    model_map : dict[str, UnivariateRes]
+        Mapping from asset name to fitted univariate results; used to compute invariants.
+    assets : list[str] | None, optional
+        Explicit list of assets to include. If ``None``, all columns except
+        'date' in ``post`` are used.
+
+    Returns
+    -------
+    DataFrame
+        Polars DataFrame with the 'date' column and one column per asset
+        containing the invariant series (aligned by date).
+    """
     if assets is None:
         assets = [c for c in post.columns if c != "date"]
 
@@ -80,6 +104,59 @@ def draw_innovations(
     copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
     target_marginals: dict[str, Literal["t", "norm"]] | None = None,
 ) -> NDArray[np.floating]:
+    """
+    Draw innovation (invariant) scenarios for simulation.
+
+    This function prepares invariant scenarios from the provided
+    ``invariants_df`` and draws simulated innovations according to the
+    specified method. Supported methods are bootstrap resampling,
+    returning the historical set without resampling, or applying a
+    copula-marginal adjustment (CMA) update.
+
+    Parameters
+    ----------
+    invariants_df : DataFrame
+        Polars DataFrame with one column per asset (and optionally a 'date'
+        column) containing invariant observations.
+    assets : list[str]
+        Ordered list of assets corresponding to the columns to draw from.
+    prob_vector : ProbVector
+        Prior probability weights corresponding to the rows of ``invariants_df``.
+    horizon : int
+        Number of steps to forecast (must be >= 1).
+    n_sims : int
+        Number of simulation paths to draw.
+    seed : int | None
+        Random seed for reproducibility.
+    method : {"bootstrap", "historical", "cma"}, optional
+        Resampling method. "historical" returns the historical draws
+        without resampling (only supported when horizon==1), "bootstrap"
+        draws with weighted bootstrapping, and "cma" applies an entropy
+        pool / copula-marginal adjustment prior to resampling.
+
+    Other Parameters
+    ----------------
+    target_copula : {"t", "norm"} or None, optional
+        Target copula family for CMA updates (only valid when ``method`` is "cma").
+    copula_fit_method : {"ml", "irho", "itau"} or None, optional
+        Method to fit the copula when applying CMA. If not provided,
+        defaults to "itau".
+    target_marginals : dict[str, {"t", "norm"}] or None, optional
+        Per-asset desired marginal families for CMA updates.
+
+    Returns
+    -------
+    NDArray[np.floating]
+        Array of simulated draws reshaped as ``(n_sims, horizon, n_assets)``
+        for bootstrap/CMA methods. For the historical method returns the
+        raw historical invariants in shape ``(n_scenarios, 1, n_assets)``.
+
+    Raises
+    ------
+    ValueError
+        If ``horizon < 1``, or if CMA-specific options are provided when
+        ``method`` is not "cma".
+    """
     if horizon < 1:
         raise ValueError("horizon must be >= 1")
 
@@ -158,6 +235,31 @@ def get_assets_models(
     assets_univariate_result: Mapping[str, UnivariateRes],
     assets: list[str] | None = None,
 ) -> dict[str, SimulationForecast]:
+    """
+    Construct simulation forecast objects for each asset.
+
+    For each asset this function builds a ``SimulationForecast`` using the
+    fitted univariate results and the non-null post-processed series. The
+    returned mapping can be passed to the simulation engine to generate
+    asset paths.
+
+    Parameters
+    ----------
+    data : DataFrame
+        DataFrame containing the post-processed series (including a 'date'
+        column).
+    assets_univariate_result : Mapping[str, UnivariateRes]
+        Mapping of asset name to fitted univariate results used to build the
+        simulation model/state for each asset.
+    assets : list[str] | None, optional
+        List of assets to prepare. If ``None``, all columns except 'date' are used.
+
+    Returns
+    -------
+    dict[str, SimulationForecast]
+        Mapping from asset name to a ``SimulationForecast`` containing the
+        univariate model and initial state needed for simulation.
+    """
     assets_ = assets if assets is not None else [c for c in data.columns if c != "date"]
 
     forecast_models: dict[str, SimulationForecast] = {}
@@ -185,6 +287,62 @@ def run_n_steps_forecast(
     copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
     target_marginals: dict[str, Literal["t", "norm"]] | None = None,
 ):
+    """
+    Run a full n-step forecasting pipeline for a set of assets.
+
+    The pipeline performs the following high-level steps:
+      1. Run univariate preprocessing (detrending / deseasonalising) to
+         prepare invariant series and inverse transform specifications.
+      2. Select and fit univariate mean/volatility models where required.
+      3. Build per-asset simulation models/state objects.
+      4. Draw innovations according to the chosen method (bootstrap/historical/CMA).
+      5. Simulate asset paths and apply inverse transforms to obtain results
+         on the original scale if requested.
+
+    Parameters
+    ----------
+    data : DataFrame
+        Raw input data containing a 'date' column and one column per asset.
+    prob : ProbVector
+        Prior probability vector to use when preparing invariants and
+        performing any probability-weighted resampling.
+    assets : list[str]
+        List of assets to include in the forecast (order determines asset
+        ordering in the returned arrays).
+    horizon : int, optional
+        Number of forecasting steps to simulate (default: 100).
+    n_sims : int, optional
+        Number of Monte Carlo simulation paths to generate (default: 1000).
+    seed : int | None, optional
+        RNG seed for reproducibility.
+    method : {"bootstrap", "historical", "cma"}, optional
+        Method used to draw innovations. See :func:`draw_innovations` for
+        details and CMA-specific options.
+
+    Other Parameters
+    ----------------
+    back_to_price : bool, optional
+        Whether to convert simulated returns back to price level using the
+        stored inverse transforms (default: True).
+    target_copula, copula_fit_method, target_marginals
+        CMA-specific options forwarded to :func:`draw_innovations` when
+        ``method == 'cma'``.
+
+    Returns
+    -------
+    tuple
+        A tuple ``(assets_forecasts, transformed)`` where:
+        - ``assets_forecasts`` is a dict mapping asset -> simulated paths
+          array (shape ``(n_sims, horizon)``) in the invariant/transformed space.
+        - ``transformed`` is the result of applying inverse transforms to
+          ``assets_forecasts`` to obtain outputs on the original data scale.
+
+    Raises
+    ------
+    ValueError
+        If invalid method/horizon/asset combinations are provided (e.g.
+        historical method with horizon>1, CMA with a single asset, etc.).
+    """
     logger.info(
         "Starting n-step forecast: assets=%s horizon=%d n_sims=%d method=%s seed=%s",
         assets,

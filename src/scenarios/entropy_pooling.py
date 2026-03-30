@@ -11,7 +11,27 @@ from utils.helpers import select_operator, weighted_moments
 
 def ens(prob_vector: ProbVector) -> int:
     """
-    Effective number of scenarios (ENS) as measures by the exponential of the entropy
+    Effective number of scenarios (ENS) computed from a probability vector.
+
+    ENS is defined as the exponential of the Shannon entropy of the
+    discrete distribution represented by ``prob_vector``. The function
+    validates that the result is in a sensible range and returns an integer
+    approximation.
+
+    Parameters
+    ----------
+    prob_vector : ProbVector
+        Array-like probability vector summing to 1.
+
+    Returns
+    -------
+    int
+        Effective number of scenarios (rounded up).
+
+    Raises
+    ------
+    RuntimeError
+        If the computed ENS is outside the range [1, n_scenarios].
     """
     max = prob_vector.shape[0]
 
@@ -32,7 +52,24 @@ def effective_rank(views_target):
 
 def _assign_constraint_equation(views: View, posterior: cp.Variable, prior: ProbVector):
     """
-    Assigns appropriate linear constraint equation based on view type
+    Map a View into a CVXPY linear constraint to be used in entropy pooling.
+
+    The function inspects the view type and constructs the appropriate
+    linear equality/inequality constraint for the optimization problem.
+
+    Parameters
+    ----------
+    views : View
+        View object describing the constraint (type, data, sign and target).
+    posterior : cp.Variable
+        CVXPY variable representing posterior probabilities.
+    prior : ProbVector
+        Prior probability vector used for reference values (e.g. means/stds).
+
+    Returns
+    -------
+    cvxpy.Constraint
+        A cvxpy constraint object implementing the view.
     """
     operator_used = select_operator(views)
 
@@ -83,9 +120,26 @@ def _build_constraints(
     prior: ProbVector,
 ) -> list[CvxConstraint]:
     """
-    Compiles constraint equations to list of constraints used in EP.
-    """
+    Compile a list of CVXPY constraints for the entropy pooling problem.
 
+    The function always includes the simplex constraints (sum(posterior) == 1
+    and posterior >= 0) and appends linear constraints derived from each
+    View object via :func:`_assign_constraint_equation`.
+
+    Parameters
+    ----------
+    views : list[View]
+        List of views to incorporate.
+    posterior : cp.Variable
+        Posterior probability variable for the optimization.
+    prior : ProbVector
+        Prior probability vector used for reference values in some views.
+
+    Returns
+    -------
+    list[cvxpy.Constraint]
+        Constraints to pass into the cvxpy Problem.
+    """
     base: list[CvxConstraint] = [cp.sum(posterior) == 1, posterior >= 0]
     constraints: list[CvxConstraint] = []
     for view in views:
@@ -99,12 +153,26 @@ def get_constraints_diags(
     views: list[View], constraints: list[CvxConstraint], posterior_probs: ProbVector
 ) -> list[dict[str, int | bool | str]]:
     """
-    Gives some diagnostics regarding the constraints added to the entropy pooling problem:
+    Produce diagnostic information for constraints after solving EP.
 
-    active: True means that the constraint is relevant to shaping the posterior probability.
+    The diagnostics list includes for each view whether the constraint is
+    active (binding) and the dual multiplier (sensitivity) indicating its
+    influence on the posterior. The logic for 'active' checks varies by view type.
 
-    sensitivity: The langrange multiplier, tell us the magnitude of the constraint has on the optimization (ie how much it is relevant).
+    Parameters
+    ----------
+    views : list[View]
+        Views that were included in the entropy pooling problem.
+    constraints : list[cvxpy.Constraint]
+        Corresponding cvxpy constraints as returned by :func:`_build_constraints`.
+    posterior_probs : ProbVector
+        Posterior probability vector obtained from the optimization.
 
+    Returns
+    -------
+    list[dict]
+        Diagnostics dictionaries containing keys like 'risk_driver', 'sign',
+        'constraint_value', 'active', and 'sensitivity'.
     """
     info: list[dict] = []
 
@@ -145,7 +213,23 @@ def get_constraints_diags(
 # TODO: Consider whether this is the best way (maybe instead of clipping give a v small value)
 def clip_normalise_probs(prob: NDArray[np.floating]) -> ProbVector:
     """
-    Clips any values below 0 (as solver might get these out due to tolerance) and normalises
+    Clip tiny negative solver tolerances and renormalize a probability vector.
+
+    Parameters
+    ----------
+    prob : NDArray[np.floating]
+        Raw posterior returned by the solver, may contain small negative values
+        due to numerical tolerances.
+
+    Returns
+    -------
+    ProbVector
+        Clipped and re-normalized posterior probabilities.
+
+    Raises
+    ------
+    RuntimeError
+        If clipping results in a zero-sum vector (posterior collapsed).
     """
     prob[prob < 0] = 0.0
 
@@ -165,10 +249,37 @@ def entropy_pooling(
     **solver_kwargs: str,
 ) -> ProbVector:
     """
-    Applied Entropy Pooling (EP) to current probability vector (prior)
-    based on list of views.
+    Apply Entropy Pooling (EP) to update a prior probability vector given views.
 
-    Outputs a new ProbVector.
+    The function sets up a convex optimisation minimizing KL divergence
+    KL(posterior || prior) subject to linear constraints derived from
+    ``views``. It returns a posterior probability vector if the problem
+    solves to optimality.
+
+    Parameters
+    ----------
+    prior : ProbVector
+        Prior probability vector to be updated.
+    views : list[View]
+        List of views encoding linear constraints on expectations, quantiles,
+        correlations or orderings.
+    solver : str, optional
+        CVXPY solver name to use (default: 'SCS').
+    include_diags : bool, optional
+        If True prints constraint diagnostics after solving.
+    **solver_kwargs : dict
+        Additional solver keyword arguments forwarded to cvxpy.
+
+    Returns
+    -------
+    ProbVector
+        Posterior probability vector satisfying the provided views.
+
+    Raises
+    ------
+    RuntimeError
+        If the CVXPY problem fails to solve to optimality or returns an
+        infeasible/invalid posterior.
     """
     posterior = cp.Variable(prior.shape[0])
     constraints = _build_constraints(views=views, posterior=posterior, prior=prior)
@@ -201,7 +312,26 @@ def entropy_pooling_probs(
     include_diags: bool = False,
 ) -> ProbVector:
     """
-    Implements entropy pooling optimization using KL divergence as the objective function, then adds confidence value linearly to the resulting posterior.
+    Run entropy pooling and blend the posterior with the prior by confidence.
+
+    This wrapper computes the posterior using :func:`entropy_pooling` and
+    then returns a convex combination ``confidence * posterior + (1-confidence) * prior``.
+
+    Parameters
+    ----------
+    prior : ProbVector
+        Prior probability vector.
+    views : list[View]
+        Views to impose through entropy pooling.
+    confidence : float, optional
+        Weight to give to the posterior in the convex combination (default: 1.0).
+    include_diags : bool, optional
+        If True print constraint diagnostics.
+
+    Returns
+    -------
+    ProbVector
+        Final probability vector after blending.
     """
     entropy_pooling_res = entropy_pooling(prior, views, include_diags=include_diags)
 

@@ -28,6 +28,31 @@ def polynomial_detrend(
     polynomial_order: int = 1,
     axis: int = 0,
 ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+    """
+    Remove a polynomial trend from numeric array columns using OLS projection.
+
+    Parameters
+    ----------
+    data : NDArray[np.floating]
+        Numeric array with observations along the first axis (time) by default.
+    polynomial_order : int, optional
+        Order of polynomial to remove (0 = remove mean), default is 1 (linear).
+    axis : int, optional
+        Axis corresponding to time; if 1 the array will be transposed for processing.
+
+    Returns
+    -------
+    tuple
+        (residuals, beta) where residuals is the detrended array and beta are
+        the fitted polynomial coefficients.
+
+    Raises
+    ------
+    NotImplementedError
+        If data has more than 2 dimensions.
+    ValueError
+        If polynomial_order is negative.
+    """
     if data.ndim > 2:
         raise NotImplementedError("data.ndim > 2 is not implemented.")
 
@@ -62,6 +87,26 @@ def add_detrend_column(
     assets: list[str] | None = None,
     polynomial_orders: list[int] | None = None,
 ) -> tuple[pl.DataFrame, dict[int, dict[str, NDArray[np.floating]]]]:
+    """
+    Add detrended columns for each asset and polynomial order specified.
+
+    The function produces new columns named ``{asset}_detrended_p_{order}`` and
+    returns a mapping of fitted coefficients per order and asset.
+
+    Parameters
+    ----------
+    original_data : pl.DataFrame
+        DataFrame containing numeric asset columns.
+    assets : list[str] | None, optional
+        Assets to detrend; when None, numeric columns are used.
+    polynomial_orders : list[int] | None, optional
+        Polynomial orders to fit (default [0,1,2,3]).
+
+    Returns
+    -------
+    tuple
+        (new_dataframe, betas_by_order) where betas_by_order maps order->(asset->beta).
+    """
     if assets is None:
         assets = original_data.select(cs.numeric()).columns
 

@@ -33,7 +33,23 @@ def split_df_in_half(data: pl.DataFrame) -> SplitDF:
 
 def get_assets_names(df: pl.DataFrame, assets: list[str] | None = None) -> list[str]:
     """
-    Retrieves and makes sures that assets exist in df, if None, chooses all assets ex date
+    Retrieve asset column names from a DataFrame.
+
+    If ``assets`` is provided the function validates and returns that list
+    (raising if columns are missing by virtue of Polars selection semantics).
+    If ``assets`` is ``None`` the function returns all columns except 'date'.
+
+    Parameters
+    ----------
+    df : pl.DataFrame
+        Input dataframe containing asset columns (and possibly a 'date' column).
+    assets : list[str] | None, optional
+        Explicit list of asset column names to validate and return.
+
+    Returns
+    -------
+    list[str]
+        Asset column names.
     """
     if assets is None:
         return [c for c in df.columns if c != "date"]
@@ -53,6 +69,21 @@ def select_operator(views: View):
 
 
 def get_corr_info(data: pl.DataFrame) -> list[CorrInfo]:
+    """
+    Compute pairwise correlations and return a list of CorrInfo named tuples.
+
+    Parameters
+    ----------
+    data : pl.DataFrame
+        DataFrame whose numeric columns are used to compute pairwise
+        Pearson correlations.
+
+    Returns
+    -------
+    list[CorrInfo]
+        A list where each item contains a tuple of asset names and their
+        correlation value. Each unordered pair appears only once.
+    """
     corr_df = (
         data.corr()
         .with_columns(index=pl.lit(pl.Series(data.columns)))
@@ -89,6 +120,37 @@ def compute_cdf_and_pobs(
     prob: ProbVector,
     compute_pobs: bool = True,
 ) -> pl.DataFrame:
+    """
+    Compute empirical CDF and pseudo-observations for a single marginal.
+
+    The function expects no missing values in ``data`` and will raise if any
+    are present. It returns a DataFrame containing the sorted marginal, the
+    cumulative probability (cdf) and, optionally, the pseudo-observations
+    (pobs) aligned to the original row order.
+
+    Parameters
+    ----------
+    data : pl.DataFrame
+        DataFrame containing the marginal column.
+    marginal_name : str
+        Column name of the marginal to process.
+    prob : ProbVector
+        Probability weights associated with each row; must sum to one.
+    compute_pobs : bool, optional
+        Whether to compute pseudo-observations aligned to original order
+        (default: True).
+
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame with columns ['index', marginal_name, 'prob', 'cdf'] and
+        optionally 'pobs' when ``compute_pobs`` is True.
+
+    Raises
+    ------
+    ValueError
+        If any nulls are present in the input ``data``.
+    """
     if data.null_count().sum_horizontal().item() > 0:
         raise ValueError(
             f"You have a total of {data.null_count().sum_horizontal().item()} Nulls in your data, please fix this."
@@ -126,7 +188,24 @@ def build_diff_df(data: pl.DataFrame, asset: str, diffs: int = 1) -> pl.DataFram
 @validate_call(config=model_cfg, validate_return=True)
 def compensate_prob(prob: ProbVector, n_remove: int) -> ProbVector:
     """
-    Removes obs top-down from probability vectors and equally adds to others to remain a valid prob vector.
+    Remove the top ``n_remove`` probabilities and re-normalize the remainder.
+
+    This helper is used when rows are dropped (e.g. due to nulls) to
+    compensate the prior probability vector by evenly distributing the
+    removed mass across the remaining entries.
+
+    Parameters
+    ----------
+    prob : ProbVector
+        Original probability vector.
+    n_remove : int
+        Number of top entries to remove from the probability vector.
+
+    Returns
+    -------
+    ProbVector
+        Adjusted probability vector of length ``len(prob) - n_remove`` that
+        sums to one.
     """
     removed_probs = prob[0:n_remove]
     diff_fac = removed_probs.sum() / (len(prob) - len(removed_probs))

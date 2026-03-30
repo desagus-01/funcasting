@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Mapping
+from typing import Mapping, Self
 
 import numpy as np
 from numpy._typing import NDArray
@@ -24,7 +24,32 @@ class UnivariateState:
         univariate_model: UnivariateModel,
         post_series_non_null: NDArray[np.floating],
         x_hist_len: int = 10,
-    ):
+    ) -> Self:
+        """
+        Build an initial UnivariateState from fitting results and observed series.
+
+        The returned state contains:
+          - series_hist: recent history of the series (used to seed mean models)
+          - ma_residual_lags: recent MA residuals if a mean model was fitted
+          - vol_residual_lags: recent volatility residuals if a GARCH model was fitted
+          - var_hist: recent conditional variance history for GARCH variance lags
+
+        Parameters
+        ----------
+        fitting_results : UnivariateRes
+            Fitted univariate results containing mean and volatility fit objects.
+        univariate_model : UnivariateModel
+            Lightweight description of the univariate model (orders and kinds).
+        post_series_non_null : NDArray[np.floating]
+            Non-null post-processed series used to extract recent history.
+        x_hist_len : int, optional
+            Number of recent observations to keep for seeding simulations (default: 10).
+
+        Returns
+        -------
+        UnivariateState
+            Initialized state object with arrays prepared for simulation.
+        """
         x_hist = post_series_non_null[
             -min(x_hist_len, post_series_non_null.size) :
         ].copy()
@@ -61,8 +86,16 @@ class UnivariateState:
             var_hist=var_hist,
         )
 
-    @property
     def state_as_dict(self) -> Mapping[str, NDArray[np.floating]]:
+        """
+        Return a dict representation of the state suitable for inspection/logging.
+
+        Returns
+        -------
+        Mapping[str, NDArray[np.floating]]
+            Dictionary with keys 'series_hist', 'ma_residual_lags',
+            'vol_residual_lags' and 'var_hist' mapping to numpy arrays or None.
+        """
         return asdict(self)
 
 
@@ -78,6 +111,34 @@ class SimulationForecast:
         post_series_non_null: NDArray[np.floating],
         x_hist_len: int = 10,
     ):
+        """
+        Construct a SimulationForecast from fitting results and observed series.
+
+        This helper creates a :class:`UnivariateModel` from the fitting results
+        and prepares the initial state used by simulation routines. If neither
+        a mean nor volatility model is available in ``fitting_results``, a
+        fallback ``innovation_scale`` is computed from first differences of
+        the input series to allow simulation of random-walk like behaviour.
+
+        Parameters
+        ----------
+        fitting_results : UnivariateRes
+            Fitted mean/volatility results for the asset.
+        post_series_non_null : NDArray[np.floating]
+            Array of non-null post-processed observations for the asset.
+        x_hist_len : int, optional
+            Length of series history to keep for state initialization (default: 10).
+
+        Returns
+        -------
+        SimulationForecast
+            Frozen dataclass containing the univariate model and initial state.
+
+        Raises
+        ------
+        ValueError
+            If ``post_series_non_null`` is empty.
+        """
         if post_series_non_null.size == 0:
             raise ValueError("post_series_non_null is empty")
 

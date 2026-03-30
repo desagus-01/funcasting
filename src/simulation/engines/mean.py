@@ -30,6 +30,34 @@ class MeanSimulator:
         series_hist: NDArray[np.floating],
         ma_resid_lags: NDArray[np.floating] | None,
     ) -> MeanSimulator:
+        """
+        Create a MeanSimulator from compiled parameters and initial state.
+
+        Parameters
+        ----------
+        params : CompiledParams
+            Compiled parameter object returned by the univariate model.
+        order : tuple[int, int]
+            (p, q) AR and MA orders.
+        n_sims : int
+            Number of parallel simulations to run.
+        horizon : int
+            Forecast horizon length.
+        series_hist : NDArray[np.floating]
+            Recent observed series values used to seed AR lags.
+        ma_resid_lags : NDArray[np.floating] | None
+            Recent MA residual lags used to seed MA part (required if q>0).
+
+        Returns
+        -------
+        MeanSimulator
+            Initialized simulator with buffers pre-filled for recursion.
+
+        Raises
+        ------
+        ValueError
+            If insufficient history is provided for the requested AR/MA orders.
+        """
         p, q = order
         mu, ar, ma = mean_params(params, order)
 
@@ -66,7 +94,19 @@ class MeanSimulator:
 
     def mean_step(self, time: int, eps: NDArray[np.floating]) -> NDArray[np.floating]:
         """
-        Compute y_next for time t given eps[:, t].
+        Compute the next-step mean output for each simulation at a given time.
+
+        Parameters
+        ----------
+        time : int
+            Current timestep index (0-based within the forecast horizon).
+        eps : NDArray[np.floating]
+            Innovations for the current time step with shape (n_sims,).
+
+        Returns
+        -------
+        NDArray[np.floating]
+            Next-step simulated values for each simulation (n_sims,).
         """
         ar_part = 0.0
         if self.p > 0:
@@ -86,7 +126,16 @@ class MeanSimulator:
         self, time: int, y_next: NDArray[np.floating], eps_t: NDArray[np.floating]
     ) -> None:
         """
-        Update buffers with the new output and eps (as MA residual).
+        Update internal buffers with the newly computed output and residual.
+
+        Parameters
+        ----------
+        time : int
+            Current timestep index (0-based within horizon).
+        y_next : NDArray[np.floating]
+            Newly computed outputs for each simulation.
+        eps_t : NDArray[np.floating]
+            Innovations/residuals associated with the newly computed outputs.
         """
         if self.p > 0:
             self.y_ext[:, self.p + time] = y_next
@@ -103,6 +152,39 @@ def mean_simulation_paths(
     state_ma_resid_lags: NDArray[np.floating] | None,
     eps_paths: NDArray[np.floating],
 ) -> NDArray[np.floating]:
+    """
+    Produce simulated series paths for a mean model given innovations.
+
+    The function supports three mean kinds:
+      - 'none': returns the innovations directly
+      - 'demean': adds a constant mean offset to the innovations
+      - 'arma': runs an ARMA recursion using a MeanSimulator
+
+    Parameters
+    ----------
+    params : CompiledParams
+        Compiled model parameters used to extract mean coefficients.
+    mean_kind : str
+        One of {'none', 'demean', 'arma'}.
+    mean_order : tuple[int, int]
+        (p, q) AR and MA orders for ARMA simulation.
+    state_series_hist : NDArray[np.floating]
+        Recent series history used to seed AR recursion when p>0.
+    state_ma_resid_lags : NDArray[np.floating] | None
+        Recent MA residual lags used to seed MA recursion when q>0.
+    eps_paths : NDArray[np.floating]
+        Innovations array which will be normalized to (n_sims, horizon) shape.
+
+    Returns
+    -------
+    NDArray[np.floating]
+        Simulated series array of shape (n_sims, horizon).
+
+    Raises
+    ------
+    ValueError
+        If ``mean_kind`` is unknown or required history is missing.
+    """
     eps_paths, n_sims, horizon = as_sims_by_horizon(eps_paths)
 
     if mean_kind == "none":

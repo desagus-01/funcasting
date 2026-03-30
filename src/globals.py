@@ -3,7 +3,7 @@ import operator as _op
 from numpy import array, asarray, inf
 from pydantic import ConfigDict
 
-from models.types import ConstraintSigns
+from scenarios.types import ConstraintSigns
 
 sign_operations = {
     (ConstraintSigns.equal): _op.eq,

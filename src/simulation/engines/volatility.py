@@ -40,6 +40,29 @@ class GarchSimulator:
         eps_start: NDArray[np.floating] | None,
         var_start: NDArray[np.floating] | None,
     ) -> GarchSimulator:
+        """
+        Initialize a GarchSimulator from compiled parameters and starting lags.
+
+        Parameters
+        ----------
+        params : CompiledParams
+            Compiled GARCH parameters extracted from fitted model.
+        order : tuple[int, int, int]
+            (p, o, q) GARCH orders: ARCH lags p, leverage o, GARCH lags q.
+        n_sims : int
+            Number of parallel simulation paths.
+        horizon : int
+            Forecast horizon length.
+        eps_start : NDArray[np.floating] | None
+            Initial residual lags to seed ARCH terms.
+        var_start : NDArray[np.floating] | None
+            Initial variance lags to seed GARCH terms.
+
+        Returns
+        -------
+        GarchSimulator
+            Initialized simulator with buffers prefilled for recursion.
+        """
         p, o, q = order
         omega, alpha, gamma, beta = garch_params(params, order)
 
@@ -74,7 +97,17 @@ class GarchSimulator:
 
     def variance_step(self, t: int) -> NDArray[np.floating]:
         """
-        Compute next variance vector v_next for time t.
+        Compute the next-step conditional variance for each simulation.
+
+        Parameters
+        ----------
+        t : int
+            Current timestep index (0-based within the forecast horizon).
+
+        Returns
+        -------
+        NDArray[np.floating]
+            Vector of variances (n_sims,) for the next time step.
         """
         n_sims = self.eps_ext.shape[0]
         v_next = np.full(n_sims, self.omega, dtype=float)
@@ -101,7 +134,16 @@ class GarchSimulator:
         self, t: int, eps_next: NDArray[np.floating], var_next: NDArray[np.floating]
     ) -> None:
         """
-        Store computed eps and variance into the extended buffers.
+        Store computed residuals and variances into the internal buffers.
+
+        Parameters
+        ----------
+        t : int
+            Current timestep index (0-based within the forecast horizon).
+        eps_next : NDArray[np.floating]
+            Residuals computed for the current time step (n_sims,).
+        var_next : NDArray[np.floating]
+            Variances computed for the current time step (n_sims,).
         """
         if self.eps_lag > 0:
             self.eps_ext[:, self.eps_lag + t] = eps_next
@@ -117,6 +159,33 @@ def garch_simulation_paths(
     var_start: NDArray[np.floating] | None,
     innovations: NDArray[np.floating],
 ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+    """
+    Simulate GARCH volatility and residual (eps) paths given innovations.
+
+    This routine returns both conditional variances (sigma2) and scaled
+    residuals (eps) paths for the provided innovations. The innovations
+    are treated as standardized shocks which are scaled by the simulated
+    standard deviation at each step.
+
+    Parameters
+    ----------
+    params : CompiledParams
+        Compiled parameters for the GARCH model.
+    garch_order : tuple[int, int, int]
+        (p, o, q) orders for the GARCH specification.
+    eps_start : NDArray[np.floating] | None
+        Initial residual lags for seeding ARCH terms.
+    var_start : NDArray[np.floating] | None
+        Initial variance lags for seeding GARCH terms.
+    innovations : NDArray[np.floating]
+        Innovations array which will be normalized to (n_sims, horizon).
+
+    Returns
+    -------
+    tuple
+        (sigma2, eps) where sigma2 is the simulated conditional variance array
+        (n_sims, horizon) and eps is the scaled residuals array (n_sims, horizon).
+    """
     innovations, n_sims, horizon = as_sims_by_horizon(innovations)
 
     sim = GarchSimulator.from_state(

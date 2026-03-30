@@ -31,6 +31,26 @@ def build_harmonic_terms(
     frequency_radians: list[float],
     coefficients: NDArray[np.floating],
 ) -> list[HarmonicTerm]:
+    """
+    Construct a list of HarmonicTerm objects from frequencies and coefficient vector.
+
+    Parameters
+    ----------
+    frequency_radians : list[float]
+        List of angular frequencies (radians) used in the harmonic regression.
+    coefficients : NDArray[np.floating]
+        Coefficient vector returned by OLS (order: cos terms then sin terms as constructed).
+
+    Returns
+    -------
+    list[HarmonicTerm]
+        List of HarmonicTerm dataclasses describing the deterministic seasonal components.
+
+    Raises
+    ------
+    ValueError
+        If the provided coefficient vector length does not match the expected count.
+    """
     terms: list[HarmonicTerm] = []
 
     coef_idx = 0

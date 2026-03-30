@@ -22,6 +22,24 @@ TIINGO_API = os.getenv("TIINGO_API")
 
 
 def get_zipfile_from_response(response: requests.Response) -> zipfile.ZipFile:
+    """
+    Validate a HTTP response and return a ZipFile object.
+
+    Parameters
+    ----------
+    response : requests.Response
+        HTTP response containing a zip archive as its content.
+
+    Returns
+    -------
+    zipfile.ZipFile
+        In-memory ZipFile for further extraction.
+
+    Raises
+    ------
+    HTTPError
+        If the response status is not successful.
+    """
     response.raise_for_status()
     return zipfile.ZipFile(io.BytesIO(response.content))
 
@@ -31,6 +49,23 @@ def get_buffer_from_zipfile(
     filename: str,
     encoding: str = "utf-8",
 ) -> io.StringIO:
+    """
+    Extract a text file from a ZipFile and return a StringIO buffer.
+
+    Parameters
+    ----------
+    zipdata : zipfile.ZipFile
+        Open zip archive.
+    filename : str
+        Name of the file within the archive to extract.
+    encoding : str, optional
+        Text encoding to use when decoding bytes (default: 'utf-8').
+
+    Returns
+    -------
+    io.StringIO
+        In-memory text buffer for the extracted file.
+    """
     with zipdata.open(filename) as f:
         text = f.read().decode(encoding)
     return io.StringIO(text)
@@ -39,6 +74,19 @@ def get_buffer_from_zipfile(
 def get_tiingo_tickers(
     asset_types: Iterable[str] = ("Stock",),
 ) -> pl.DataFrame:
+    """
+    Download and parse Tiingo's supported tickers listing.
+
+    Parameters
+    ----------
+    asset_types : Iterable[str], optional
+        Iterable of assetType values to filter the listing on (default: ("Stock",)).
+
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame of tickers filtered by asset type with parsed start/end dates.
+    """
     listing_file_url = (
         "https://apimedia.tiingo.com/docs/tiingo/daily/supported_tickers.zip"
     )
@@ -76,6 +124,11 @@ def _request(
     headers: dict[str, str] | None = None,
     **kwargs,
 ):
+    """
+    Internal wrapper around requests to standardise headers and error handling.
+
+    Raises HTTPError after logging if response is unsuccessful.
+    """
     merged_headers = {"Content-Type": "application/json"}
     if headers:
         merged_headers.update(headers)
@@ -90,6 +143,9 @@ def _request(
 
 
 def _get_url(ticker: str) -> str:
+    """
+    Construct Tiingo price endpoint URL for a ticker.
+    """
     return f"{BASE_URL}/tiingo/daily/{ticker}/prices"
 
 
@@ -100,6 +156,25 @@ def get_single_price(
     columns: str | None = None,
     frequency: str = "daily",
 ) -> DataFrame:
+    """
+    Fetch price data for a single Tiingo ticker and return as DataFrame.
+
+    Parameters
+    ----------
+    ticker : str
+        Tiingo ticker symbol.
+    start_date, end_date : str | None, optional
+        Inclusive date strings in 'YYYY-MM-DD' format specifying the range.
+    columns : str | None, optional
+        Comma-separated column selection as supported by Tiingo API.
+    frequency : str, optional
+        Resampling frequency to request from Tiingo (default: 'daily').
+
+    Returns
+    -------
+    DataFrame
+        Polars DataFrame built from the Tiingo JSON price response.
+    """
     url = _get_url(ticker)
 
     params: dict[str, Any] = {
@@ -127,6 +202,22 @@ def get_ticker_prices(
     frequency: str = "daily",
     return_clean: bool = True,
 ):
+    """
+    Fetch and concatenate prices for multiple tickers into a single DataFrame.
+
+    Parameters
+    ----------
+    tickers : list[str]
+        List of Tiingo tickers.
+    start_date, end_date, columns, frequency : see :func:`get_single_price`.
+    return_clean : bool, optional
+        If True, select and rename a small set of common columns for downstream use.
+
+    Returns
+    -------
+    pl.DataFrame
+        Concatenated DataFrame of ticker prices with 'date' parsed to datetime.date.
+    """
     dfs = []
     for t in tickers:
         out = get_single_price(
@@ -168,6 +259,25 @@ def plot_ticker_lines(
     value_column: str = "adj_close",
     ticker_column: str = "ticker",
 ):
+    """
+    Plot time series lines for each ticker in ``df`` and return figure objects.
+
+    Parameters
+    ----------
+    df : pl.DataFrame
+        DataFrame containing date, ticker and value columns.
+    date_column : str, optional
+        Column name containing dates (default: 'date').
+    value_column : str, optional
+        Column name containing the values to plot (default: 'adj_close').
+    ticker_column : str, optional
+        Column name containing ticker identifiers (default: 'ticker').
+
+    Returns
+    -------
+    list[tuple]
+        List of tuples (ticker, fig, ax) for each plotted ticker.
+    """
     tickers = df.select(pl.col(ticker_column).unique()).to_series().to_list()
     figs_axes = []
 
@@ -200,6 +310,19 @@ def plot_ticker_lines(
 
 
 def previous_business_day(d: date) -> date:
+    """
+    Return the previous business day (Mon-Fri) before the given date.
+
+    Parameters
+    ----------
+    d : date
+        Reference date.
+
+    Returns
+    -------
+    date
+        Most recent business day strictly before ``d``.
+    """
     d = d - timedelta(days=1)
     while d.weekday() >= 5:
         d -= timedelta(days=1)
@@ -207,6 +330,25 @@ def previous_business_day(d: date) -> date:
 
 
 def business_day_x_years(target_bd: date, years: int) -> date:
+    """
+    Compute a business day approximately ``years`` years prior to ``target_bd``.
+
+    The function attempts to preserve the month/day where possible, falling
+    back to February 28 for leap-year edge cases, and then steps back to the
+    nearest preceding business day if the result falls on a weekend.
+
+    Parameters
+    ----------
+    target_bd : date
+        Reference business day date.
+    years : int
+        Number of years to step back.
+
+    Returns
+    -------
+    date
+        Business day approximately ``years`` earlier than ``target_bd``.
+    """
     try:
         new_date = target_bd.replace(year=target_bd.year - years)
     except ValueError:
@@ -218,6 +360,23 @@ def business_day_x_years(target_bd: date, years: int) -> date:
 
 
 def get_tiingo_dates(date: date, years_back: int) -> tuple[date, date]:
+    """
+    Convenience helper returning a start/end date covering ``years_back`` to
+    the most recent business day prior to ``date``.
+
+    Parameters
+    ----------
+    date : date
+        Anchor date to compute the trailing window.
+    years_back : int
+        Number of years to go back from the most recent business day.
+
+    Returns
+    -------
+    tuple[date, date]
+        (start_date, end_date) where end_date is the previous business day
+        before ``date`` and start_date is approximately ``years_back`` years earlier.
+    """
     target_enddate = previous_business_day(date)
     target_startdate = business_day_x_years(target_bd=target_enddate, years=years_back)
     return target_startdate, target_enddate
@@ -228,6 +387,23 @@ def create_tiingo_universe(
     end_date: date,
     exchanges: list[str] = ["NASDAQ", "NYSE"],
 ) -> pl.DataFrame:
+    """
+    Filter the Tiingo tickers listing into a USD-equity universe for a given end date.
+
+    Parameters
+    ----------
+    tiingo_ticker_info : pl.DataFrame
+        DataFrame as returned by :func:`get_tiingo_tickers`.
+    end_date : date
+        Date to use when filtering tickers whose endDate equals this value.
+    exchanges : list[str], optional
+        List of exchanges to include (default: ['NASDAQ', 'NYSE']).
+
+    Returns
+    -------
+    pl.DataFrame
+        Filtered universe of tickers matching the criteria.
+    """
     return tiingo_ticker_info.filter(
         (pl.col("priceCurrency") == "USD")
         & (pl.col("exchange").is_in(exchanges))
@@ -240,6 +416,25 @@ def create_tiingo_universe(
 def sample_tickers_from_universe(
     universe_df: pl.DataFrame, target_start_date: date, n: int, seed: int
 ) -> list[str]:
+    """
+    Randomly sample tickers from the universe that have started trading by ``target_start_date``.
+
+    Parameters
+    ----------
+    universe_df : pl.DataFrame
+        Universe dataframe with 'ticker' and 'startDate' columns.
+    target_start_date : date
+        Cutoff start date: tickers with startDate <= target_start_date are eligible.
+    n : int
+        Number of tickers to sample.
+    seed : int
+        RNG seed for reproducibility.
+
+    Returns
+    -------
+    list[str]
+        Sampled ticker symbols.
+    """
     return (
         universe_df.filter(pl.col("startDate") <= pl.lit(target_start_date))
         .select("ticker")
@@ -251,6 +446,9 @@ def sample_tickers_from_universe(
 
 
 def _coerce_date(value: date | str) -> date:
+    """
+    Coerce a string in 'YYYY-MM-DD' format or a date into a date object.
+    """
     if isinstance(value, date):
         return value
     return datetime.strptime(value, "%Y-%m-%d").date()
@@ -263,6 +461,25 @@ def resolve_workflow_dates(
     start_date: date | str | None = None,
     end_date: date | str | None = None,
 ) -> tuple[date, date, str, str]:
+    """
+    Resolve start/end dates for workflows either from explicit dates or from
+    an anchor ``as_of_date`` and ``years_back`` window.
+
+    Parameters
+    ----------
+    as_of_date : date | str | None, optional
+        Anchor date from which to compute the trailing window (default: today).
+    years_back : int, optional
+        Years back to include in the window when ``start_date`` is not provided.
+    start_date, end_date : date | str | None, optional
+        If both provided, they are validated and used directly.
+
+    Returns
+    -------
+    tuple[date, date, str, str]
+        (target_startdate, target_enddate, start_date_str, end_date_str) where
+        the string values are formatted 'YYYY-MM-DD' for API calls.
+    """
     if (start_date is None) != (end_date is None):
         raise ValueError("start_date and end_date must be provided together.")
 
@@ -301,6 +518,25 @@ def build_sampled_universe(
     n_tickers: int = 100,
     seed: int = 1,
 ) -> list[str]:
+    """
+    Build a sampled universe of tickers with available history between dates.
+
+    Parameters
+    ----------
+    target_startdate, target_enddate : date
+        Window endpoints used to filter eligible tickers.
+    exchanges : Iterable[str], optional
+        Exchanges to consider (default: ('NASDAQ', 'NYSE')).
+    n_tickers : int, optional
+        Number of tickers to sample.
+    seed : int, optional
+        RNG seed for reproducibility.
+
+    Returns
+    -------
+    list[str]
+        List of sampled tickers.
+    """
     tiingo_tickers = get_tiingo_tickers()
     universe_df = create_tiingo_universe(
         tiingo_ticker_info=tiingo_tickers,
@@ -332,6 +568,20 @@ def get_sampled_ticker_prices(
     frequency: str = "daily",
     columns: str | None = None,
 ) -> pl.DataFrame:
+    """
+    High-level helper to sample tickers and return their price series.
+
+    Parameters
+    ----------
+    as_of_date, years_back, start_date, end_date : see :func:`resolve_workflow_dates`.
+    n_tickers, seed, exchanges : see :func:`build_sampled_universe`.
+    frequency, columns : forwarded to :func:`get_ticker_prices`.
+
+    Returns
+    -------
+    pl.DataFrame
+        Concatenated price data for sampled tickers.
+    """
     (
         target_startdate,
         target_enddate,
@@ -365,6 +615,16 @@ def get_sampled_ticker_prices(
 
 
 def clean_and_save_sample(sample_df: pl.DataFrame, path_to_save: str) -> None:
+    """
+    Pivot and save a sampled price DataFrame to CSV with adjusted log closes.
+
+    Parameters
+    ----------
+    sample_df : pl.DataFrame
+        DataFrame containing columns ['date', 'ticker', 'adj_close'].
+    path_to_save : str
+        File path where the resulting CSV should be written.
+    """
     clean_df = (
         sample_df.select(["date", "ticker", "adj_close"])
         .with_columns(adj_log_close=pl.col("adj_close").log())
