@@ -1,9 +1,8 @@
+## Portfolio
+- [ ] Add basic portfolio config (equal value for all)
+- [ ] Create basic portfolio value out of this config
 
 ## Re-factor
-- [ ] Change files and directories to something more logical
-- [ ] apply multiple tests to iid pipeline?
-- [ ] Sit down and figure our dataypes
-- [ ] Clean up all the polars-numpy conversion madness
 - [ ] Add appropriate logs to debug (but not too many)
     - [ ] Add logging files etc as well
 
@@ -12,6 +11,7 @@
 - [ ] Add metrics to evaluate forecast:
     - [ ] Add CRPS scores 
 - [ ] Change model selection pipeline to drop bad forecast models
+- [ ] apply multiple tests to iid pipeline?
 - [ ] Add check whether final innovs are iid?
 - [ ] Add 'block' resampling instead to better preserve dynamics
 - [ ] Add back probabilities for forecasts that were used from MC

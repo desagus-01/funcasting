@@ -9,7 +9,6 @@ import polars as pl
 from numpy._typing import NDArray
 from polars import DataFrame
 
-from scenarios.types import ProbVector
 from pipelines.model_selection import (
     get_univariate_results,
 )
@@ -18,6 +17,7 @@ from pipelines.preprocess import (
 )
 from scenarios.copula_marginal import CopulaMarginalModel
 from scenarios.resampling import weighted_bootstrapping_idx
+from scenarios.types import ProbVector
 from simulation.simulate_paths import (
     simulate_asset_paths,
 )
@@ -286,7 +286,7 @@ def run_n_steps_forecast(
     target_copula: Literal["t", "norm"] | None = None,
     copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
     target_marginals: dict[str, Literal["t", "norm"]] | None = None,
-):
+) -> dict[str, NDArray[np.floating]]:
     """
     Run a full n-step forecasting pipeline for a set of assets.
 
@@ -330,12 +330,8 @@ def run_n_steps_forecast(
 
     Returns
     -------
-    tuple
-        A tuple ``(assets_forecasts, transformed)`` where:
-        - ``assets_forecasts`` is a dict mapping asset -> simulated paths
-          array (shape ``(n_sims, horizon)``) in the invariant/transformed space.
-        - ``transformed`` is the result of applying inverse transforms to
-          ``assets_forecasts`` to obtain outputs on the original data scale.
+    - ``transformed`` is the result of applying inverse transforms
+      to obtain outputs on the original data scale.
 
     Raises
     ------
@@ -419,4 +415,4 @@ def run_n_steps_forecast(
         back_to_price=True if back_to_price else False,
     )
 
-    return assets_forecasts, transformed
+    return transformed

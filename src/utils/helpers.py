@@ -235,3 +235,12 @@ def timeit(func):
         return result
 
     return wrapper
+
+
+def wide_to_long(data: pl.DataFrame, assets: list[str]) -> pl.DataFrame:
+    return data.unpivot(
+        index="date",
+        on=list(assets),
+        variable_name="ticker",
+        value_name="adj_close",
+    ).with_columns(pl.col("date").cast(pl.Date))
