@@ -4,6 +4,7 @@ import numpy as np
 import polars as pl
 from polars.dataframe.frame import DataFrame
 
+from scenarios.types import ProbVector
 from time_series.preprocessing.types import (
     TransformDecision,
 )
@@ -44,6 +45,7 @@ def _group_detrend_assets(
 
 def _apply_grouped_detrend(
     data: DataFrame,
+    prob: ProbVector,
     by_group: dict[tuple[str, int], list[str]],
 ) -> tuple[DataFrame, dict[str, InverseSpec]]:
     """Apply each grouped transform to the data and retain inverse specs."""
@@ -72,6 +74,7 @@ def _apply_grouped_detrend(
         elif transform == "polynomial":
             data, betas_by_order = add_detrend_column(
                 original_data=data,
+                prob=prob,
                 assets=assets,
                 polynomial_orders=[order],
             )
@@ -123,6 +126,7 @@ def _select_and_rename_detrended_columns(
 def apply_detrend(
     data: DataFrame,
     decision: dict[str, TransformDecision],
+    prob: ProbVector,
 ) -> tuple[DataFrame, dict[str, InverseSpec]]:
     """Apply detrending decisions and return date + transformed asset columns."""
     if not decision:
@@ -132,7 +136,9 @@ def apply_detrend(
     if not by_group:
         return data.select(["date"]), {}
 
-    transformed, inverse_specs = _apply_grouped_detrend(data, by_group)
+    transformed, inverse_specs = _apply_grouped_detrend(
+        data=data, prob=prob, by_group=by_group
+    )
     selected = _select_and_rename_detrended_columns(transformed, decision)
     return selected, inverse_specs
 

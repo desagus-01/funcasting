@@ -6,6 +6,9 @@ import polars as pl
 import polars.selectors as cs
 from numpy._typing import NDArray
 
+from scenarios.types import ProbVector
+from time_series.estimation import weighted_ols
+
 TrendTypes = Literal["polynomial", "difference"]
 
 
@@ -23,13 +26,27 @@ class CandidateBatch:
     candidates_by_asset: dict[str, list[TrendCandidate]]
 
 
+def _build_polynomial_design_matrix(
+    n_obs: int,
+    polynomial_order: int,
+) -> NDArray[np.floating]:
+    time = np.arange(n_obs, dtype=float).reshape(-1, 1)
+
+    if polynomial_order == 0:
+        return np.ones((n_obs, 1), dtype=float)
+
+    # columns are [t^p, ..., t, 1]
+    return np.vander(time.ravel(), N=polynomial_order + 1)
+
+
 def polynomial_detrend(
     data: NDArray[np.floating],
+    prob: ProbVector,
     polynomial_order: int = 1,
     axis: int = 0,
 ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
     """
-    Remove a polynomial trend from numeric array columns using OLS projection.
+    Remove a polynomial trend from numeric array columns using weighted_ols.
 
     Parameters
     ----------
@@ -39,73 +56,66 @@ def polynomial_detrend(
         Order of polynomial to remove (0 = remove mean), default is 1 (linear).
     axis : int, optional
         Axis corresponding to time; if 1 the array will be transposed for processing.
+    prob : ProbVector | None, optional
+        Probability vector aligned to the time axis.
 
     Returns
     -------
     tuple
         (residuals, beta) where residuals is the detrended array and beta are
         the fitted polynomial coefficients.
-
-    Raises
-    ------
-    NotImplementedError
-        If data has more than 2 dimensions.
-    ValueError
-        If polynomial_order is negative.
     """
     if data.ndim > 2:
         raise NotImplementedError("data.ndim > 2 is not implemented.")
 
     transposed = False
 
-    if data.ndim == 2 and axis == 1:
+    if data.ndim == 1:
+        data = data.reshape(-1, 1)
+
+    elif data.ndim == 2 and axis == 1:
         data = data.T
         transposed = True
 
     if polynomial_order < 0:
         raise ValueError("polynomial_order must be >= 0")
 
-    if polynomial_order == 0:
-        beta = data.mean(axis=0)
-        fitted_trend = np.broadcast_to(beta, data.shape)
-    else:
-        time = np.arange(data.shape[0], dtype=float)
-        trends = np.vander(time, N=polynomial_order + 1)
-        beta = np.linalg.pinv(trends) @ data
-        fitted_trend = trends @ beta
+    n_obs = data.shape[0]
+    design = _build_polynomial_design_matrix(
+        n_obs=n_obs,
+        polynomial_order=polynomial_order,
+    )
 
-    resid = data - fitted_trend
+    n_assets = data.shape[1]
+    residuals = np.empty_like(data, dtype=float)
+    betas = np.empty((design.shape[1], n_assets), dtype=float)
+
+    for i in range(n_assets):
+        fit = weighted_ols(
+            dependent_var=data[:, i],
+            independent_vars=design,
+            prob=prob,
+        )
+        residuals[:, i] = fit.residuals.ravel()
+        betas[:, i] = fit.res.ravel()
 
     if transposed:
-        resid = resid.T
+        residuals = residuals.T
 
-    return resid, beta
+    return residuals, betas
 
 
 def add_detrend_column(
     original_data: pl.DataFrame,
+    prob: ProbVector,
     assets: list[str] | None = None,
     polynomial_orders: list[int] | None = None,
 ) -> tuple[pl.DataFrame, dict[int, dict[str, NDArray[np.floating]]]]:
     """
     Add detrended columns for each asset and polynomial order specified.
 
-    The function produces new columns named ``{asset}_detrended_p_{order}`` and
+    The function produces new columns named ``{asset}_detrended_p{order}`` and
     returns a mapping of fitted coefficients per order and asset.
-
-    Parameters
-    ----------
-    original_data : pl.DataFrame
-        DataFrame containing numeric asset columns.
-    assets : list[str] | None, optional
-        Assets to detrend; when None, numeric columns are used.
-    polynomial_orders : list[int] | None, optional
-        Polynomial orders to fit (default [0,1,2,3]).
-
-    Returns
-    -------
-    tuple
-        (new_dataframe, betas_by_order) where betas_by_order maps order->(asset->beta).
     """
     if assets is None:
         assets = original_data.select(cs.numeric()).columns
@@ -123,18 +133,13 @@ def add_detrend_column(
             asset_arrays,
             polynomial_order=p,
             axis=0,
+            prob=prob,
         )
 
-        if p == 0:
-            betas_by_order[p] = {
-                asset: np.array([beta[i]], dtype=float).reshape(-1)
-                for i, asset in enumerate(assets)
-            }
-        else:
-            betas_by_order[p] = {
-                asset: np.asarray(beta[:, i], dtype=float).reshape(-1)
-                for i, asset in enumerate(assets)
-            }
+        betas_by_order[p] = {
+            asset: np.asarray(beta[:, i], dtype=float).reshape(-1)
+            for i, asset in enumerate(assets)
+        }
 
         for i, asset in enumerate(assets):
             new_cols.append(
@@ -150,11 +155,15 @@ def add_detrend_column(
 def add_detrend_columns_max(
     data: pl.DataFrame,
     assets: list[str],
+    prob: ProbVector,
     max_polynomial_order: int,
 ) -> pl.DataFrame:
     polynomial_orders = list(range(0, max_polynomial_order + 1))
     return add_detrend_column(
-        original_data=data, assets=assets, polynomial_orders=polynomial_orders
+        original_data=data,
+        assets=assets,
+        polynomial_orders=polynomial_orders,
+        prob=prob,
     )[0]
 
 
@@ -175,18 +184,24 @@ def add_differenced_columns(
 
 
 def build_polynomial_candidates(
-    data: pl.DataFrame, assets: list[str], max_order: int = 3
+    data: pl.DataFrame,
+    assets: list[str],
+    prob: ProbVector,
+    max_order: int = 3,
 ) -> CandidateBatch:
     if max_order < 0:
         raise ValueError("max order must be >= 0, duh")
 
     polynomial_orders = list(range(0, max_order + 1))
 
-    transformed_df, betas_by_order = add_detrend_column(
-        original_data=data, assets=assets, polynomial_orders=polynomial_orders
+    transformed_df, _ = add_detrend_column(
+        original_data=data,
+        assets=assets,
+        polynomial_orders=polynomial_orders,
+        prob=prob,
     )
 
-    candidates_by_asset = {}
+    candidates_by_asset: dict[str, list[TrendCandidate]] = {}
 
     for asset in assets:
         candidates = []
@@ -209,7 +224,10 @@ def build_polynomial_candidates(
 
 
 def build_difference_candidates(
-    data: pl.DataFrame, assets: list[str], max_order: int = 3, drop_nulls: bool = True
+    data: pl.DataFrame,
+    assets: list[str],
+    max_order: int = 3,
+    drop_nulls: bool = True,
 ) -> CandidateBatch:
     if max_order < 0:
         raise ValueError("max order must be >= 0, duh")

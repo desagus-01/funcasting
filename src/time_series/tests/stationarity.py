@@ -18,7 +18,7 @@ from time_series.estimation import (
     EquationTypes,
     OLSEquation,
     add_deterministics_to_eq,
-    ols_classic,
+    weighted_ols,
 )
 from time_series.tests.types import (
     HypTestRes,
@@ -159,7 +159,7 @@ def _adf_autolag(
     ols_results = {}
     for lag in range(columns_to_exclude, columns_to_exclude + max_lag + 1):
         independent_lags = independent_vars[:, :lag]
-        ols_results[lag] = ols_classic(
+        ols_results[lag] = weighted_ols(
             dependent_var=dependent_var, independent_vars=independent_lags
         )
     best_metric, best_cutoff = min(
@@ -238,7 +238,7 @@ def augmented_dickey_fuller(
         data=data, asset=asset, lags=max_lags, eq_type=eq_type, metric=metric
     )
 
-    ols_res = ols_classic(
+    ols_res = weighted_ols(
         dependent_var=adf_eq.dep_vars, independent_vars=adf_eq.ind_var
     )
     adf_stat = float(ols_res.t_stats[added_regressors].item())
@@ -317,7 +317,7 @@ def kpss(
     n_obs = data.height
     if eq_type == "ct":  # run OLS with constant and trend
         x = build_kpss_equation(data, asset, eq_type)
-        residuals = ols_classic(
+        residuals = weighted_ols(
             dependent_var=x.dep_vars, independent_vars=x.ind_var
         ).residuals
     else:  # just demean

@@ -67,6 +67,7 @@ def deseason_pipeline(
 
 def detrend_pipeline(
     data: DataFrame,
+    prob: ProbVector,
     assets: list[str] | None = None,
     order_max: int = 3,
     threshold_order: int = 2,
@@ -81,6 +82,7 @@ def detrend_pipeline(
     diagnostics = trend_diagnostic(
         data=data,
         assets=assets,
+        prob=prob,
         order_max=order_max,
         threshold_order=threshold_order,
         trend_type=trend_type,
@@ -93,6 +95,7 @@ def detrend_pipeline(
 
     updated, inverse_specs = apply_detrend(
         data=data,
+        prob=prob,
         decision=per_asset_decision,
     )
 
@@ -151,6 +154,7 @@ def run_univariate_preprocess(
         data=data.select(["date", *assets]),
         assets=assets_need_preprocess,
         include_diagnostics=False,
+        prob=prob,
     )
 
     if detrend.inverse_spec is not None:

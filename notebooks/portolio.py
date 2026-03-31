@@ -17,10 +17,10 @@ data = (
     # .filter(pl.col("date") >= datetime(2021, 1, 1))
     .select(cols_to_keep)
 )
-# assets = ["TWO", "BGS", "REG", "GCO", "DLTR"]
+assets = data.columns[1:12]
+data = data.select("date", *assets)
 
-assets = data.columns[1:10]
-# data = data.select("date", *assets)
+# %%
 long = wide_to_long(data, assets=assets)
 d2 = long.with_columns(adj_close=pl.col("adj_close").exp())
 port = build_equal_weight_portfolio_from_df(d2, initial_value=10000)
@@ -29,6 +29,7 @@ port = build_equal_weight_portfolio_from_df(d2, initial_value=10000)
 # %%
 horizon = 30
 prob_ex = state_smooth_probs(data.height, half_life=20, time_based=True)
+# prob_ex = uniform_probs(data.height)
 forecasts = run_n_steps_forecast(
     data=data,
     prob=prob_ex,
@@ -36,8 +37,8 @@ forecasts = run_n_steps_forecast(
     n_sims=10000,
     seed=2,
     assets=assets,
-    method="bootstrap",
-    # target_copula="t",
+    method="cma",
+    target_copula="t",
     back_to_price=True,
 )
 

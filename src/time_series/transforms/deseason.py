@@ -10,7 +10,7 @@ from time_series.estimation import (
     OLSEquation,
     OLSResults,
     add_deterministics_to_eq,
-    ols_classic,
+    weighted_ols,
 )
 
 
@@ -124,7 +124,7 @@ def run_harmonic_regression(
     harmonic_equation = build_harmonic_regression_equation(
         data=data, asset=asset, frequency_radians=frequency_radians
     )
-    return ols_classic(
+    return weighted_ols(
         dependent_var=harmonic_equation.dep_vars,
         independent_vars=harmonic_equation.ind_var,
     )

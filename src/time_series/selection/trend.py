@@ -3,6 +3,7 @@ from typing import Literal
 
 from polars import DataFrame
 
+from scenarios.types import ProbVector
 from time_series.tests.stationarity import (
     StationarityInference,
     stationarity_tests,
@@ -153,6 +154,7 @@ def run_asset_trend_selection(
 def trend_diagnostic(
     data: DataFrame,
     assets: list[str],
+    prob: ProbVector,
     order_max: int,
     threshold_order: int,
     *,
@@ -163,6 +165,7 @@ def trend_diagnostic(
     if trend_type in ("deterministic", "both"):
         deterministic_batch = build_polynomial_candidates(
             data=data,
+            prob=prob,
             assets=assets,
             max_order=order_max,
         )

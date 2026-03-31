@@ -11,6 +11,7 @@
 - [ ] Add metrics to evaluate forecast:
     - [ ] Add CRPS scores 
 - [ ] Change model selection pipeline to drop bad forecast models
+- [x] create weighted OLS ✅ 2026-03-31
 - [ ] Always compare mean model with RW as base, go with best BIC
 - [ ] apply multiple tests to iid pipeline?
 - [ ] Add check whether final innovs are iid?
