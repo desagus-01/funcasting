@@ -1,8 +1,54 @@
-from typing import Tuple
+from dataclasses import dataclass
+from typing import Literal
 
+import numpy as np
 import polars as pl
+from numpy._typing import NDArray
 
 from utils.helpers import wide_to_long
+from utils.visuals import plot_simulation_results
+
+PnL_OPTIONS = Literal["relative", "absolute", "log"]
+
+
+@dataclass(frozen=True, slots=True)
+class PortfolioInfot0:
+    all_info: pl.DataFrame
+    estimated_t0: float
+    shares_mapping: dict[str, int]
+
+
+@dataclass(frozen=True, slots=True)
+class PortfolioForecast:
+    values: NDArray[np.floating]
+    pnl: NDArray[np.floating]
+    pnl_type: PnL_OPTIONS
+
+    def plot(
+        self, value_type: Literal["value", "pnl"] = "pnl", plot_cumulative: bool = False
+    ) -> None:
+        data = self.values if value_type == "value" else self.pnl
+
+        if plot_cumulative:
+            if value_type == "pnl":
+                cumulative_change_factors = np.concatenate(
+                    [
+                        np.ones((self.pnl.shape[0], 1)),
+                        np.cumprod(1.0 + self.pnl, axis=1),
+                    ],
+                    axis=1,
+                )
+            else:
+                initial = self.values[:, :1]
+                initial = np.where(initial == 0, 1.0, initial)
+                cumulative_change_factors = self.values / initial
+
+            cumulative_changes = cumulative_change_factors - 1.0
+            plot_simulation_results(
+                cumulative_changes, title=f"Portfolio Cumulative {value_type}"
+            )
+        else:
+            plot_simulation_results(data, title=f"Portfolio {value_type}")
 
 
 def get_latest_prices(data_long: pl.DataFrame) -> pl.DataFrame:
@@ -49,7 +95,7 @@ def equal_weight_shares_from_prices(
     return eq_portfolio
 
 
-def portfolio_value(positions: pl.DataFrame) -> Tuple[float, pl.DataFrame]:
+def portfolio_value(positions: pl.DataFrame) -> tuple[float, pl.DataFrame]:
     if "value_allocated" not in positions.columns:
         positions = positions.with_columns(
             (pl.col("adj_close") * pl.col("shares")).alias("value_allocated")
@@ -68,12 +114,25 @@ def portfolio_value(positions: pl.DataFrame) -> Tuple[float, pl.DataFrame]:
     return total, positions
 
 
+def _get_ticker_shares(
+    portfolio_initial_info: pl.DataFrame,
+    ticker_col: str = "ticker",
+    shares_col: str = "shares",
+) -> dict[str, int]:
+    ticker_shares = portfolio_initial_info.select([ticker_col, shares_col])
+    return dict(
+        zip(
+            ticker_shares[ticker_col].to_list(),
+            ticker_shares[shares_col].to_list(),
+        )
+    )
+
+
 def build_equal_weight_portfolio_from_df(
     data: pl.DataFrame, initial_value: float, assets: list[str] | None = None
-) -> Tuple[pl.DataFrame, float]:
+) -> PortfolioInfot0:
     cols = set(data.columns)
 
-    # detect long format
     if {"ticker", "adj_close"}.issubset(cols):
         data_long = (
             data.with_columns(pl.col("date").cast(pl.Date)) if "date" in cols else data
@@ -94,4 +153,141 @@ def build_equal_weight_portfolio_from_df(
     )
     total, positions = portfolio_value(eq_portfolio)
 
-    return positions, total
+    return PortfolioInfot0(
+        all_info=positions,
+        estimated_t0=total,
+        shares_mapping=_get_ticker_shares(positions),
+    )
+
+
+def _calc_asset_value_forecast(
+    asset_forecasts: dict[str, NDArray[np.floating]],
+    initial_asset_shares: dict[str, int],
+) -> dict[str, NDArray[np.floating]]:
+    return {
+        asset: mc_forecast * initial_asset_shares[asset]
+        for asset, mc_forecast in asset_forecasts.items()
+    }
+
+
+def portfolio_value_forecast(
+    asset_forecasts: dict[str, NDArray[np.floating]],
+    initial_asset_shares: dict[str, int],
+    asset_order: list[str] | None = None,
+) -> NDArray[np.floating]:
+    """Compute forecasted portfolio value paths.
+
+    Parameters
+    ----------
+    asset_forecasts : dict[str, NDArray[np.floating]]
+        Mapping from asset ticker -> simulated price paths with shape
+        (n_sims, n_periods).
+    initial_asset_shares : dict[str, int]
+        Mapping from asset ticker -> integer (or fractional) shares held at t0.
+    asset_order : list[str] | None
+        Deterministic order to use when stacking arrays. If None, the order of
+        keys in ``initial_asset_shares`` is used.
+
+    Notes
+    -----
+    This function validates that forecasts cover the requested assets and
+    that all arrays share the same shape. It returns an array of shape
+    (n_sims, n_periods).
+    """
+    if asset_order is None:
+        asset_order = list(initial_asset_shares.keys())
+
+    # validate presence/absence
+    missing = [a for a in asset_order if a not in asset_forecasts]
+    extra = [a for a in asset_forecasts.keys() if a not in asset_order]
+    if missing:
+        raise KeyError(f"Missing asset forecasts for: {missing}")
+    if extra:
+        raise KeyError(
+            f"Found forecasts for assets not present in initial_asset_shares/order: {extra}"
+        )
+
+    arrs: list[NDArray[np.floating]] = []
+    base_shape = None
+    for asset in asset_order:
+        arr = asset_forecasts[asset]
+        if base_shape is None:
+            base_shape = arr.shape
+        elif arr.shape != base_shape:
+            raise ValueError(
+                f"Shape mismatch for asset {asset}: {arr.shape} != {base_shape}"
+            )
+        # multiply by shares here to produce asset value paths
+        shares = initial_asset_shares.get(asset)
+        if shares is None:
+            raise KeyError(f"No shares specified for asset {asset}")
+        arrs.append(arr * shares)
+
+    # sum across assets
+    return np.sum(np.stack(arrs, axis=0), axis=0)
+
+
+def portfolio_pnl_forecast_from_values(
+    forecast_portfolio_values: NDArray[np.floating],
+    mode: PnL_OPTIONS = "relative",
+    safe_eps: float = 1e-12,
+) -> NDArray[np.floating]:
+    """Compute PnL/returns from forecasted portfolio values.
+
+    Parameters
+    ----------
+    forecast_portfolio_values : NDArray[np.floating]
+        Array of portfolio values with shape (n_sims, n_periods).
+    type : {"relative", "absolute", "log"}
+        - "relative": (v_t - v_{t-1}) / v_{t-1} (default)
+        - "absolute": v_t - v_{t-1}
+        - "log": log(v_t / v_{t-1})
+    safe_eps : float
+        Small threshold used to treat denominators close to zero. When a
+        previous value's absolute magnitude is below safe_eps the result will
+        be set to np.nan for modes that divide by the previous value.
+
+    Returns
+    -------
+    NDArray[np.floating]
+        Array shaped (n_sims, n_periods - 1) containing the requested
+        PnL/returns. Values that would be infinite due to division by zero are
+        set to np.nan.
+    """
+    if mode not in {"relative", "absolute", "log"}:
+        raise ValueError(f"Unknown mode: {mode}")
+
+    prev = forecast_portfolio_values[:, :-1]
+    curr = forecast_portfolio_values[:, 1:]
+
+    if mode == "absolute":
+        return curr - prev
+
+    # For relative and log modes we must guard against zero/near-zero prev
+    small = np.abs(prev) < safe_eps
+
+    if mode == "relative":
+        denom = prev.copy().astype(float)
+        denom[small] = np.nan
+        return (curr - prev) / denom
+
+    # mode == "log"
+    denom = prev.copy().astype(float)
+    denom[small] = np.nan
+    return np.log(curr / denom)
+
+
+def portfolio_forecast(
+    asset_forecasts: dict[str, NDArray[np.floating]],
+    initial_asset_shares: dict[str, int],
+    asset_order: list[str] | None = None,
+    pnl_type: PnL_OPTIONS = "relative",
+    safe_eps: float = 1e-12,
+) -> PortfolioForecast:
+    values = portfolio_value_forecast(
+        asset_forecasts=asset_forecasts,
+        initial_asset_shares=initial_asset_shares,
+        asset_order=asset_order,
+    )
+    pnl = portfolio_pnl_forecast_from_values(values, mode=pnl_type, safe_eps=safe_eps)
+    return PortfolioForecast(values=values, pnl=pnl, pnl_type=pnl_type)

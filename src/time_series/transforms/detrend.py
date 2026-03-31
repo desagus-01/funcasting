@@ -139,7 +139,7 @@ def add_detrend_column(
         for i, asset in enumerate(assets):
             new_cols.append(
                 pl.Series(
-                    name=f"{asset}_detrended_p_{p}",
+                    name=f"{asset}_detrended_p{p}",
                     values=resid[:, i],
                 ).cast(pl.Float64)
             )
@@ -192,7 +192,7 @@ def build_polynomial_candidates(
         candidates = []
 
         for order in polynomial_orders:
-            column_name = f"{asset}_detrended_p_{order}"
+            column_name = f"{asset}_detrended_p{order}"
 
             candidates.append(
                 TrendCandidate(
