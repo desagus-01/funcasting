@@ -8,6 +8,7 @@ from typing_extensions import Literal
 
 from time_series.models.fitted_types import (
     AutoARMARes,
+    AutoGARCHRes,
     DemeanRes,
     MeanModelRes,
     UnivariateRes,
@@ -15,8 +16,12 @@ from time_series.models.fitted_types import (
 from time_series.models.mean import (
     auto_arma,
 )
+from time_series.models.model_quality import (
+    QualityConfig,
+    SelectionAudit,
+    score_audit,
+)
 from time_series.models.volatility import (
-    AutoGARCHRes,
     auto_garch,
 )
 from time_series.tests.iid import arch_test, ljung_box_test
@@ -70,29 +75,6 @@ def asset_needs_volatility_model(
     (a proxy for conditional heteroskedasticity) and ARCH tests on
     residuals. If the number of rejected tests exceeds the provided
     thresholds a volatility model is recommended.
-
-    Parameters
-    ----------
-    residual : NDArray[np.floating]
-        Residual series from the mean model (or the series if demeaned).
-    degrees_of_freedom : int
-        Degrees of freedom to account for in tests (usually equal to number
-        of estimated parameters in mean model).
-    ljung_box_lags : list[int]
-        Lag values to test in the Ljung–Box test applied to squared residuals.
-    arch_lags : list[int]
-        Lag values to test in the ARCH test applied to residuals.
-    min_ljung_box_rejections : int, optional
-        Minimum number of rejected Ljung–Box tests required to signal volatility
-        dependence (default: 2).
-    min_arch_rejections : int, optional
-        Minimum number of rejected ARCH tests required to signal volatility
-        dependence (default: 1).
-
-    Returns
-    -------
-    bool
-        True when volatility modelling (e.g. GARCH) is recommended.
     """
     residual_sq = residual**2
     ljung_box_pvals = ljung_box_test(  # This is effectively the McLeod- Li test
@@ -117,27 +99,6 @@ def asset_needs_mean_modelling(
 ) -> bool:
     """
     Determine whether an asset series requires mean modelling (ARMA).
-
-    The function runs Ljung–Box tests at multiple lag values and counts the
-    number of rejections. If the number of rejections meets or exceeds the
-    provided threshold the asset is flagged for mean modelling.
-
-    Parameters
-    ----------
-    data : NDArray[np.floating]
-        Series values (not residuals) to test for autocorrelation.
-    degrees_of_freedom : int
-        Degrees of freedom to account for in the Ljung–Box statistic.
-    ljung_box_lags : list[int], optional
-        Lags to test (default: [10, 15, 20]).
-    min_ljung_box_rejections : int, optional
-        Minimum number of rejected tests across lags to flag the series
-        (default: 1).
-
-    Returns
-    -------
-    bool
-        True when the series should be modelled for mean dependence.
     """
     ljung_box = ljung_box_test(
         data=data, lags=ljung_box_lags, degrees_of_freedom=degrees_of_freedom
@@ -146,7 +107,6 @@ def asset_needs_mean_modelling(
     return sum(ljung_box_rejected) >= min_ljung_box_rejections
 
 
-# TODO: Don't love this Mapping thing -> should change?
 def needs_volatility_modelling(
     mean_model_res: Mapping[str, MeanModelRes],
     ljung_box_lags: list[int] = [10, 20],
@@ -156,24 +116,6 @@ def needs_volatility_modelling(
 ) -> list[str]:
     """
     Determine which assets require volatility modelling based on residual tests.
-
-    Parameters
-    ----------
-    mean_model_res : Mapping[str, MeanModelRes]
-        Mapping from asset name to mean-model result object (contains residuals).
-    ljung_box_lags : list[int], optional
-        Lags to use in Ljung–Box tests (default: [10, 20]).
-    arch_lags : list[int], optional
-        Lags to use in ARCH tests (default: [5, 10, 15]).
-    min_ljung_box_rejections : int, optional
-        Threshold for number of rejected Ljung–Box tests to flag volatility.
-    min_arch_rejections : int, optional
-        Threshold for number of rejected ARCH tests to flag volatility.
-
-    Returns
-    -------
-    list[str]
-        Asset names that should receive volatility (GARCH) modelling.
     """
     needs: list[str] = []
 
@@ -200,27 +142,6 @@ def needs_mean_modelling(
 ) -> list[str]:
     """
     Identifies assets with significant autocorrelation in series using the Ljung–Box test.
-
-    Note: Test to be run on series at this stage, not residuals.
-
-    Parameters
-    ----------
-    data : DataFrame
-        Polars DataFrame containing asset series (columns named by asset).
-    assets_to_test : list[str]
-        List of asset column names to test.
-    degrees_of_freedom : int
-        Degrees of freedom to account for in the Ljung–Box statistic.
-    ljung_box_lags : list[int], optional
-        Set of lags to test (default: [10, 15, 20]).
-    min_ljung_box_rejections : int, optional
-        Minimum number of rejected tests across lags to flag asset (default: 1).
-
-    Returns
-    -------
-    list[str]
-        Names of assets that fail the Ljung–Box battery and should be modelled
-        for mean dependence.
     """
     needs_mean_modelling = []
     for asset in assets_to_test:
@@ -238,22 +159,6 @@ def needs_mean_modelling(
 
 
 def _demean_fallback(asset_array: NDArray[np.floating]) -> DemeanRes:
-    """
-    Create a simple demean model as a fallback when ARMA estimation is unavailable.
-
-    The function estimates the mean and residuals; it returns a DemeanRes
-    containing parameters and residual statistics used downstream.
-
-    Parameters
-    ----------
-    asset_array : NDArray[np.floating]
-        Series values for which to compute the demean fallback.
-
-    Returns
-    -------
-    DemeanRes
-        Result object encapsulating the demean fit and residual diagnostics.
-    """
     mean = float(np.mean(asset_array))
     residuals = asset_array - mean
     scale = float(np.std(residuals, ddof=1))
@@ -269,37 +174,26 @@ def _demean_fallback(asset_array: NDArray[np.floating]) -> DemeanRes:
     )
 
 
+def _select_first_candidate_with_valid_residuals(
+    candidates_by_information_criteria: list[AutoARMARes],
+) -> AutoARMARes | None:
+    for model in candidates_by_information_criteria:
+        if not asset_needs_mean_modelling(
+            model.residuals, degrees_of_freedom=model.degrees_of_freedom
+        ):
+            return model
+    return None
+
+
 def get_appropriate_mean_model(
     asset_array: NDArray[np.floating],
     asset_name: str,
     search_n_models: int = 5,
     information_criteria: Literal["bic", "aic"] = "bic",
+    audit: SelectionAudit | None = None,
 ) -> MeanModelRes:
     """
     Select the best ARMA mean model satisfying residual diagnostics.
-
-    Attempts to estimate a small set of ARMA models using the project's
-    auto-ARMA routine and selects the top candidate by the provided
-    information criterion whose residuals do not exhibit remaining
-    autocorrelation. If no admissible ARMA model exists or none passes
-    diagnostics, the function falls back to a simple demean model or the
-    best information-criterion model.
-
-    Parameters
-    ----------
-    asset_array : NDArray[np.floating]
-        Series values for model selection.
-    asset_name : str
-        Asset identifier used for logging warnings.
-    search_n_models : int, optional
-        Number of top ARMA candidates to consider (default: 5).
-    information_criteria : {"bic", "aic"}, optional
-        Criterion used to rank candidate models (default: 'bic').
-
-    Returns
-    -------
-    MeanModelRes
-        Selected mean model result (AutoARMARes or DemeanRes).
     """
     try:
         candidate_models_res = auto_arma(
@@ -314,104 +208,109 @@ def get_appropriate_mean_model(
             "Asset=%s no admissible ARMA models found; falling back to demean",
             asset_name,
         )
+        if audit is not None:
+            audit.add_event(
+                "MEAN_FALLBACK_DEMEAN", f"Asset={asset_name} no admissible ARMA models"
+            )
         return _demean_fallback(asset_array)
 
     candidates_by_information_criteria = sorted(candidate_models_res, key=by_criteria)
-
-    for model in candidates_by_information_criteria:
-        if not asset_needs_mean_modelling(
-            model.residuals, degrees_of_freedom=model.degrees_of_freedom
-        ):
-            return model
+    model = _select_first_candidate_with_valid_residuals(
+        candidates_by_information_criteria
+    )
+    if model is not None:
+        return model
 
     logger.warning(
         "Asset=%s no ARMA candidate passed residual diagnostics; falling back to best %s model",
         asset_name,
         information_criteria.upper(),
     )
+    if audit is not None:
+        audit.add_event(
+            "MEAN_FALLBACK_BEST_IC_NO_DIAG_PASS",
+            f"Asset={asset_name} no ARMA candidate passed residual diagnostics; fallback to best {information_criteria.upper()}",
+        )
     return min(candidate_models_res, key=by_criteria)
 
 
-def run_best_garch(
-    asset_array: NDArray[np.floating],
-    asset_name: str,
-) -> AutoGARCHRes:
-    """
-    Select a GARCH model from candidate fits that passes residual diagnostics.
-
-    The function fits a small grid of GARCH models and returns the first
-    candidate (ordered by information criterion) whose invariants do not
-    indicate remaining ARCH-type dependence. If none pass, the best model
-    by information criterion is returned as a fallback.
-
-    Parameters
-    ----------
-    asset_array : NDArray[np.floating]
-        Series values (residuals) to fit candidate GARCH models on.
-    asset_name : str
-        Asset identifier used for logging.
-
-    Returns
-    -------
-    AutoGARCHRes
-        Selected GARCH model fit result.
-    """
-    candidate_models_res = auto_garch(
-        asset_array=asset_array,
-        max_p_order=2,
-        max_o_order=1,
-        max_q_order=2,
-    )
-
-    candidates_by_information_criteria = sorted(candidate_models_res, key=by_criteria)
-
+def _select_model_with_valid_arch_tests(
+    candidates_by_information_criteria: list[AutoGARCHRes],
+) -> AutoGARCHRes | None:
     for model in candidates_by_information_criteria:
+        invariants = np.asarray(model.invariants, dtype=float)
+        if not np.all(np.isfinite(invariants)):
+            continue
+
         if not asset_needs_volatility_model(
-            residual=model.invariants,
+            residual=invariants,
             degrees_of_freedom=model.degrees_of_freedom,
             ljung_box_lags=[10, 20],
             arch_lags=[5, 10, 15],
         ):
             return model
+    return None
+
+
+def run_best_garch(
+    asset_array: NDArray[np.floating],
+    asset_name: str,
+    audit: SelectionAudit | None = None,
+) -> AutoGARCHRes | None:
+    """
+    Select a GARCH model from candidate fits that passes residual diagnostics.
+    """
+    try:
+        candidate_models_res = auto_garch(
+            asset_array=asset_array,
+            max_p_order=2,
+            max_o_order=1,
+            max_q_order=2,
+        )
+    except ValueError as exc:
+        logger.warning(
+            "Asset=%s no usable GARCH candidates were fitted; keeping volatility model as none (%s)",
+            asset_name,
+            exc,
+        )
+        return None
+
+    candidates_by_information_criteria = sorted(candidate_models_res, key=by_criteria)
+    model = _select_model_with_valid_arch_tests(candidates_by_information_criteria)
+    if model is not None:
+        return model
+
     logger.warning(
         "Asset=%s no GARCH candidate passed residual diagnostics; falling back to best information-criterion model",
         asset_name,
     )
+    if audit is not None:
+        audit.add_event(
+            "VOL_FALLBACK_BEST_IC_NO_DIAG_PASS",
+            f"Asset={asset_name} no GARCH candidate passed residual diagnostics; fallback to best information-criterion",
+        )
 
     return min(candidate_models_res, key=by_criteria)
 
 
 def mean_modelling_pipeline(
     data: DataFrame, assets: list[str]
-) -> dict[str, MeanModelRes]:
+) -> tuple[dict[str, MeanModelRes], dict[str, SelectionAudit]]:
     """
-    Return a mean-modelling result for every asset.
-
-    For each asset in ``assets`` this function selects either an
-    AutoARMARes (if mean dependence is detected) or a simple DemeanRes.
-
-    Parameters
-    ----------
-    data : DataFrame
-        Polars DataFrame containing asset columns (and possibly a 'date' col).
-    assets : list[str]
-        Assets to process in order.
-
-    Returns
-    -------
-    dict[str, MeanModelRes]
-        Mapping from asset name to the selected mean model result object.
+    Return a mean-modelling result for every asset, plus a selection audit per asset.
     """
     assets_needing_arma = needs_mean_modelling(
         data=data, assets_to_test=assets, degrees_of_freedom=0
     )
 
     asset_mean_model_res: dict[str, MeanModelRes] = {}
+    mean_audits: dict[str, SelectionAudit] = {}
     for asset in assets:
         array = data.select(asset).drop_nulls().to_numpy().ravel()
 
+        audit = SelectionAudit(events=[], notes=[])
         if asset in assets_needing_arma:
-            res = get_appropriate_mean_model(array, asset_name=asset)
+            res = get_appropriate_mean_model(array, asset_name=asset, audit=audit)
             asset_mean_model_res[asset] = res
             logger.info(
                 "Selected mean model for %s: %s", asset, _describe_mean_model(res)
@@ -431,72 +330,69 @@ def mean_modelling_pipeline(
                 "Selected mean model for %s: %s", asset, _describe_mean_model(res)
             )
 
-    return asset_mean_model_res
+        mean_audits[asset] = audit
+
+    return asset_mean_model_res, mean_audits
 
 
 def volatility_modelling_pipeline(
     mean_model_res: Mapping[str, MeanModelRes],
-):
+) -> tuple[dict[str, AutoGARCHRes], dict[str, SelectionAudit]]:
     """
-    Fit volatility (GARCH) models for assets that require them.
-
-    Parameters
-    ----------
-    mean_model_res : Mapping[str, MeanModelRes]
-        Mapping of asset name to mean-model results which provide residuals
-        used to decide if volatility modelling is required.
-
-    Returns
-    -------
-    dict[str, AutoGARCHRes]
-        Mapping from asset name to selected GARCH model result for assets
-        that required volatility modelling.
+    Fit volatility (GARCH) models for assets that require them and return audits.
     """
     assets_needing_garch = needs_volatility_modelling(mean_model_res)
     logger.info("Assets needing volatility modelling: %s", assets_needing_garch)
 
-    asset_vol_model_res = {}
+    asset_vol_model_res: dict[str, AutoGARCHRes] = {}
+    vol_audits: dict[str, SelectionAudit] = {}
+
     for asset in assets_needing_garch:
-        res = run_best_garch(mean_model_res[asset].residuals, asset)
-        asset_vol_model_res[asset] = res
+        audit = SelectionAudit(events=[], notes=[])
+        res = run_best_garch(mean_model_res[asset].residuals, asset, audit=audit)
+        if res is not None:
+            asset_vol_model_res[asset] = res
+        vol_audits[asset] = audit
         logger.info(
             "Selected volatility model for %s: %s", asset, _describe_vol_model(res)
         )
 
-    return asset_vol_model_res
+    return asset_vol_model_res, vol_audits
 
 
 def get_univariate_results(
     data: DataFrame, assets_to_model: list[str]
 ) -> dict[str, UnivariateRes]:
     """
-    Run mean and volatility modelling pipelines and aggregate results per asset.
-
-    Parameters
-    ----------
-    data : DataFrame
-        Polars DataFrame containing asset series (columns named by asset).
-    assets_to_model : list[str]
-        List of assets for which parametric models should be estimated for
-        either mean or volatility. Assets not listed will still be included
-        in the final mapping with ``None`` for missing components.
-
-    Returns
-    -------
-    dict[str, UnivariateRes]
-        Mapping of every asset (columns in ``data`` except 'date') to a
-        UnivariateRes object containing mean and volatility fit results (or None).
+    Run mean and volatility modelling pipelines and aggregate results per asset, including quality.
     """
-    mean_modelling = mean_modelling_pipeline(data=data, assets=assets_to_model)
-    volatility_modelling = volatility_modelling_pipeline(mean_model_res=mean_modelling)
+    mean_modelling, mean_audits = mean_modelling_pipeline(
+        data=data, assets=assets_to_model
+    )
+    volatility_modelling, vol_audits = volatility_modelling_pipeline(
+        mean_model_res=mean_modelling
+    )
 
     all_assets = [c for c in data.columns if c != "date"]
-    asset_model = {}
+    asset_model: dict[str, UnivariateRes] = {}
 
     for asset in all_assets:
+        # combine audits
+        combined_audit = SelectionAudit(events=[], notes=[])
+        if asset in mean_audits:
+            combined_audit.events.extend(mean_audits[asset].events)
+            combined_audit.notes.extend(mean_audits[asset].notes)
+        if asset in vol_audits:
+            combined_audit.events.extend(vol_audits[asset].events)
+            combined_audit.notes.extend(vol_audits[asset].notes)
+
+        quality = score_audit(combined_audit, QualityConfig())
+        print(f"{asset} model is {quality}")
+
         asset_model[asset] = UnivariateRes(
             mean_res=mean_modelling.get(asset),
             volatility_res=volatility_modelling.get(asset),
+            quality=quality,
         )
         logger.info(
             "Final univariate result for %s: %s",

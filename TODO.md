@@ -1,6 +1,6 @@
 ## Portfolio
-- [ ] Add basic portfolio config (equal value for all)
-- [ ] Create basic portfolio value out of this config
+- [x] Add basic portfolio config (equal value for all) ✅ 2026-03-31
+- [x] Create basic portfolio value out of this config ✅ 2026-03-31
 
 ## Re-factor
 - [ ] Add appropriate logs to debug (but not too many)
@@ -13,6 +13,8 @@
 - [ ] Change model selection pipeline to drop bad forecast models
 - [x] create weighted OLS ✅ 2026-03-31
 - [ ] Always compare mean model with RW as base, go with best BIC
+- [ ] Check out with white_noise test produce different answers 
+- [ ] GARCH/ARCH should reflect prob weight...
 - [ ] apply multiple tests to iid pipeline?
 - [ ] Add check whether final innovs are iid?
 - [ ] Add 'block' resampling instead to better preserve dynamics

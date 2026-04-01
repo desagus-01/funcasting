@@ -65,20 +65,41 @@ def _arma_top_candidates(
         trend="n",
         model_kw={"enforce_stationarity": False, "enforce_invertibility": False},
         fit_kw={"method": "hannan_rissanen", "low_memory": True},
-    )["bic"]
+    )[information_criteria]
 
     top = best_order.stack().nsmallest(top_n_models)
     return [(int(ar_order), int(ma_order)) for (ar_order, ma_order) in top.index]
 
 
 def _arma_filter(
-    params: dict[str, float], max_abs_ar1: float = 0.98, max_sum_ar: float = 0.98
+    params: dict[str, float],
+    stationarity_buffer: float = 1e-3,
+    invertibility_buffer: float = 1e-3,
 ) -> bool:
-    ar_vals = [float(v) for k, v in params.items() if k.startswith("ar.L")]
-    if len(ar_vals) == 1 and abs(ar_vals[0]) >= max_abs_ar1:
+    """
+    Filter ARMA candidates using root-based stationarity / invertibility checks.
+
+    This is more reliable than crude coefficient-sum heuristics, especially
+    for higher-order ARMA models.
+    """
+    ar_vals = [float(v) for k, v in sorted(params.items()) if k.startswith("ar.L")]
+    ma_vals = [float(v) for k, v in sorted(params.items()) if k.startswith("ma.L")]
+
+    try:
+        if ar_vals:
+            ar_poly = np.r_[1.0, -np.asarray(ar_vals, dtype=float)]
+            ar_roots = np.roots(ar_poly)
+            if np.any(np.abs(ar_roots) <= 1.0 + stationarity_buffer):
+                return False
+
+        if ma_vals:
+            ma_poly = np.r_[1.0, np.asarray(ma_vals, dtype=float)]
+            ma_roots = np.roots(ma_poly)
+            if np.any(np.abs(ma_roots) <= 1.0 + invertibility_buffer):
+                return False
+    except (ValueError, np.linalg.LinAlgError):
         return False
-    if len(ar_vals) >= 2 and sum(ar_vals) >= max_sum_ar:
-        return False
+
     return True
 
 
@@ -124,12 +145,20 @@ def auto_arma(
                 ma_order,
             )
             continue
+        except Exception as exc:
+            logger.info(
+                "Model (%s, %s) failed with error=%s. Will be dropped from candidates list",
+                ar_order,
+                ma_order,
+                type(exc).__name__,
+            )
+            continue
 
         params = _build_arma_parameters(model.param_names, res.arparams, res.maparams)  # type: ignore[attr-defined]
 
         if not _arma_filter(params):
             logger.info(
-                "Model (%s, %s) ar vals are close to 1, will drop it",
+                "Model (%s, %s) failed ARMA admissibility checks; will drop it",
                 ar_order,
                 ma_order,
             )

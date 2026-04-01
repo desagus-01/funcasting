@@ -6,8 +6,11 @@ from typing import Literal, NamedTuple
 import numpy as np
 from numpy._typing import NDArray
 
+from time_series.models.model_quality import ModelQuality
+
 MeanKind = Literal["none", "demean", "arma"]
 VolKind = Literal["none", "garch"]
+GARCH_DISTRIBUTIONS = Literal["t", "normal"]
 
 
 class AutoGARCHRes(NamedTuple):
@@ -21,9 +24,6 @@ class AutoGARCHRes(NamedTuple):
     conditional_volatility: NDArray[np.floating]
     invariants: NDArray[np.floating]
     kind: Literal["garch"] = "garch"
-
-
-GARCH_DISTRIBUTIONS = Literal["t", "normal"]
 
 
 class AutoARMARes(NamedTuple):
@@ -54,6 +54,7 @@ MeanModelRes = AutoARMARes | DemeanRes
 class UnivariateRes:
     mean_res: MeanModelRes | None
     volatility_res: AutoGARCHRes | None
+    quality: ModelQuality | None
 
     def innovation_scale(self, non_null_values: NDArray[np.floating]) -> float:
         """
