@@ -217,7 +217,6 @@ def portfolio_value_forecast(
             raise ValueError(
                 f"Shape mismatch for asset {asset}: {arr.shape} != {base_shape}"
             )
-        # multiply by shares here to produce asset value paths
         shares = initial_asset_shares.get(asset)
         if shares is None:
             raise KeyError(f"No shares specified for asset {asset}")
@@ -271,7 +270,6 @@ def portfolio_pnl_forecast_from_values(
         denom[small] = np.nan
         return (curr - prev) / denom
 
-    # mode == "log"
     denom = prev.copy().astype(float)
     denom[small] = np.nan
     return np.log(curr / denom)
