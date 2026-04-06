@@ -1,7 +1,7 @@
 import polars as pl
 
 from pipelines.forecasting import run_n_steps_forecast
-from portfolio.risk import VAR, get_loss_distribution
+from portfolio.risk import CVAR, VAR, get_loss_distribution
 from portfolio.value import build_equal_weight_portfolio_from_df, portfolio_forecast
 from probability.distributions import state_smooth_probs, uniform_probs
 from utils.helpers import wide_to_long
@@ -44,5 +44,10 @@ forecasts = run_n_steps_forecast(
 # %%
 port_forecast = portfolio_forecast(forecasts, port.shares_mapping, pnl_type="relative")
 
+port_forecast.asset_weights
+port_forecast.plot(plot_cumulative=True)
+
+# %%
 loss_dist = get_loss_distribution(port_forecast.pnl)
-VAR(loss_dist)
+VAR(loss_dist, alpha=0.01)
+CVAR(loss_dist, alpha=0.01)
