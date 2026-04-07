@@ -188,6 +188,8 @@ def _select_first_candidate_with_valid_residuals(
 def get_appropriate_mean_model(
     asset_array: NDArray[np.floating],
     asset_name: str,
+    max_ar_order: int = 2,
+    max_ma_order: int = 2,
     search_n_models: int = 5,
     information_criteria: Literal["bic", "aic"] = "bic",
     audit: SelectionAudit | None = None,
@@ -198,8 +200,8 @@ def get_appropriate_mean_model(
     try:
         candidate_models_res = auto_arma(
             asset_array=asset_array,
-            max_ar_order=3,
-            max_ma_order=3,
+            max_ar_order=max_ar_order,
+            max_ma_order=max_ma_order,
             information_criteria=information_criteria,
             top_n_models=search_n_models,
         )

@@ -40,8 +40,8 @@ def _build_arma_parameters(
 
 def _arma_top_candidates(
     asset_array: NDArray[np.floating],
-    max_ar_order: int = 3,
-    max_ma_order: int = 3,
+    max_ar_order: int,
+    max_ma_order: int,
     information_criteria: Literal["bic", "aic"] = "bic",
     top_n_models: int = 3,
 ) -> list[
