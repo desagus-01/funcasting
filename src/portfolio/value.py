@@ -3,16 +3,18 @@ from typing import Literal
 
 import numpy as np
 import polars as pl
-from numpy._typing import NDArray
+from numpy.typing import NDArray
 
+from scenarios.types import ProbVector
 from utils.helpers import wide_to_long
 from utils.visuals import plot_simulation_results
 
 PnL_OPTIONS = Literal["relative", "absolute", "log"]
+WEIGHT_MODE = Literal["buy_and_hold", "static"]
 
 
 @dataclass(frozen=True, slots=True)
-class PortfolioInfot0:
+class PortfolioInfoT0:
     all_info: pl.DataFrame
     estimated_t0: float
     shares_mapping: dict[str, int]
@@ -23,67 +25,130 @@ class PortfolioForecast:
     values: NDArray[np.floating]
     pnl: NDArray[np.floating]
     pnl_type: PnL_OPTIONS
+    weight_mode: WEIGHT_MODE
     asset_weights: dict[str, NDArray[np.floating]]
+    path_probs: ProbVector
 
     def plot(
-        self, value_type: Literal["value", "pnl"] = "pnl", plot_cumulative: bool = False
+        self,
+        value_type: Literal["value", "pnl"] = "pnl",
+        plot_cumulative: bool = False,
     ) -> None:
+        if value_type not in {"value", "pnl"}:
+            raise ValueError(f"Unknown value_type: {value_type}")
+
         if not plot_cumulative:
             data = self.values if value_type == "value" else self.pnl
-            plot_simulation_results(data, title=f"Portfolio {value_type}")
+            plot_simulation_results(
+                data,
+                title=f"Portfolio {value_type} ({self.weight_mode})",
+            )
             return
 
         if value_type == "value":
-            initial = self.values[:, :1].astype(float)
+            initial = self.values[:, :1].astype(float, copy=True)
             initial[np.abs(initial) < 1e-12] = np.nan
             cumulative_changes = self.values / initial - 1.0
         else:
             if self.pnl_type == "relative":
                 cumulative_changes = np.concatenate(
                     [
-                        np.zeros((self.pnl.shape[0], 1)),
+                        np.zeros((self.pnl.shape[0], 1), dtype=float),
                         np.cumprod(1.0 + self.pnl, axis=1) - 1.0,
                     ],
                     axis=1,
                 )
             elif self.pnl_type == "absolute":
                 cumulative_changes = np.concatenate(
-                    [np.zeros((self.pnl.shape[0], 1)), np.cumsum(self.pnl, axis=1)],
+                    [
+                        np.zeros((self.pnl.shape[0], 1), dtype=float),
+                        np.cumsum(self.pnl, axis=1),
+                    ],
                     axis=1,
                 )
             else:  # log
                 cumulative_changes = np.concatenate(
                     [
-                        np.zeros((self.pnl.shape[0], 1)),
+                        np.zeros((self.pnl.shape[0], 1), dtype=float),
                         np.exp(np.cumsum(self.pnl, axis=1)) - 1.0,
                     ],
                     axis=1,
                 )
 
         plot_simulation_results(
-            cumulative_changes, title=f"Portfolio Cumulative {value_type}"
+            cumulative_changes,
+            title=f"Portfolio Cumulative {value_type} ({self.weight_mode})",
         )
 
 
+def equal_weight_target_weights(asset_order: list[str]) -> dict[str, float]:
+    if not asset_order:
+        raise ValueError("asset_order cannot be empty")
+
+    w = 1.0 / len(asset_order)
+    return {asset: w for asset in asset_order}
+
+
 def get_latest_prices(data_long: pl.DataFrame) -> pl.DataFrame:
+    required = {"ticker", "adj_close"}
+    missing = required - set(data_long.columns)
+    if missing:
+        raise KeyError(f"Missing required columns: {sorted(missing)}")
+
     if "date" in data_long.columns:
-        data_long = data_long.sort(["ticker", "date"])
-    return data_long.group_by("ticker").agg(
+        data_long = data_long.with_columns(pl.col("date").cast(pl.Date)).sort(
+            ["ticker", "date"]
+        )
+    else:
+        dupes = (
+            data_long.group_by("ticker")
+            .len()
+            .filter(pl.col("len") > 1)
+            .select("ticker")
+            .to_series()
+            .to_list()
+        )
+        if dupes:
+            raise ValueError(
+                "Multiple rows per ticker found but no 'date' column is present. "
+                f"Ambiguous latest price for tickers: {dupes}"
+            )
+
+    latest_price = data_long.group_by("ticker").agg(
         pl.col("adj_close").last().alias("adj_close")
     )
 
+    if latest_price.height == 0:
+        raise ValueError("No prices available after preprocessing")
+
+    return latest_price
+
 
 def equal_weight_shares_from_prices(
-    latest_price: pl.DataFrame, initial_value: float, n_assets: int | None = None
+    latest_price: pl.DataFrame,
+    initial_value: float,
+    n_assets: int | None = None,
 ) -> pl.DataFrame:
+    if initial_value <= 0:
+        raise ValueError("initial_value must be positive")
+
     if n_assets is None:
         n_assets = latest_price.height
 
+    if n_assets <= 0:
+        raise ValueError("n_assets must be positive")
+
+    if latest_price.height == 0:
+        raise ValueError("latest_price cannot be empty")
+
+    bad_prices = latest_price.filter(pl.col("adj_close") <= 0)
+    if bad_prices.height > 0:
+        raise ValueError("All adj_close values must be positive")
+
     assigned = initial_value / n_assets
 
-    eq_portfolio = (
+    return (
         latest_price.with_columns(
-            # nominal shares (floor to integer shares)
             (pl.lit(assigned) / pl.col("adj_close"))
             .floor()
             .cast(pl.Int64)
@@ -94,7 +159,7 @@ def equal_weight_shares_from_prices(
             (pl.col("value_allocated") / pl.lit(initial_value)).alias(
                 "pct_of_portfolio"
             ),
-            (pl.lit(1 / n_assets)).alias("target_pct"),
+            pl.lit(1.0 / n_assets).alias("target_pct"),
         )
         .select(
             [
@@ -108,18 +173,19 @@ def equal_weight_shares_from_prices(
         )
     )
 
-    return eq_portfolio
-
 
 def portfolio_value(positions: pl.DataFrame) -> tuple[float, pl.DataFrame]:
+    required = {"adj_close", "shares"}
     if "value_allocated" not in positions.columns:
+        missing = required - set(positions.columns)
+        if missing:
+            raise KeyError(f"Missing required columns: {sorted(missing)}")
         positions = positions.with_columns(
             (pl.col("adj_close") * pl.col("shares")).alias("value_allocated")
         )
 
-    total = float(positions.select(pl.col("value_allocated").sum()).to_series()[0])
+    total = float(positions["value_allocated"].sum())
 
-    # avoid division by zero
     if total == 0:
         positions = positions.with_columns(pl.lit(0.0).alias("pct_of_portfolio"))
     else:
@@ -144,19 +210,37 @@ def _get_ticker_shares(
     )
 
 
+def _get_target_weights(
+    portfolio_initial_info: pl.DataFrame,
+    ticker_col: str = "ticker",
+    weight_col: str = "pct_of_portfolio",
+) -> dict[str, float]:
+    ticker_weights = portfolio_initial_info.select([ticker_col, weight_col])
+    return dict(
+        zip(
+            ticker_weights[ticker_col].to_list(),
+            ticker_weights[weight_col].to_list(),
+        )
+    )
+
+
 def build_equal_weight_portfolio_from_df(
-    data: pl.DataFrame, initial_value: float, assets: list[str] | None = None
-) -> PortfolioInfot0:
+    data: pl.DataFrame,
+    initial_value: float,
+    assets: list[str] | None = None,
+) -> PortfolioInfoT0:
+    if initial_value <= 0:
+        raise ValueError("initial_value must be positive")
+
     cols = set(data.columns)
 
     if {"ticker", "adj_close"}.issubset(cols):
         data_long = (
             data.with_columns(pl.col("date").cast(pl.Date)) if "date" in cols else data
         )
+
         if assets is None:
-            assets = list(
-                data_long.select(pl.col("ticker")).unique().to_series().to_list()
-            )
+            assets = data_long.select("ticker").unique().to_series().to_list()
         else:
             data_long = data_long.filter(pl.col("ticker").is_in(assets))
     else:
@@ -164,65 +248,99 @@ def build_equal_weight_portfolio_from_df(
             assets = [c for c in data.columns if c != "date"]
         data_long = wide_to_long(data, assets)
 
+    if not assets:
+        raise ValueError("No assets provided or inferred")
+
     latest_price = get_latest_prices(data_long)
+
+    available_assets = set(latest_price["ticker"].to_list())
+    missing_assets = [a for a in assets if a not in available_assets]
+    if missing_assets:
+        raise KeyError(f"Missing latest prices for assets: {missing_assets}")
+
+    latest_price = latest_price.filter(pl.col("ticker").is_in(assets))
+
     eq_portfolio = equal_weight_shares_from_prices(
-        latest_price, initial_value, n_assets=len(assets)
+        latest_price=latest_price,
+        initial_value=initial_value,
+        n_assets=len(assets),
     )
     total, positions = portfolio_value(eq_portfolio)
 
-    return PortfolioInfot0(
+    return PortfolioInfoT0(
         all_info=positions,
         estimated_t0=total,
         shares_mapping=_get_ticker_shares(positions),
     )
 
 
-def _calc_asset_value_forecast(
+def _validate_asset_order(
     asset_forecasts: dict[str, NDArray[np.floating]],
-    initial_asset_shares: dict[str, int],
-) -> dict[str, NDArray[np.floating]]:
-    return {
-        asset: mc_forecast * initial_asset_shares[asset]
-        for asset, mc_forecast in asset_forecasts.items()
-    }
-
-
-def _build_asset_value_arrays(
-    asset_forecasts: dict[str, NDArray[np.floating]],
-    initial_asset_shares: dict[str, int],
     asset_order: list[str],
-) -> dict[str, NDArray[np.floating]]:
-    """Validate inputs and return per-asset value arrays (price * shares).
+) -> None:
+    if not asset_order:
+        raise ValueError("asset_order cannot be empty")
 
-    Returns
-    -------
-    dict[str, NDArray[np.floating]]
-        Mapping from ticker -> value array of shape (n_sims, n_periods).
-    """
     missing = [a for a in asset_order if a not in asset_forecasts]
-    extra = [a for a in asset_forecasts.keys() if a not in asset_order]
+    extra = [a for a in asset_forecasts if a not in asset_order]
+
     if missing:
         raise KeyError(f"Missing asset forecasts for: {missing}")
     if extra:
-        raise KeyError(
-            f"Found forecasts for assets not present in initial_asset_shares/order: {extra}"
-        )
+        raise KeyError(f"Found extra asset forecasts not in asset_order: {extra}")
 
-    result: dict[str, NDArray[np.floating]] = {}
-    base_shape = None
+
+def _build_price_stack(
+    asset_forecasts: dict[str, NDArray[np.floating]],
+    asset_order: list[str],
+) -> NDArray[np.floating]:
+    _validate_asset_order(asset_forecasts, asset_order)
+
+    arrays: list[NDArray[np.floating]] = []
+    base_shape: tuple[int, int] | None = None
+
     for asset in asset_order:
-        arr = asset_forecasts[asset]
+        arr = np.asarray(asset_forecasts[asset], dtype=float)
+        if arr.ndim != 2:
+            raise ValueError(
+                f"Asset {asset} must have shape (n_sims, n_periods), got {arr.shape}"
+            )
+
         if base_shape is None:
             base_shape = arr.shape
         elif arr.shape != base_shape:
             raise ValueError(
                 f"Shape mismatch for asset {asset}: {arr.shape} != {base_shape}"
             )
-        shares = initial_asset_shares.get(asset)
-        if shares is None:
-            raise KeyError(f"No shares specified for asset {asset}")
-        result[asset] = arr * shares
-    return result
+
+        arrays.append(arr)
+
+    return np.stack(arrays, axis=0)  # (n_assets, n_sims, n_periods)
+
+
+def _shares_vector(
+    initial_asset_shares: dict[str, int],
+    asset_order: list[str],
+) -> NDArray[np.floating]:
+    missing = [a for a in asset_order if a not in initial_asset_shares]
+    if missing:
+        raise KeyError(f"No shares specified for assets: {missing}")
+
+    shares = np.array([initial_asset_shares[a] for a in asset_order], dtype=float)
+    if np.any(shares < 0):
+        raise ValueError("initial_asset_shares must be non-negative")
+
+    return shares
+
+
+def _build_asset_values_array(
+    asset_forecasts: dict[str, NDArray[np.floating]],
+    initial_asset_shares: dict[str, int],
+    asset_order: list[str],
+) -> NDArray[np.floating]:
+    prices = _build_price_stack(asset_forecasts, asset_order)
+    shares = _shares_vector(initial_asset_shares, asset_order)
+    return prices * shares[:, None, None]  # (n_assets, n_sims, n_periods)
 
 
 def portfolio_value_forecast(
@@ -230,32 +348,15 @@ def portfolio_value_forecast(
     initial_asset_shares: dict[str, int],
     asset_order: list[str] | None = None,
 ) -> NDArray[np.floating]:
-    """Compute forecasted portfolio value paths.
-
-    Parameters
-    ----------
-    asset_forecasts : dict[str, NDArray[np.floating]]
-        Mapping from asset ticker -> simulated price paths with shape
-        (n_sims, n_periods).
-    initial_asset_shares : dict[str, int]
-        Mapping from asset ticker -> integer (or fractional) shares held at t0.
-    asset_order : list[str] | None
-        Deterministic order to use when stacking arrays. If None, the order of
-        keys in ``initial_asset_shares`` is used.
-
-    Notes
-    -----
-    This function validates that forecasts cover the requested assets and
-    that all arrays share the same shape. It returns an array of shape
-    (n_sims, n_periods).
-    """
     if asset_order is None:
         asset_order = list(initial_asset_shares.keys())
 
-    asset_values = _build_asset_value_arrays(
-        asset_forecasts, initial_asset_shares, asset_order
+    asset_values = _build_asset_values_array(
+        asset_forecasts=asset_forecasts,
+        initial_asset_shares=initial_asset_shares,
+        asset_order=asset_order,
     )
-    return np.sum(np.stack(list(asset_values.values()), axis=0), axis=0)
+    return asset_values.sum(axis=0)
 
 
 def portfolio_pnl_forecast_from_values(
@@ -263,82 +364,210 @@ def portfolio_pnl_forecast_from_values(
     mode: PnL_OPTIONS = "relative",
     safe_eps: float = 1e-12,
 ) -> NDArray[np.floating]:
-    """Compute PnL/returns from forecasted portfolio values.
-
-    Parameters
-    ----------
-    forecast_portfolio_values : NDArray[np.floating]
-        Array of portfolio values with shape (n_sims, n_periods).
-    type : {"relative", "absolute", "log"}
-        - "relative": (v_t - v_{t-1}) / v_{t-1} (default)
-        - "absolute": v_t - v_{t-1}
-        - "log": log(v_t / v_{t-1})
-    safe_eps : float
-        Small threshold used to treat denominators close to zero. When a
-        previous value's absolute magnitude is below safe_eps the result will
-        be set to np.nan for modes that divide by the previous value.
-
-    Returns
-    -------
-    NDArray[np.floating]
-        Array shaped (n_sims, n_periods - 1) containing the requested
-        PnL/returns. Values that would be infinite due to division by zero are
-        set to np.nan.
-    """
     if mode not in {"relative", "absolute", "log"}:
         raise ValueError(f"Unknown mode: {mode}")
 
-    prev = forecast_portfolio_values[:, :-1]
-    curr = forecast_portfolio_values[:, 1:]
+    values = np.asarray(forecast_portfolio_values, dtype=float)
+    if values.ndim != 2:
+        raise ValueError(
+            "forecast_portfolio_values must have shape (n_sims, n_periods)"
+        )
+
+    prev = values[:, :-1]
+    curr = values[:, 1:]
 
     if mode == "absolute":
         return curr - prev
 
-    # For relative and log modes we must guard against zero/near-zero prev
-    small = np.abs(prev) < safe_eps
-
     if mode == "relative":
-        denom = prev.copy().astype(float)
-        denom[small] = np.nan
+        denom = prev.astype(float, copy=True)
+        denom[np.abs(denom) < safe_eps] = np.nan
         return (curr - prev) / denom
 
-    denom = prev.copy().astype(float)
-    denom[small] = np.nan
-    return np.log(curr / denom)
+    invalid = (prev <= safe_eps) | (curr <= safe_eps)
+    denom = prev.astype(float, copy=True)
+    denom[invalid] = np.nan
+    ratio = curr / denom
+    return np.log(ratio)
 
 
-def portfolio_weights_forecast(
-    asset_values: dict[str, NDArray[np.floating]],
+def portfolio_weights_forecast_buy_and_hold(
+    asset_values: NDArray[np.floating],
     portfolio_values: NDArray[np.floating],
+    asset_order: list[str],
     safe_eps: float = 1e-12,
 ) -> dict[str, NDArray[np.floating]]:
-    denom = portfolio_values.copy().astype(float)
+    denom = portfolio_values.astype(float, copy=True)
     denom[np.abs(denom) < safe_eps] = np.nan
 
-    return {asset: arr / denom for asset, arr in asset_values.items()}
+    weights_arr = asset_values / denom[None, :, :]
+    return {asset: weights_arr[i] for i, asset in enumerate(asset_order)}
+
+
+def portfolio_weights_forecast_static(
+    target_weights: dict[str, float],
+    n_sims: int,
+    n_periods: int,
+    asset_order: list[str],
+) -> dict[str, NDArray[np.floating]]:
+    return {
+        asset: np.full((n_sims, n_periods), float(target_weights[asset]), dtype=float)
+        for asset in asset_order
+    }
+
+
+def _validate_target_weights(
+    target_weights: dict[str, float],
+    asset_order: list[str],
+) -> None:
+    missing = [a for a in asset_order if a not in target_weights]
+    extra = [a for a in target_weights if a not in asset_order]
+
+    if missing:
+        raise KeyError(f"Missing target weights for assets: {missing}")
+    if extra:
+        raise KeyError(f"Extra target weights for unknown assets: {extra}")
+
+    w = np.array([target_weights[a] for a in asset_order], dtype=float)
+    if not np.all(np.isfinite(w)):
+        raise ValueError("target_weights must be finite")
+    if np.any(w < 0):
+        raise ValueError("target_weights must be non-negative")
+    if not np.isclose(w.sum(), 1.0):
+        raise ValueError(f"target_weights must sum to 1. Got {w.sum():.8f}")
+
+
+def _initial_portfolio_values_from_shares(
+    asset_forecasts: dict[str, NDArray[np.floating]],
+    initial_asset_shares: dict[str, int],
+    asset_order: list[str],
+) -> NDArray[np.floating]:
+    asset_values = _build_asset_values_array(
+        asset_forecasts=asset_forecasts,
+        initial_asset_shares=initial_asset_shares,
+        asset_order=asset_order,
+    )
+    return asset_values[:, :, 0].sum(axis=0)  # (n_sims,)
+
+
+def _portfolio_values_static_weights(
+    asset_forecasts: dict[str, NDArray[np.floating]],
+    target_weights: dict[str, float],
+    asset_order: list[str],
+    initial_portfolio_values: NDArray[np.floating],
+    safe_eps: float = 1e-12,
+) -> NDArray[np.floating]:
+    prices = _build_price_stack(asset_forecasts, asset_order)
+    _, n_sims, n_periods = prices.shape
+
+    initial_portfolio_values = np.asarray(initial_portfolio_values, dtype=float)
+    if initial_portfolio_values.shape != (n_sims,):
+        raise ValueError(
+            f"initial_portfolio_values must have shape ({n_sims},), "
+            f"got {initial_portfolio_values.shape}"
+        )
+
+    _validate_target_weights(target_weights, asset_order)
+    w = np.array([target_weights[a] for a in asset_order], dtype=float)
+
+    prev = prices[:, :, :-1]
+    curr = prices[:, :, 1:]
+
+    denom = prev.astype(float, copy=True)
+    denom[np.abs(denom) < safe_eps] = np.nan
+    asset_returns = (curr - prev) / denom  # (n_assets, n_sims, n_periods - 1)
+
+    portfolio_returns = np.einsum("a,ast->st", w, asset_returns)
+
+    values = np.empty((n_sims, n_periods), dtype=float)
+    values[:, 0] = initial_portfolio_values
+    values[:, 1:] = initial_portfolio_values[:, None] * np.cumprod(
+        1.0 + portfolio_returns,
+        axis=1,
+    )
+    return values
 
 
 def portfolio_forecast(
     asset_forecasts: dict[str, NDArray[np.floating]],
+    path_probs: ProbVector,
     initial_asset_shares: dict[str, int],
     asset_order: list[str] | None = None,
     pnl_type: PnL_OPTIONS = "relative",
+    weight_mode: WEIGHT_MODE = "buy_and_hold",
+    target_weights: dict[str, float] | None = None,
     safe_eps: float = 1e-12,
 ) -> PortfolioForecast:
-    """Build a full :class:`PortfolioForecast`"""
+    """
+    Build a full PortfolioForecast.
+
+    Parameters
+    ----------
+    weight_mode
+        - "buy_and_hold": fixed shares, drifting weights
+        - "static": fixed target weights, implicitly rebalanced each step
+    target_weights
+        Required when weight_mode="static". Should map asset -> weight and sum to 1.
+    """
     if asset_order is None:
         asset_order = list(initial_asset_shares.keys())
 
-    asset_values = _build_asset_value_arrays(
-        asset_forecasts, initial_asset_shares, asset_order
-    )
-    stacked = np.stack(list(asset_values.values()), axis=0)
-    values = stacked.sum(axis=0)
-    pnl = portfolio_pnl_forecast_from_values(values, mode=pnl_type, safe_eps=safe_eps)
-    weights = portfolio_weights_forecast(
-        asset_values=asset_values, portfolio_values=values
+    prices = _build_price_stack(asset_forecasts, asset_order)
+    _, n_sims, n_periods = prices.shape
+
+    if weight_mode == "buy_and_hold":
+        asset_values = (
+            prices * _shares_vector(initial_asset_shares, asset_order)[:, None, None]
+        )
+        values = asset_values.sum(axis=0)
+        weights = portfolio_weights_forecast_buy_and_hold(
+            asset_values=asset_values,
+            portfolio_values=values,
+            asset_order=asset_order,
+            safe_eps=safe_eps,
+        )
+
+    elif weight_mode == "static":
+        if target_weights is None:
+            raise ValueError(
+                "target_weights must be provided when weight_mode='static'"
+            )
+
+        _validate_target_weights(target_weights, asset_order)
+        initial_portfolio_values = _initial_portfolio_values_from_shares(
+            asset_forecasts=asset_forecasts,
+            initial_asset_shares=initial_asset_shares,
+            asset_order=asset_order,
+        )
+
+        values = _portfolio_values_static_weights(
+            asset_forecasts=asset_forecasts,
+            target_weights=target_weights,
+            asset_order=asset_order,
+            initial_portfolio_values=initial_portfolio_values,
+            safe_eps=safe_eps,
+        )
+        weights = portfolio_weights_forecast_static(
+            target_weights=target_weights,
+            n_sims=n_sims,
+            n_periods=n_periods,
+            asset_order=asset_order,
+        )
+
+    else:
+        raise ValueError(f"Unknown weight_mode: {weight_mode}")
+
+    pnl = portfolio_pnl_forecast_from_values(
+        forecast_portfolio_values=values,
+        mode=pnl_type,
+        safe_eps=safe_eps,
     )
 
     return PortfolioForecast(
-        values=values, pnl=pnl, pnl_type=pnl_type, asset_weights=weights
+        values=values,
+        pnl=pnl,
+        pnl_type=pnl_type,
+        weight_mode=weight_mode,
+        asset_weights=weights,
+        path_probs=path_probs,
     )

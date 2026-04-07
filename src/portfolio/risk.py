@@ -1,14 +1,27 @@
+from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
 from numpy._typing import NDArray
 from numpy.lib.array_utils import normalize_axis_index
 
+from portfolio.value import PortfolioForecast
+from scenarios.types import ProbVector
 
-def get_loss_distribution(
-    pnl_distribution: NDArray[np.floating],
-) -> NDArray[np.floating]:
-    return -pnl_distribution
+
+@dataclass(frozen=True, slots=True)
+class LossDistribution:
+    loss_values: NDArray[np.floating]
+    path_probs: ProbVector
+    asset_weights: dict[str, NDArray[np.floating]]
+
+    @classmethod
+    def from_portfolio_forecast(cls, portfolio_forecast: PortfolioForecast):
+        return LossDistribution(
+            loss_values=-portfolio_forecast.pnl,
+            path_probs=portfolio_forecast.path_probs,
+            asset_weights=portfolio_forecast.asset_weights,
+        )
 
 
 def VAR(
@@ -49,7 +62,6 @@ def CVAR(
     *,
     distribution_type: Literal["pnl", "loss"] = "loss",
 ) -> NDArray[np.floating]:
-
     var_cutoff = VAR(
         distribution=distribution,
         method=method,
