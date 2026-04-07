@@ -41,8 +41,14 @@ forecasts = run_n_steps_forecast(
     # target_marginals={"KEYS": "t", "TTC": "t", "NXRT": "t", "DHIL": "t"},
     back_to_price=True,
 )
+
+
 # %%
-port_forecast = portfolio_forecast(forecasts, port.shares_mapping, pnl_type="relative")
+
+# %%
+port_forecast = portfolio_forecast(
+    forecasts.asset_paths, port.shares_mapping, pnl_type="relative"
+)
 
 port_forecast.asset_weights
 port_forecast.plot(plot_cumulative=True)

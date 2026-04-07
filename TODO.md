@@ -13,6 +13,7 @@
 - [ ] Add metrics to evaluate forecast:
     - [ ] Add CRPS scores 
 - [ ] Change model selection pipeline to drop bad forecast models
+- [ ] Add EP option for simulation probabilities to reflect forecast views
 - [x] create weighted OLS ✅ 2026-03-31
 - [ ] Check out with white_noise test produce different answers 
 - [ ] GARCH/ARCH should reflect prob weight...

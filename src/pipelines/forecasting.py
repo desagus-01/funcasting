@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from functools import reduce
 from typing import Literal, Mapping
 
@@ -31,6 +32,18 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class InnovationPaths:
+    values: NDArray[np.floating]
+    path_probs: ProbVector
+
+
+@dataclass(frozen=True, slots=True)
+class ForecastPaths:
+    asset_paths: dict[str, NDArray[np.floating]]
+    path_probs: ProbVector
 
 
 def _build_innovations_df_from_models(
@@ -103,7 +116,7 @@ def draw_innovations(
     target_copula: Literal["t", "norm"] | None = None,
     copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
     target_marginals: dict[str, Literal["t", "norm"]] | None = None,
-) -> NDArray[np.floating]:
+) -> InnovationPaths:
     """
     Draw innovation (invariant) scenarios for simulation.
 
@@ -213,7 +226,7 @@ def draw_innovations(
     if method == "historical":
         logger.info("Returning historical innovations without resampling")
         simulated_draws = invariants_vector[:, None, :]
-        return simulated_draws
+        return InnovationPaths(values=simulated_draws, path_probs=prob)
 
     n_draws = n_sims * horizon
     logger.info("Bootstrapping %d innovation draws", n_draws)
@@ -227,7 +240,10 @@ def draw_innovations(
     simulated_draws = invariants_vector[idx].reshape(n_sims, horizon, len(assets))
 
     logger.info("Innovation draw complete with output shape=%s", simulated_draws.shape)
-    return simulated_draws
+    return InnovationPaths(
+        values=simulated_draws,
+        path_probs=np.full(n_sims, 1.0 / n_sims),  # ie uniform for MC
+    )
 
 
 def get_assets_models(
@@ -286,7 +302,7 @@ def run_n_steps_forecast(
     target_copula: Literal["t", "norm"] | None = None,
     copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
     target_marginals: dict[str, Literal["t", "norm"]] | None = None,
-) -> dict[str, NDArray[np.floating]]:
+) -> ForecastPaths:
     """
     Run a full n-step forecasting pipeline for a set of assets.
 
@@ -404,7 +420,7 @@ def run_n_steps_forecast(
     for i, asset in enumerate(assets):
         assets_forecasts[asset] = simulate_asset_paths(
             forecast_model=assets_models[asset],
-            innovations=innovations[:, :, i],
+            innovations=innovations.values[:, :, i],
         )
 
     logger.info("Forecast complete - will apply inverse transforms now")
@@ -415,4 +431,4 @@ def run_n_steps_forecast(
         back_to_price=True if back_to_price else False,
     )
 
-    return transformed
+    return ForecastPaths(asset_paths=transformed, path_probs=innovations.path_probs)
