@@ -6,6 +6,8 @@
 
 [Repo for spectral estimation methods](https://github.com/IvanovicM/spectral-estimation/tree/master)
 
+factors = ['MTUM', 'QUAL', 'VLUE', 'SIZE', 'USMV']
+
 ## Seasonality
 [Explanation on Seasonality Adjustment](https://www.le.ac.uk/economics/research/RePEc/lec/leecon/dp11-12.pdf)
 - The data can be detrended by differencing. Alternatively, a trend function

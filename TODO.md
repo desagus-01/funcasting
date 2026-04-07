@@ -1,7 +1,11 @@
-## Portfolio
-- [x] Add basic portfolio config (equal value for all) ✅ 2026-03-31
-- [x] Create basic portfolio value out of this config ✅ 2026-03-31
+## Portfolio & Risk
 - [ ] Create risk metrics
+- [ ] Create some attribution factors (Z)
+    - [ ] Either use pre-made or just some ETFs for sectors
+- [ ] Estimate exposures using TOP-DOWN approach
+- [ ] Recover shift alpha and residual U
+- [ ] Build the joint distribution of factors and residuals
+   
 
 
 ## Re-factor

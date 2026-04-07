@@ -633,3 +633,16 @@ def clean_and_save_sample(sample_df: pl.DataFrame, path_to_save: str) -> None:
     )
 
     clean_df.write_csv(path_to_save)
+
+
+def import_tickers_and_factors(
+    tickers_path: str, factors_path: str
+) -> tuple[pl.DataFrame, list[str]]:
+    data = pl.read_csv(tickers_path)
+    factors = pl.read_csv(factors_path)
+    factors_cols = [column for column in factors.columns if column != "date"]
+    merged = factors.join(data, on="date", how="left")
+    merged = merged.with_columns(pl.col("date").str.to_datetime("%Y-%m-%d")).filter(
+        pl.col("date") <= datetime(2026, 3, 19)
+    )
+    return merged, factors_cols

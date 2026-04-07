@@ -35,6 +35,38 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
+class AssetUniverse:
+    """Classifies tickers as tradable assets or non-tradable factors.
+
+    Both assets and factors are forecast together (preserving cross-correlations),
+    but only assets participate in portfolio construction (weights, PnL, value).
+    """
+
+    assets: list[str]
+    factors: list[str]
+
+    def __post_init__(self) -> None:
+        overlap = set(self.assets) & set(self.factors)
+        if overlap:
+            raise ValueError(
+                f"Tickers appear in both assets and factors: {sorted(overlap)}"
+            )
+        if not self.assets:
+            raise ValueError("Must have at least one tradable asset")
+
+    @property
+    def all_tickers(self) -> list[str]:
+        """All tickers in forecast order (assets first, then factors)."""
+        return self.assets + self.factors
+
+    def is_factor(self, ticker: str) -> bool:
+        return ticker in set(self.factors)
+
+    def is_asset(self, ticker: str) -> bool:
+        return ticker in set(self.assets)
+
+
+@dataclass(frozen=True, slots=True)
 class InnovationPaths:
     values: NDArray[np.floating]
     path_probs: ProbVector
@@ -44,6 +76,23 @@ class InnovationPaths:
 class ForecastPaths:
     asset_paths: dict[str, NDArray[np.floating]]
     path_probs: ProbVector
+    universe: AssetUniverse | None = None
+
+    @property
+    def tradable_paths(self) -> dict[str, NDArray[np.floating]]:
+        """Only paths for tradable assets (excludes factors)."""
+        if self.universe is None:
+            return self.asset_paths
+        assets_set = set(self.universe.assets)
+        return {k: v for k, v in self.asset_paths.items() if k in assets_set}
+
+    @property
+    def factor_paths(self) -> dict[str, NDArray[np.floating]]:
+        """Only paths for factors (non-tradable)."""
+        if self.universe is None:
+            return {}
+        factors_set = set(self.universe.factors)
+        return {k: v for k, v in self.asset_paths.items() if k in factors_set}
 
 
 def _build_innovations_df_from_models(
@@ -298,6 +347,7 @@ def run_n_steps_forecast(
     seed: int | None = None,
     method: Literal["bootstrap", "historical", "cma"] = "bootstrap",
     *,
+    factors: list[str] | None = None,
     back_to_price: bool = True,
     target_copula: Literal["t", "norm"] | None = None,
     copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
@@ -337,6 +387,11 @@ def run_n_steps_forecast(
 
     Other Parameters
     ----------------
+    factors : list[str] | None, optional
+        Tickers that are non-tradable factors. They are forecast jointly with
+        assets (preserving cross-correlations) but are excluded from portfolio
+        construction. Access factor-only paths via ``ForecastPaths.factor_paths``
+        and tradable-only paths via ``ForecastPaths.tradable_paths``.
     back_to_price : bool, optional
         Whether to convert simulated returns back to price level using the
         stored inverse transforms (default: True).
@@ -431,4 +486,12 @@ def run_n_steps_forecast(
         back_to_price=True if back_to_price else False,
     )
 
-    return ForecastPaths(asset_paths=transformed, path_probs=innovations.path_probs)
+    factors_ = factors if factors is not None else []
+    tradable = [a for a in assets if a not in set(factors_)]
+    universe = AssetUniverse(assets=tradable, factors=factors_)
+
+    return ForecastPaths(
+        asset_paths=transformed,
+        path_probs=innovations.path_probs,
+        universe=universe,
+    )
