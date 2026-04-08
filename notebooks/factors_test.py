@@ -1,21 +1,13 @@
-import numpy as np
 import polars as pl
 
 from pipelines.forecasting import run_n_steps_forecast
-from portfolio.factors import _factors_n_horizon_performance
+from portfolio.factors import _factors_n_horizon_performance, factor_ols_regression
 from portfolio.value import (
     build_equal_weight_portfolio_from_df,
-    cumulative_pnl_forecast,
     equal_weight_target_weights,
     portfolio_forecast,
 )
 from probability.distributions import state_smooth_probs
-from time_series.estimation import (
-    EquationTypes,
-    OLSEquation,
-    add_deterministics_to_eq,
-    weighted_ols,
-)
 from utils.helpers import wide_to_long
 from utils.tiingo import import_tickers_and_factors
 
@@ -77,57 +69,13 @@ port_forecast.plot(end_horizon=30)
 
 # %%
 
-_factors_n_horizon_performance(
+factors_cum = _factors_n_horizon_performance(
     forecasts.factor_paths,
     data,
     factors_cols,
     30,
 )
 
+port_cum = port_forecast.cumulative_pnl(at_horizon=30)
 
-# %%
-# Get last known factor prices from historical data (t0)
-factor_t0 = {
-    col: float(np.exp(data.select(col).drop_nulls()[-1, 0])) for col in factors_cols
-}
-
-port_total_return = np.prod(1.0 + port_forecast.pnl, axis=1) - 1.0
-
-cumulative_pnl_forecast(port_forecast.pnl, port_forecast.pnl_type, at_horizon=30)
-
-# %%
-data_reg = {"port": port_total_return}
-for factor, forecast in forecasts.factor_paths.items():
-    t0_price = factor_t0[factor]
-    # Now: t0 → step 30, matching portfolio window exactly
-    data_reg[factor] = (forecast[:, -1] / t0_price) - 1.0
-
-regression_df = pl.DataFrame(data_reg)
-
-regression_df
-
-# %%
-
-
-def _build_factor_reg_eq(
-    data: pl.DataFrame,
-    eq_type: EquationTypes,
-    port_col_name: str = "port",
-) -> OLSEquation:
-    dependent_var = data.select(port_col_name).to_numpy()
-    independent_vars = data.drop(port_col_name).to_numpy()
-    if eq_type != "nc":
-        independent_vars = add_deterministics_to_eq(
-            independent_vars=independent_vars, eq_type=eq_type
-        )
-    return OLSEquation(ind_var=independent_vars, dep_vars=dependent_var)
-
-
-factor_eq = _build_factor_reg_eq(regression_df, eq_type="c")
-
-results = weighted_ols(
-    dependent_var=factor_eq.dep_vars,
-    independent_vars=factor_eq.ind_var,
-    prob=forecasts.path_probs,  # scenario weights from simulation
-)
-results
+factor_ols_regression(factors_cum, port_cum)

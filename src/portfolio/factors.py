@@ -9,6 +9,15 @@ import numpy as np
 from numpy.typing import NDArray
 from polars import DataFrame
 
+from scenarios.types import ProbVector
+from time_series.estimation import (
+    EquationTypes,
+    OLSEquation,
+    OLSResults,
+    add_deterministics_to_eq,
+    weighted_ols,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class PortfolioFactors:
@@ -51,3 +60,56 @@ def _factors_n_horizon_performance(
         t0_price = factors_t0[factor]
         factors_forecast_w_t0[factor] = (forecast[:, idx] / t0_price) - 1.0
     return factors_forecast_w_t0
+
+
+def portfolio_factor_df(
+    factors_cum_forecast: dict[str, NDArray],
+    portfolio_cum_forecast: NDArray[np.floating],
+    port_col_name: str = "port",
+) -> DataFrame:
+    port_factors = {port_col_name: portfolio_cum_forecast}
+    for factor, forecast in factors_cum_forecast.items():
+        port_factors[factor] = forecast
+    return DataFrame(port_factors)
+
+
+def _build_factor_ols_equation(
+    portfolio_factor_df: DataFrame,
+    eq_type: EquationTypes = "c",
+    port_col_name: str = "port",
+) -> OLSEquation:
+    dependent_var = portfolio_factor_df.select(port_col_name).to_numpy()
+    independent_vars = portfolio_factor_df.drop(port_col_name).to_numpy()
+    if eq_type != "nc":
+        independent_vars = add_deterministics_to_eq(
+            independent_vars=independent_vars, eq_type=eq_type
+        )
+    return OLSEquation(ind_var=independent_vars, dep_vars=dependent_var)
+
+
+def _run_factor_ols(
+    dependent_var: NDArray[np.floating],
+    independent_vars: NDArray[np.floating],
+    prob: ProbVector | None,
+) -> OLSResults:
+    return weighted_ols(
+        dependent_var=dependent_var, independent_vars=independent_vars, prob=prob
+    )
+
+
+def factor_ols_regression(
+    factors_cum_forecast: dict[str, NDArray],
+    portfolio_cum_forecast: NDArray[np.floating],
+    prob: ProbVector | None = None,
+):
+    pass
+    port_factor_df = portfolio_factor_df(
+        factors_cum_forecast=factors_cum_forecast,
+        portfolio_cum_forecast=portfolio_cum_forecast,
+    )
+    factor_ols_eq = _build_factor_ols_equation(port_factor_df)
+    return _run_factor_ols(
+        dependent_var=factor_ols_eq.dep_vars,
+        independent_vars=factor_ols_eq.ind_var,
+        prob=prob,
+    )
