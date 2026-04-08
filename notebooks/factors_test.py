@@ -2,8 +2,10 @@ import numpy as np
 import polars as pl
 
 from pipelines.forecasting import run_n_steps_forecast
+from portfolio.factors import _factors_n_horizon_performance
 from portfolio.value import (
     build_equal_weight_portfolio_from_df,
+    cumulative_pnl_forecast,
     equal_weight_target_weights,
     portfolio_forecast,
 )
@@ -71,7 +73,17 @@ port_forecast = portfolio_forecast(
     target_weights=target_weights,
 )
 
-port_forecast.plot()
+port_forecast.plot(end_horizon=30)
+
+# %%
+
+_factors_n_horizon_performance(
+    forecasts.factor_paths,
+    data,
+    factors_cols,
+    30,
+)
+
 
 # %%
 # Get last known factor prices from historical data (t0)
@@ -81,6 +93,9 @@ factor_t0 = {
 
 port_total_return = np.prod(1.0 + port_forecast.pnl, axis=1) - 1.0
 
+cumulative_pnl_forecast(port_forecast.pnl, port_forecast.pnl_type, at_horizon=30)
+
+# %%
 data_reg = {"port": port_total_return}
 for factor, forecast in forecasts.factor_paths.items():
     t0_price = factor_t0[factor]

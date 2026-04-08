@@ -30,8 +30,21 @@ class PortfolioForecast:
     asset_weights: dict[str, NDArray[np.floating]]
     path_probs: ProbVector
 
+    def cumulative_pnl(
+        self,
+        end_horizon: int | None = None,
+        at_horizon: int | None = None,
+    ) -> NDArray[np.floating]:
+        return cumulative_pnl_forecast(
+            self.pnl,
+            self.pnl_type,
+            end_horizon=end_horizon,
+            at_horizon=at_horizon,
+        )
+
     def plot(
         self,
+        end_horizon: int,
         value_type: Literal["value", "pnl"] = "pnl",
         plot_cumulative: bool = False,
     ) -> None:
@@ -51,35 +64,54 @@ class PortfolioForecast:
             initial[np.abs(initial) < 1e-12] = np.nan
             cumulative_changes = self.values / initial - 1.0
         else:
-            if self.pnl_type == "relative":
-                cumulative_changes = np.concatenate(
-                    [
-                        np.zeros((self.pnl.shape[0], 1), dtype=float),
-                        np.cumprod(1.0 + self.pnl, axis=1) - 1.0,
-                    ],
-                    axis=1,
-                )
-            elif self.pnl_type == "absolute":
-                cumulative_changes = np.concatenate(
-                    [
-                        np.zeros((self.pnl.shape[0], 1), dtype=float),
-                        np.cumsum(self.pnl, axis=1),
-                    ],
-                    axis=1,
-                )
-            else:  # log
-                cumulative_changes = np.concatenate(
-                    [
-                        np.zeros((self.pnl.shape[0], 1), dtype=float),
-                        np.exp(np.cumsum(self.pnl, axis=1)) - 1.0,
-                    ],
-                    axis=1,
-                )
+            cumulative_changes = cumulative_pnl_forecast(
+                self.pnl, self.pnl_type, end_horizon=end_horizon
+            )
 
         plot_simulation_results(
             cumulative_changes,
             title=f"Portfolio Cumulative {value_type} ({self.weight_mode})",
         )
+
+
+def cumulative_pnl_forecast(
+    pnl: NDArray[np.floating],
+    pnl_type: PnL_OPTIONS,
+    end_horizon: int | None = None,
+    at_horizon: int | None = None,
+) -> NDArray[np.floating]:
+    if end_horizon is not None and at_horizon is not None:
+        raise ValueError("end_horizon and at_horizon are mutually exclusive")
+    if end_horizon is not None and end_horizon <= 0:
+        raise ValueError("end_horizon must be a positive integer")
+    if at_horizon is not None and at_horizon <= 0:
+        raise ValueError("at_horizon must be a positive integer")
+
+    if pnl_type not in {"relative", "absolute", "log"}:
+        raise ValueError(f"Unknown pnl_type: {pnl_type}")
+
+    if pnl.ndim != 2:
+        raise ValueError("pnl must have shape (n_sims, n_periods)")
+
+    # When at_horizon is set we only need to accumulate up to that point.
+    effective_end = at_horizon if at_horizon is not None else end_horizon
+    slice_ = slice(None, effective_end)
+    p = pnl[:, slice_]
+    zeros = np.zeros((p.shape[0], 1), dtype=float)
+
+    if pnl_type == "relative":
+        running = np.cumprod(1.0 + p, axis=1) - 1.0
+    elif pnl_type == "absolute":
+        running = np.cumsum(p, axis=1)
+    else:  # log
+        running = np.exp(np.cumsum(p, axis=1)) - 1.0
+
+    full = np.concatenate([zeros, running], axis=1)  # (n_sims, H + 1)
+
+    if at_horizon is not None:
+        return full[:, at_horizon]  # (n_sims,)
+
+    return full
 
 
 def equal_weight_target_weights(asset_order: list[str]) -> dict[str, float]:
@@ -520,7 +552,6 @@ def _prepend_t0_prices(
 
     t0 = np.array([initial_prices[a] for a in asset_order], dtype=float)
     n_assets, n_sims, _ = prices.shape
-    # Tile to a writeable (n_assets, n_sims, 1) column before concatenating
     t0_col = np.tile(t0[:, None, None], (1, n_sims, 1))
     return np.concatenate([t0_col, prices], axis=2)
 
@@ -575,8 +606,6 @@ def portfolio_forecast(
             )
 
         _validate_target_weights(target_weights, asset_order)
-        # Derive t0 portfolio value from the already-prepended price stack so
-        # both modes share the same t0 anchor.
         initial_portfolio_values = _initial_portfolio_values_from_shares(
             prices=prices,
             initial_asset_shares=initial_asset_shares,
