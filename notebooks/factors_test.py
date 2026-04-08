@@ -1,7 +1,9 @@
 import polars as pl
 
 from pipelines.forecasting import run_n_steps_forecast
-from portfolio.factors import _factors_n_horizon_performance, factor_ols_regression
+from portfolio.factors import (
+    portfolio_factor_attribution,
+)
 from portfolio.value import (
     build_equal_weight_portfolio_from_df,
     equal_weight_target_weights,
@@ -67,15 +69,6 @@ port_forecast = portfolio_forecast(
 
 port_forecast.plot(end_horizon=30)
 
+
 # %%
-
-factors_cum = _factors_n_horizon_performance(
-    forecasts.factor_paths,
-    data,
-    factors_cols,
-    30,
-)
-
-port_cum = port_forecast.cumulative_pnl(at_horizon=30)
-
-factor_ols_regression(factors_cum, port_cum)
+portfolio_factor_attribution(port_forecast, forecasts.factor_paths, data, 30)

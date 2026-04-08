@@ -2,7 +2,8 @@
 - [ ] Create risk metrics
 - [ ] Create some attribution factors (Z)
     - [ ] Either use pre-made or just some ETFs for sectors
-- [ ] Estimate exposures using TOP-DOWN approach
+- [x] Estimate exposures using TOP-DOWN approach ✅ 2026-04-08
+- [ ] Add in backward/forward based on Riskfolio
 - [ ] Recover shift alpha and residual U
 - [ ] Build the joint distribution of factors and residuals
    
