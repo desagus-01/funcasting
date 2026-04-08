@@ -3,6 +3,7 @@ from typing import Literal, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy import stats
 
 from scenarios.types import ProbVector
 
@@ -25,19 +26,26 @@ class OLSResults:
     res: NDArray[np.floating]
     std_errors: NDArray[np.floating]
     t_stats: NDArray[np.floating]
+    p_values: NDArray[np.floating]
     residuals: NDArray[np.floating]
+    r_squared: float
     aic: float
     bic: float
 
     def __post_init__(self) -> None:
         shape = self.res.shape
-        if self.std_errors.shape != shape or self.t_stats.shape != shape:
+        if (
+            self.std_errors.shape != shape
+            or self.t_stats.shape != shape
+            or self.p_values.shape != shape
+        ):
             raise ValueError(
                 f"""
                 OLSResults values must all have the same shape:
                 res : {shape}
                 std_errors: {self.std_errors.shape}
                 t_stats: {self.t_stats.shape}
+                p_values: {self.p_values.shape}
                 """
             )
 
@@ -74,37 +82,6 @@ def add_deterministics_to_eq(
     return np.hstack([deterministics, independent_vars])
 
 
-def _validate_prob(
-    prob: ProbVector | None,
-    n_obs: int,
-) -> NDArray[np.floating] | None:
-    if prob is None:
-        return None
-
-    weights = np.asarray(prob, dtype=float).reshape(-1)
-
-    if weights.ndim != 1:
-        raise ValueError(f"prob must be 1D, got shape {weights.shape}")
-
-    if weights.shape[0] != n_obs:
-        raise ValueError(
-            f"prob length must match n_obs, got len(prob)={weights.shape[0]} "
-            f"and n_obs={n_obs}"
-        )
-
-    if np.any(~np.isfinite(weights)):
-        raise ValueError("prob contains non-finite values")
-
-    if np.any(weights < 0):
-        raise ValueError("prob must be non-negative")
-
-    total = float(weights.sum())
-    if total <= 0:
-        raise ValueError("prob must have positive sum")
-
-    return weights * (n_obs / total)
-
-
 def ols_log_likelihood(sum_of_squared_residuals: float, n_obs: int) -> float:
     return (
         -0.5
@@ -127,6 +104,31 @@ def get_aic_bic(
     return AICBIC(aic=aic, bic=bic)
 
 
+def get_p_values(
+    t_stats: NDArray[np.floating],
+    n_obs: int,
+    n_parameters: int,
+) -> NDArray[np.floating]:
+    df = n_obs - n_parameters
+    return np.asarray(2 * stats.t.sf(np.abs(t_stats), df=df), dtype=float)
+
+
+def get_r_squared(
+    dependent_var: NDArray[np.floating],
+    residuals: NDArray[np.floating],
+    prob: ProbVector | None = None,
+) -> float:
+    if prob is None:
+        ss_res = float((residuals**2).sum())
+        ss_tot = float(((dependent_var - dependent_var.mean()) ** 2).sum())
+    else:
+        w = prob.reshape(-1, 1)
+        y_mean = float((w * dependent_var).sum())
+        ss_res = float((w * residuals**2).sum())
+        ss_tot = float((w * (dependent_var - y_mean) ** 2).sum())
+    return 1.0 - ss_res / ss_tot if ss_tot != 0.0 else 0.0
+
+
 def least_squares_weighted_fit(
     dependent_var: NDArray[np.floating],
     independent_vars: NDArray[np.floating],
@@ -135,10 +137,7 @@ def least_squares_weighted_fit(
     if dependent_var.ndim == 1:
         dependent_var = dependent_var.reshape(-1, 1)
 
-    n_obs = dependent_var.shape[0]
-    weights = _validate_prob(prob=prob, n_obs=n_obs)
-
-    if weights is None:
+    if prob is None:
         res = np.linalg.lstsq(a=independent_vars, b=dependent_var, rcond=None)
         beta = np.asarray(res[0], dtype=float)
         fitted = independent_vars @ beta
@@ -149,7 +148,7 @@ def least_squares_weighted_fit(
         else:
             ssr = float(res[1].item())
     else:
-        sqrt_w = np.sqrt(weights).reshape(-1, 1)
+        sqrt_w = np.sqrt(prob).reshape(-1, 1)
         x_w = independent_vars * sqrt_w
         y_w = dependent_var * sqrt_w
 
@@ -158,7 +157,7 @@ def least_squares_weighted_fit(
 
         fitted = independent_vars @ beta
         residuals = dependent_var - fitted
-        ssr = float((weights.reshape(-1, 1) * (residuals**2)).sum())
+        ssr = float((prob.reshape(-1, 1) * (residuals**2)).sum())
 
     return LeastSquaresRes(
         results=beta,
@@ -181,14 +180,12 @@ def ols_standard_errors(
             f"Need n_obs > k for standard errors, got n_obs={n_obs}, k={k}"
         )
 
-    weights = _validate_prob(prob=prob, n_obs=n_obs)
-
     cov_scaler = sum_of_squared_residuals / (n_obs - k)
 
-    if weights is None:
+    if prob is None:
         xtx_inv = np.linalg.pinv(x.T @ x)
     else:
-        w = weights.reshape(-1, 1)
+        w = prob.reshape(-1, 1)
         xtx_inv = np.linalg.pinv(x.T @ (w * x))
 
     scaled_cov_inv = cov_scaler * xtx_inv
@@ -200,22 +197,19 @@ def weighted_ols(
     independent_vars: NDArray[np.floating],
     prob: ProbVector | None = None,
 ) -> OLSResults:
-    y = np.asarray(dependent_var, dtype=float)
-    x = np.asarray(independent_vars, dtype=float)
+    if dependent_var.ndim == 1:
+        dependent_var = dependent_var.reshape(-1, 1)
 
-    if y.ndim == 1:
-        y = y.reshape(-1, 1)
-
-    n_obs = y.shape[0]
+    n_obs = dependent_var.shape[0]
 
     ols_res, residuals, sum_of_squared_residuals = least_squares_weighted_fit(
-        dependent_var=y,
-        independent_vars=x,
+        dependent_var=dependent_var,
+        independent_vars=independent_vars,
         prob=prob,
     )
 
     standard_errors = ols_standard_errors(
-        independent_vars=x,
+        independent_vars=independent_vars,
         sum_of_squared_residuals=sum_of_squared_residuals,
         n_obs=n_obs,
         prob=prob,
@@ -224,14 +218,28 @@ def weighted_ols(
     fit_evals = get_aic_bic(
         sum_of_squared_residuals=sum_of_squared_residuals,
         n_obs=n_obs,
-        n_parameters=x.shape[1],
+        n_parameters=independent_vars.shape[1],
+    )
+
+    t_stats = ols_res / standard_errors
+    p_values = get_p_values(
+        t_stats=t_stats,
+        n_obs=n_obs,
+        n_parameters=independent_vars.shape[1],
+    )
+    r_squared = get_r_squared(
+        dependent_var=dependent_var,
+        residuals=residuals,
+        prob=prob,
     )
 
     return OLSResults(
         res=ols_res,
         std_errors=standard_errors,
-        t_stats=ols_res / standard_errors,
+        t_stats=t_stats,
+        p_values=p_values,
         residuals=residuals,
+        r_squared=r_squared,
         aic=fit_evals.aic,
         bic=fit_evals.bic,
     )

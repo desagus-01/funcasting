@@ -18,6 +18,7 @@ class PortfolioInfoT0:
     all_info: pl.DataFrame
     estimated_t0: float
     shares_mapping: dict[str, int]
+    t0_prices: dict[str, float]
 
 
 @dataclass(frozen=True, slots=True)
@@ -271,6 +272,9 @@ def build_equal_weight_portfolio_from_df(
         all_info=positions,
         estimated_t0=total,
         shares_mapping=_get_ticker_shares(positions),
+        t0_prices=dict(
+            zip(latest_price["ticker"].to_list(), latest_price["adj_close"].to_list())
+        ),
     )
 
 
@@ -438,26 +442,37 @@ def _validate_target_weights(
 
 
 def _initial_portfolio_values_from_shares(
-    asset_forecasts: dict[str, NDArray[np.floating]],
+    prices: NDArray[np.floating],
     initial_asset_shares: dict[str, int],
     asset_order: list[str],
 ) -> NDArray[np.floating]:
-    asset_values = _build_asset_values_array(
-        asset_forecasts=asset_forecasts,
-        initial_asset_shares=initial_asset_shares,
-        asset_order=asset_order,
-    )
-    return asset_values[:, :, 0].sum(axis=0)  # (n_sims,)
+    """Compute per-simulation t0 portfolio value from the pre-built price stack.
+
+    Parameters
+    ----------
+    prices
+        Price stack of shape (n_assets, n_sims, n_periods) where column 0 is t0.
+    """
+    shares = _shares_vector(initial_asset_shares, asset_order)
+    # t0 prices are at column 0; multiply by shares and sum over assets
+    return (prices[:, :, 0] * shares[:, None]).sum(axis=0)  # (n_sims,)
 
 
 def _portfolio_values_static_weights(
-    asset_forecasts: dict[str, NDArray[np.floating]],
+    prices: NDArray[np.floating],
     target_weights: dict[str, float],
     asset_order: list[str],
     initial_portfolio_values: NDArray[np.floating],
     safe_eps: float = 1e-12,
 ) -> NDArray[np.floating]:
-    prices = _build_price_stack(asset_forecasts, asset_order)
+    """Compute portfolio values under static (rebalanced) weights.
+
+    Parameters
+    ----------
+    prices
+        Pre-built price stack of shape (n_assets, n_sims, n_periods) where
+        column 0 is the known t0 price.
+    """
     _, n_sims, n_periods = prices.shape
 
     initial_portfolio_values = np.asarray(initial_portfolio_values, dtype=float)
@@ -488,10 +503,33 @@ def _portfolio_values_static_weights(
     return values
 
 
+def _prepend_t0_prices(
+    prices: NDArray[np.floating],
+    asset_order: list[str],
+    initial_prices: dict[str, float],
+) -> NDArray[np.floating]:
+    """Prepend last known prices (t0) to a price stack (n_assets, n_sims, n_periods).
+
+    Returns a new writeable array of shape (n_assets, n_sims, n_periods + 1) where
+    column 0 is the known t0 price (identical across all simulations) and columns
+    1..n_periods are the simulated forecast prices.
+    """
+    missing = [a for a in asset_order if a not in initial_prices]
+    if missing:
+        raise KeyError(f"Missing t0 prices for assets: {missing}")
+
+    t0 = np.array([initial_prices[a] for a in asset_order], dtype=float)
+    n_assets, n_sims, _ = prices.shape
+    # Tile to a writeable (n_assets, n_sims, 1) column before concatenating
+    t0_col = np.tile(t0[:, None, None], (1, n_sims, 1))
+    return np.concatenate([t0_col, prices], axis=2)
+
+
 def portfolio_forecast(
     asset_forecasts: dict[str, NDArray[np.floating]],
     path_probs: ProbVector,
     initial_asset_shares: dict[str, int],
+    initial_prices: dict[str, float],
     asset_order: list[str] | None = None,
     pnl_type: PnL_OPTIONS = "relative",
     weight_mode: WEIGHT_MODE = "buy_and_hold",
@@ -503,6 +541,9 @@ def portfolio_forecast(
 
     Parameters
     ----------
+    initial_prices
+        Last known prices for each asset (t0). Used to anchor the price stack
+        so that PnL and weights include the t0 -> t1 step.
     weight_mode
         - "buy_and_hold": fixed shares, drifting weights
         - "static": fixed target weights, implicitly rebalanced each step
@@ -513,8 +554,8 @@ def portfolio_forecast(
         asset_order = list(initial_asset_shares.keys())
 
     prices = _build_price_stack(asset_forecasts, asset_order)
+    prices = _prepend_t0_prices(prices, asset_order, initial_prices)
     _, n_sims, n_periods = prices.shape
-
     if weight_mode == "buy_and_hold":
         asset_values = (
             prices * _shares_vector(initial_asset_shares, asset_order)[:, None, None]
@@ -534,14 +575,16 @@ def portfolio_forecast(
             )
 
         _validate_target_weights(target_weights, asset_order)
+        # Derive t0 portfolio value from the already-prepended price stack so
+        # both modes share the same t0 anchor.
         initial_portfolio_values = _initial_portfolio_values_from_shares(
-            asset_forecasts=asset_forecasts,
+            prices=prices,
             initial_asset_shares=initial_asset_shares,
             asset_order=asset_order,
         )
 
         values = _portfolio_values_static_weights(
-            asset_forecasts=asset_forecasts,
+            prices=prices,
             target_weights=target_weights,
             asset_order=asset_order,
             initial_portfolio_values=initial_portfolio_values,

@@ -66,6 +66,7 @@ port_forecast = portfolio_forecast(
     target_weights=target_weights,
 )
 
+# %%
 port_forecast.asset_weights
 port_forecast.plot()
 
