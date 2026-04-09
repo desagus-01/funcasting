@@ -23,6 +23,7 @@ class OLSEquation(NamedTuple):
 
 @dataclass
 class OLSResults:
+    feature_names_order: list[str] | None
     res: NDArray[np.floating]
     std_errors: NDArray[np.floating]
     t_stats: NDArray[np.floating]
@@ -47,6 +48,14 @@ class OLSResults:
                 t_stats: {self.t_stats.shape}
                 p_values: {self.p_values.shape}
                 """
+            )
+        if (
+            self.feature_names_order is not None
+            and len(self.feature_names_order) != self.res.size
+        ):
+            raise ValueError(
+                f"feature_names length {len(self.feature_names_order)} does not match "
+                f"number of coefficients {self.res.size}"
             )
 
 
@@ -195,6 +204,7 @@ def ols_standard_errors(
 def weighted_ols(
     dependent_var: NDArray[np.floating],
     independent_vars: NDArray[np.floating],
+    feature_names: list[str] | None = None,
     prob: ProbVector | None = None,
 ) -> OLSResults:
     if dependent_var.ndim == 1:
@@ -234,6 +244,7 @@ def weighted_ols(
     )
 
     return OLSResults(
+        feature_names_order=feature_names,
         res=ols_res,
         std_errors=standard_errors,
         t_stats=t_stats,
