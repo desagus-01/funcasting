@@ -129,7 +129,7 @@ def forward_regression(
     dependent_var: NDArray[np.floating],
     independent_vars: NDArray[np.floating],
     feature_names: list[str],
-    criterion: Criterion = "bic",
+    criterion: Criterion,
     p_value_threshold: float = 0.05,
     prob: ProbVector | None = None,
 ) -> ForwardRegressionResult:

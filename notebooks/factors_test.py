@@ -1,3 +1,5 @@
+from typing import get_args
+
 import polars as pl
 
 from pipelines.forecasting import run_n_steps_forecast
@@ -10,6 +12,7 @@ from portfolio.value import (
     portfolio_forecast,
 )
 from probability.distributions import state_smooth_probs
+from time_series.feature_selection import Criterion
 from utils.helpers import wide_to_long
 from utils.tiingo import import_tickers_and_factors
 
@@ -71,4 +74,16 @@ port_forecast.plot(end_horizon=30)
 
 
 # %%
-portfolio_factor_attribution(port_forecast, forecasts.factor_paths, data, 30)
+
+
+for criteria in get_args(Criterion):
+    print(f"Criteria {criteria}")
+    f_a = portfolio_factor_attribution(
+        port_forecast,
+        forecasts.factor_paths,
+        data,
+        30,
+        auto_select_factors=True,
+        criterion=criteria,
+    )
+    print(f_a)

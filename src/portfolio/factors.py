@@ -13,6 +13,18 @@ from time_series.estimation import (
     add_deterministics_to_eq,
     weighted_ols,
 )
+from time_series.feature_selection import (
+    Criterion,
+    ForwardRegressionResult,
+    forward_regression,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class FactorOLSResult:
+    ols: OLSResults
+    selected_factors: list[str]
+    selection_result: ForwardRegressionResult | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,21 +91,65 @@ def _build_factor_ols_equation(
     return OLSEquation(ind_var=independent_vars, dep_vars=dependent_var)
 
 
+def _deterministic_names(eq_type: EquationTypes) -> list[str]:
+    if eq_type == "nc":
+        return []
+    names = ["const"]
+    if eq_type in ("ct", "ctt"):
+        names.append("trend")
+    if eq_type == "ctt":
+        names.append("trend_sq")
+    return names
+
+
 def factor_ols_regression(
     factors_cum_forecast: dict[str, NDArray[np.floating]],
     portfolio_cum_forecast: NDArray[np.floating],
+    factor_names: list[str],
+    auto_select_factors: bool = False,
+    criterion: Criterion | None = None,
     prob: ProbVector | None = None,
     eq_type: EquationTypes = "c",
-) -> OLSResults:
+) -> FactorOLSResult:
+    if (auto_select_factors) and criterion is None:
+        raise ValueError(
+            "You must select a criterion if you wish for auto factor selection."
+        )
+
     ols_eq = _build_factor_ols_equation(
         factors_cum_forecast=factors_cum_forecast,
         portfolio_cum_forecast=portfolio_cum_forecast,
         eq_type=eq_type,
     )
-    return weighted_ols(
+
+    det_names = _deterministic_names(eq_type)
+    full_names = det_names + factor_names
+
+    if auto_select_factors and criterion is not None:
+        fwd_result = forward_regression(
+            dependent_var=ols_eq.dep_vars,
+            independent_vars=ols_eq.ind_var,
+            feature_names=full_names,
+            criterion=criterion,
+            prob=prob,
+        )
+        selected = [n for n in fwd_result.selected_features if n not in det_names]
+        return FactorOLSResult(
+            ols=fwd_result.final_model,
+            selected_factors=selected,
+            selection_result=fwd_result,
+        )
+
+    ols_result = weighted_ols(
         dependent_var=ols_eq.dep_vars,
         independent_vars=ols_eq.ind_var,
+        feature_names=full_names,
         prob=prob,
+    )
+    return FactorOLSResult(
+        ols=ols_result,
+        selected_factors=factor_names,
+        selection_result=None,
     )
 
 
@@ -125,6 +181,8 @@ def portfolio_factor_attribution(
     factor_names: list[str] | None = None,
     eq_type: EquationTypes = "c",
     is_log_price: bool = True,
+    auto_select_factors: bool = False,
+    criterion: Criterion | None = None,
 ) -> HorizonFactorAttribution:
     if factor_names is None:
         factor_names = list(factors_forecast.keys())
@@ -139,27 +197,35 @@ def portfolio_factor_attribution(
 
     portfolio_cum = portfolio_forecast.cumulative_pnl(at_horizon=horizon)
 
-    ols_results = factor_ols_regression(
+    factor_result = factor_ols_regression(
         factors_cum_forecast=factors_cum,
         portfolio_cum_forecast=portfolio_cum,
+        factor_names=factor_names,
+        auto_select_factors=auto_select_factors,
+        criterion=criterion,
         prob=portfolio_forecast.path_probs,
         eq_type=eq_type,
     )
 
+    selected = factor_result.selected_factors
+    ols = factor_result.ols
+
     shift_term, exposures = _extract_ols_components(
-        ols_results=ols_results,
-        n_factors=len(factor_names),
+        ols_results=ols,
+        n_factors=len(selected),
         eq_type=eq_type,
     )
 
     return HorizonFactorAttribution(
         horizon=horizon,
-        factor_names=factor_names,
+        factor_names=selected,
         portfolio_performance_forecast=portfolio_cum,
-        factor_performance_forecast=factors_cum,
+        factor_performance_forecast={
+            k: v for k, v in factors_cum.items() if k in selected
+        },
         exposures=exposures,
         shift_term=shift_term,
-        residuals=ols_results.residuals.flatten(),
+        residuals=ols.residuals.flatten(),
         path_probs=portfolio_forecast.path_probs,
-        r2=ols_results.r_squared,
+        r2=ols.r_squared,
     )
