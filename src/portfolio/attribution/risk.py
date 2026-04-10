@@ -24,7 +24,10 @@ class PortfolioRiskAttribution:
 
         return PortfolioRiskAttribution(
             horizon=performance_attribution.horizon,
-            exposures=performance_attribution.full_exposures,
+            exposures={
+                factor: -exposure
+                for factor, exposure in performance_attribution.full_exposures.items()
+            },
             joint_distribution=joint,
             probs=performance_attribution.path_probs,
         )
