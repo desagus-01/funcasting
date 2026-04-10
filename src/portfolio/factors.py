@@ -28,16 +28,33 @@ class FactorOLSResult:
 
 
 @dataclass(frozen=True, slots=True)
-class HorizonFactorAttribution:
+class PortfolioFactorAttribution:
     horizon: int
-    factor_names: list[str]
     portfolio_performance_forecast: NDArray[np.floating]
     factor_performance_forecast: dict[str, NDArray[np.floating]]
     exposures: NDArray[np.floating]
     shift_term: float
     residuals: NDArray[np.floating]
-    path_probs: ProbVector | None
-    r2: float | None
+    path_probs: ProbVector
+    r2: float
+
+    @property
+    def factor_names(self) -> list[str]:
+        return list(self.factor_performance_forecast.keys())
+
+    @property
+    def full_exposures(self) -> dict[str, float]:
+        exposures_dict: dict[str, float] = {
+            name: float(self.exposures[i]) for i, name in enumerate(self.factor_names)
+        }
+        exposures_dict["z0"] = 1.0
+        return exposures_dict
+
+    @property
+    def joint_distribution(self) -> DataFrame:
+        return DataFrame(self.factor_performance_forecast).with_columns(
+            z0=self.residuals + self.shift_term
+        )
 
 
 def _get_t0_factor_values(
@@ -139,7 +156,7 @@ def factor_ols_regression(
             selected_factors=selected,
             selection_result=fwd_result,
         )
-
+    # ie runs a normal ols on ALL features
     ols_result = weighted_ols(
         dependent_var=ols_eq.dep_vars,
         independent_vars=ols_eq.ind_var,
@@ -183,7 +200,7 @@ def portfolio_factor_attribution(
     is_log_price: bool = True,
     auto_select_factors: bool = False,
     criterion: Criterion | None = None,
-) -> HorizonFactorAttribution:
+) -> PortfolioFactorAttribution:
     if factor_names is None:
         factor_names = list(factors_forecast.keys())
 
@@ -216,9 +233,8 @@ def portfolio_factor_attribution(
         eq_type=eq_type,
     )
 
-    return HorizonFactorAttribution(
+    return PortfolioFactorAttribution(
         horizon=horizon,
-        factor_names=selected,
         portfolio_performance_forecast=portfolio_cum,
         factor_performance_forecast={
             k: v for k, v in factors_cum.items() if k in selected
