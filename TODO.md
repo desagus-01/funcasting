@@ -3,8 +3,12 @@
 - [x] Create some attribution factors (Z) ✅ 2026-04-09
     - [x] Either use pre-made or just some ETFs for sectors ✅ 2026-04-09
 - [x] Estimate exposures using TOP-DOWN approach ✅ 2026-04-08
-- [ ] Recover shift alpha and residual U
-- [ ] Build the joint distribution of factors and residuals
+- [x] Recover shift alpha and residual U ✅ 2026-04-10
+- [x] Build the joint distribution of factors and residuals ✅ 2026-04-10
+- [ ] Build factor attribution for risk
+- [ ] contribution of factors to risk
+    - [ ] marginal
+    - [ ] total
    
 ## Feature-Selection
 - [ ] Add in backward/forward regression based on Riskfolio to find 'best' factors

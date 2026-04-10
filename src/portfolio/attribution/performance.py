@@ -28,7 +28,7 @@ class FactorOLSResult:
 
 
 @dataclass(frozen=True, slots=True)
-class PortfolioFactorAttribution:
+class PortfolioPerformanceAttribution:
     horizon: int
     portfolio_performance_forecast: NDArray[np.floating]
     factor_performance_forecast: dict[str, NDArray[np.floating]]
@@ -53,7 +53,8 @@ class PortfolioFactorAttribution:
     @property
     def joint_distribution(self) -> DataFrame:
         return DataFrame(self.factor_performance_forecast).with_columns(
-            z0=self.residuals + self.shift_term
+            z0=self.residuals + self.shift_term,
+            portfolio_performance=self.portfolio_performance_forecast,
         )
 
 
@@ -200,7 +201,7 @@ def portfolio_factor_attribution(
     is_log_price: bool = True,
     auto_select_factors: bool = False,
     criterion: Criterion | None = None,
-) -> PortfolioFactorAttribution:
+) -> PortfolioPerformanceAttribution:
     if factor_names is None:
         factor_names = list(factors_forecast.keys())
 
@@ -233,7 +234,7 @@ def portfolio_factor_attribution(
         eq_type=eq_type,
     )
 
-    return PortfolioFactorAttribution(
+    return PortfolioPerformanceAttribution(
         horizon=horizon,
         portfolio_performance_forecast=portfolio_cum,
         factor_performance_forecast={

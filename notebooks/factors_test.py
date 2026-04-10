@@ -1,9 +1,8 @@
 import polars as pl
 
 from pipelines.forecasting import run_n_steps_forecast
-from portfolio.factors import (
-    portfolio_factor_attribution,
-)
+from portfolio.attribution.performance import portfolio_factor_attribution
+from portfolio.attribution.risk import PortfolioRiskAttribution
 from portfolio.value import (
     build_equal_weight_portfolio_from_df,
     equal_weight_target_weights,
@@ -82,3 +81,7 @@ f_a = portfolio_factor_attribution(
     criterion="bic",
 )
 f_a.full_exposures
+
+# %%
+
+PortfolioRiskAttribution.from_performance_attribution(f_a)

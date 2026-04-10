@@ -12,16 +12,22 @@ from scenarios.types import ProbVector
 @dataclass(frozen=True, slots=True)
 class LossDistribution:
     loss_values: NDArray[np.floating]
-    path_probs: ProbVector
+    probs: ProbVector
     asset_weights: dict[str, NDArray[np.floating]]
 
     @classmethod
     def from_portfolio_forecast(cls, portfolio_forecast: PortfolioForecast):
-        return LossDistribution(
-            loss_values=-portfolio_forecast.pnl,
-            path_probs=portfolio_forecast.path_probs,
+        return cls(
+            loss_values=_loss_value_from_pnl(portfolio_forecast.pnl),
+            probs=portfolio_forecast.path_probs,
             asset_weights=portfolio_forecast.asset_weights,
         )
+
+
+def _loss_value_from_pnl(
+    portfolio_pnl: NDArray[np.floating],
+) -> NDArray[np.floating]:
+    return -portfolio_pnl
 
 
 def VAR(
