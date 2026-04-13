@@ -64,7 +64,7 @@ def _torsion_exact(
     return diag_sigma @ torsion_corr_space @ diag_sigma_inv
 
 
-def minimum_torsion(
+def minimum_torsion_matrix(
     data: NDArray,
     prob: ProbVector,
     method: Literal["approximate", "exact"] = "approximate",

@@ -2,7 +2,10 @@ import polars as pl
 
 from pipelines.forecasting import run_n_steps_forecast
 from portfolio.attribution.performance import portfolio_factor_attribution
-from portfolio.attribution.risk import PortfolioRiskAttribution
+from portfolio.attribution.risk import (
+    PortfolioRiskAttribution,
+    variance_share_contributions,
+)
 from portfolio.risk import CVAR, LossDistribution
 from portfolio.value import (
     build_equal_weight_portfolio_from_df,
@@ -10,7 +13,6 @@ from portfolio.value import (
     portfolio_forecast,
 )
 from probability.distributions import state_smooth_probs
-from time_series.dimensionality_reduction import minimum_torsion
 from utils.helpers import wide_to_long
 from utils.tiingo import import_tickers_and_factors
 
@@ -89,4 +91,13 @@ CVAR(distribution=loss_dist.loss_values)
 port_forecast.path_probs
 
 factors = a.joint_distribution.drop("loss")
-minimum_torsion(factors.to_numpy(), a.probs)
+
+# %%
+
+# %%
+terminal_loss = -port_forecast.cumulative_pnl(at_horizon=30)
+var_conts = variance_share_contributions(
+    factors.to_numpy(), terminal_loss, a.exposures, a.probs
+)
+
+var_conts.sum()

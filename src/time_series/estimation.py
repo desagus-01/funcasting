@@ -136,12 +136,25 @@ def weighted_covariance(
     prob: ProbVector,
     center: bool = True,
 ) -> NDArray[np.floating]:
+    data = data.reshape(-1, 1) if data.ndim == 1 else data
     w_mean = weighted_mean(data, prob)
     centered = data - w_mean
     data_for_cov = centered if center else data
     w = prob.reshape(-1, 1)
 
-    return data.T @ (w * data_for_cov)
+    return data_for_cov.T @ (w * data_for_cov)
+
+
+def weighted_variance(
+    data: NDArray[np.floating],
+    prob: ProbVector,
+    center: bool = True,
+) -> NDArray[np.floating] | float:
+    cov = weighted_covariance(data, prob, center)
+    if np.ndim(cov) == 0:
+        return float(cov)
+    diag = np.diag(cov)
+    return float(diag[0]) if diag.size == 1 else diag
 
 
 def weighted_correlation(
