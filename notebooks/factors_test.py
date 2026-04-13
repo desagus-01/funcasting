@@ -10,6 +10,7 @@ from portfolio.value import (
     portfolio_forecast,
 )
 from probability.distributions import state_smooth_probs
+from time_series.dimensionality_reduction import minimum_torsion
 from utils.helpers import wide_to_long
 from utils.tiingo import import_tickers_and_factors
 
@@ -82,7 +83,10 @@ f_a = portfolio_factor_attribution(
 )
 # %%
 loss_dist = LossDistribution.from_portfolio_forecast(port_forecast)
-PortfolioRiskAttribution.from_performance_attribution(f_a)
+a = PortfolioRiskAttribution.from_performance_attribution(f_a)
 CVAR(distribution=loss_dist.loss_values)
 # %%
 port_forecast.path_probs
+
+factors = a.joint_distribution.drop("loss")
+minimum_torsion(factors.to_numpy(), a.probs, "approximate")

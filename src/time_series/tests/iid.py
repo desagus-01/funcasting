@@ -9,6 +9,7 @@ from statsmodels.stats.diagnostic import acorr_ljungbox, het_arch
 
 from globals import ITERS, LAGS
 from scenarios.types import ProbVector
+from time_series.estimation import weighted_covariance, weighted_mean
 from time_series.tests.types import HypTestRes, format_hyp_test_result
 from utils.helpers import (
     compensate_prob,
@@ -106,14 +107,14 @@ def _sample_meancov_np(
             f"number of observations {data_np.shape[0]}"
         )
 
-    weighted_mean = prob @ data_np
-    centered = data_np - weighted_mean
-    weighted_cov = (centered.T * prob) @ centered
+    means = weighted_mean(data_np, prob)
+    centered = data_np - means
+    cov = weighted_covariance(centered, prob)
 
     return MeanCovRes(
         assets=list(assets),
-        means=weighted_mean,
-        cov=weighted_cov,
+        means=means,
+        cov=cov,
     )
 
 

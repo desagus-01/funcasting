@@ -4,6 +4,7 @@ from typing import Literal, NamedTuple
 import numpy as np
 from numpy.typing import NDArray
 from scipy import stats
+from scipy.linalg import sqrtm
 
 from scenarios.types import ProbVector
 
@@ -122,6 +123,50 @@ def get_p_values(
     return np.asarray(2 * stats.t.sf(np.abs(t_stats), df=df), dtype=float)
 
 
+def weighted_mean(
+    data: NDArray[np.floating],
+    prob: ProbVector,
+) -> NDArray[np.floating]:
+    w = prob.reshape(-1, 1) if data.ndim > 1 else prob
+    return np.asarray((w * data).sum(axis=0), dtype=float)
+
+
+def weighted_covariance(
+    data: NDArray[np.floating],
+    prob: ProbVector,
+) -> NDArray[np.floating]:
+    w = prob.reshape(-1, 1)
+    return np.asarray(data.T @ (w * data), dtype=float)
+
+
+def weighted_correlation(
+    data: NDArray[np.floating],
+    prob: ProbVector,
+) -> NDArray[np.floating]:
+    covariance = weighted_covariance(data, prob)
+    standard_devs = np.sqrt(np.diag(covariance))
+    return np.diag(1.0 / standard_devs) @ covariance @ np.diag(1.0 / standard_devs)
+
+
+class RiccatiResult(NamedTuple):
+    root: NDArray[np.floating]
+    standard_devs: NDArray[np.floating]
+
+
+def riccati_root(
+    data: NDArray[np.floating],
+    prob: ProbVector,
+) -> RiccatiResult:
+    covariance = weighted_covariance(data, prob)
+    standard_devs = np.sqrt(np.diag(covariance))
+    correlation = (
+        np.diag(1.0 / standard_devs) @ covariance @ np.diag(1.0 / standard_devs)
+    )
+    return RiccatiResult(
+        root=np.asarray(sqrtm(correlation)), standard_devs=standard_devs
+    )
+
+
 def get_r_squared(
     dependent_var: NDArray[np.floating],
     residuals: NDArray[np.floating],
@@ -131,8 +176,8 @@ def get_r_squared(
         ss_res = float((residuals**2).sum())
         ss_tot = float(((dependent_var - dependent_var.mean()) ** 2).sum())
     else:
+        y_mean = weighted_mean(dependent_var, prob)
         w = prob.reshape(-1, 1)
-        y_mean = float((w * dependent_var).sum())
         ss_res = float((w * residuals**2).sum())
         ss_tot = float((w * (dependent_var - y_mean) ** 2).sum())
     return 1.0 - ss_res / ss_tot if ss_tot != 0.0 else 0.0
@@ -194,8 +239,7 @@ def ols_standard_errors(
     if prob is None:
         xtx_inv = np.linalg.pinv(x.T @ x)
     else:
-        w = prob.reshape(-1, 1)
-        xtx_inv = np.linalg.pinv(x.T @ (w * x))
+        xtx_inv = np.linalg.pinv(weighted_covariance(x, prob))
 
     scaled_cov_inv = cov_scaler * xtx_inv
     return np.sqrt(np.diag(scaled_cov_inv)).reshape(-1, 1)
