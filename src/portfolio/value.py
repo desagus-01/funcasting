@@ -30,6 +30,49 @@ class PortfolioForecast:
     asset_weights: dict[str, NDArray[np.floating]]
     path_probs: ProbVector
 
+    def __post_init__(self) -> None:
+        if self.values.ndim != 2:
+            raise ValueError(
+                f"values must be 2-D (n_sims, n_periods); got ndim={self.values.ndim}"
+            )
+        if self.pnl.ndim != 2:
+            raise ValueError(
+                f"pnl must be 2-D (n_sims, n_periods or n_periods-1); got ndim={self.pnl.ndim}"
+            )
+
+        n_sims, n_periods = self.values.shape
+
+        if self.pnl.shape[0] != n_sims:
+            raise ValueError(
+                f"Mismatch in number of simulations: values has {n_sims} but pnl has {self.pnl.shape[0]}"
+            )
+
+        if self.pnl.shape[1] not in (n_periods, n_periods - 1):
+            raise ValueError(
+                f"pnl must have either the same number of periods as values ({n_periods}) or one fewer; got {self.pnl.shape[1]}"
+            )
+
+        for name, arr in self.asset_weights.items():
+            w = np.asarray(arr, dtype=float)
+            if w.ndim != 2:
+                raise ValueError(
+                    f"Weight array for asset '{name}' must be 2-D (n_sims, n_periods); got ndim={w.ndim}"
+                )
+            if w.shape != (n_sims, n_periods):
+                raise ValueError(
+                    f"Weight array shape mismatch for asset '{name}': expected ({n_sims}, {n_periods}), got {w.shape}"
+                )
+
+        # If path_probs is sized, ensure length matches n_sims
+        try:
+            if len(self.path_probs) != n_sims:
+                raise ValueError(
+                    f"path_probs length ({len(self.path_probs)}) must equal number of simulations ({n_sims})"
+                )
+        except TypeError:
+            # path_probs might be a callable or other unsized object; ignore in that case
+            pass
+
     def cumulative_pnl(
         self,
         end_horizon: int | None = None,
