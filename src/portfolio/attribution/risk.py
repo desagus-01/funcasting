@@ -31,3 +31,7 @@ class PortfolioRiskAttribution:
             joint_distribution=joint,
             probs=performance_attribution.path_probs,
         )
+
+
+def effective_bets():
+    pass

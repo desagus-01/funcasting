@@ -43,7 +43,7 @@ def _torsion_exact(
             @ riccati_root_array
             @ np.diag(scaling_vector)
         )
-        normalised_scaled_corr = sqrtm(scaled_corr)
+        normalised_scaled_corr = sqrtm(scaled_corr).real
         procrustes_rotation = solve(
             normalised_scaled_corr, np.diag(scaling_vector) @ riccati_root_array
         )

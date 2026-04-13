@@ -89,4 +89,4 @@ CVAR(distribution=loss_dist.loss_values)
 port_forecast.path_probs
 
 factors = a.joint_distribution.drop("loss")
-minimum_torsion(factors.to_numpy(), a.probs, "exact")
+minimum_torsion(factors.to_numpy(), a.probs)
