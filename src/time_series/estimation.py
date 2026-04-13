@@ -128,22 +128,27 @@ def weighted_mean(
     prob: ProbVector,
 ) -> NDArray[np.floating]:
     w = prob.reshape(-1, 1) if data.ndim > 1 else prob
-    return np.asarray((w * data).sum(axis=0), dtype=float)
+    return (w * data).sum(axis=0)
 
 
 def weighted_covariance(
     data: NDArray[np.floating],
     prob: ProbVector,
+    center: bool = True,
 ) -> NDArray[np.floating]:
+    w_mean = weighted_mean(data, prob)
+    centered = data - w_mean
+    data_for_cov = centered if center else data
     w = prob.reshape(-1, 1)
-    return np.asarray(data.T @ (w * data), dtype=float)
+
+    return data.T @ (w * data_for_cov)
 
 
 def weighted_correlation(
     data: NDArray[np.floating],
     prob: ProbVector,
 ) -> NDArray[np.floating]:
-    covariance = weighted_covariance(data, prob)
+    covariance = weighted_covariance(data, prob, center=True)
     standard_devs = np.sqrt(np.diag(covariance))
     return np.diag(1.0 / standard_devs) @ covariance @ np.diag(1.0 / standard_devs)
 
@@ -157,13 +162,13 @@ def riccati_root(
     data: NDArray[np.floating],
     prob: ProbVector,
 ) -> RiccatiResult:
-    covariance = weighted_covariance(data, prob)
+    covariance = weighted_covariance(data, prob, center=True)
     standard_devs = np.sqrt(np.diag(covariance))
     correlation = (
         np.diag(1.0 / standard_devs) @ covariance @ np.diag(1.0 / standard_devs)
     )
     return RiccatiResult(
-        root=np.asarray(sqrtm(correlation)), standard_devs=standard_devs
+        root=np.asarray(sqrtm(correlation).real), standard_devs=standard_devs
     )
 
 
@@ -239,7 +244,7 @@ def ols_standard_errors(
     if prob is None:
         xtx_inv = np.linalg.pinv(x.T @ x)
     else:
-        xtx_inv = np.linalg.pinv(weighted_covariance(x, prob))
+        xtx_inv = np.linalg.pinv(weighted_covariance(x, prob, center=False))
 
     scaled_cov_inv = cov_scaler * xtx_inv
     return np.sqrt(np.diag(scaled_cov_inv)).reshape(-1, 1)

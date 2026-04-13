@@ -108,8 +108,7 @@ def _sample_meancov_np(
         )
 
     means = weighted_mean(data_np, prob)
-    centered = data_np - means
-    cov = weighted_covariance(centered, prob)
+    cov = weighted_covariance(data_np, prob, center=True)
 
     return MeanCovRes(
         assets=list(assets),

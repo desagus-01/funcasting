@@ -23,9 +23,7 @@ def _validate_torsion_args(
 def _torsion_approximate(
     riccati_root_array: NDArray, diag_sigma: NDArray, diag_sigma_inv: NDArray
 ) -> NDArray[np.floating]:
-    result = diag_sigma @ np.linalg.inv(riccati_root_array) @ diag_sigma_inv
-    result = np.real_if_close(result, tol=1e-12)
-    return result.astype(float, copy=False)
+    return diag_sigma @ np.linalg.inv(riccati_root_array) @ diag_sigma_inv
 
 
 def _torsion_exact(
@@ -49,13 +47,8 @@ def _torsion_exact(
         procrustes_rotation = solve(
             normalised_scaled_corr, np.diag(scaling_vector) @ riccati_root_array
         )
-        variance_matrix = (
-            procrustes_rotation
-            @ riccati_root_array
-            @ riccati_root_array
-            @ procrustes_rotation.T
-        )
-        scaling_vector = 1.0 / np.sqrt(np.diag(variance_matrix))
+
+        scaling_vector = np.diag(procrustes_rotation @ riccati_root_array)
         perturbation = np.diag(scaling_vector) @ procrustes_rotation
         f[i] = np.linalg.norm(riccati_root_array - perturbation, "fro")
 
@@ -68,9 +61,7 @@ def _torsion_exact(
             warnings.warn(f"number of max iterations reached: n_iter = {max_iter}")
 
     torsion_corr_space = perturbation @ np.linalg.inv(riccati_root_array)
-    result = diag_sigma @ torsion_corr_space @ diag_sigma_inv
-    result = np.real_if_close(result, tol=1e-12)
-    return result.astype(float, copy=False)
+    return diag_sigma @ torsion_corr_space @ diag_sigma_inv
 
 
 def minimum_torsion(
