@@ -58,7 +58,7 @@ port_forecast = portfolio_forecast(forecasts, port.shares_mapping, pnl_type="rel
 port_forecast.plot()
 # %%
 
-loss_distribution = port_forecast.pnl * -1
+loss_distribution = port_forecast.incremental_pnl * -1
 
 plt.figure()
 sns.histplot(

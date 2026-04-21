@@ -18,20 +18,21 @@ class LossDistribution:
     @classmethod
     def from_portfolio_forecast(cls, portfolio_forecast: PortfolioForecast):
         return cls(
-            loss_values=_loss_value_from_pnl(portfolio_forecast.pnl),
+            loss_values=_loss_value_from_pnl(portfolio_forecast.cumulative_performance),
             probs=portfolio_forecast.path_probs,
             asset_weights=portfolio_forecast.asset_weights,
         )
 
 
 def _loss_value_from_pnl(
-    portfolio_pnl: NDArray[np.floating],
+    performance: NDArray[np.floating],
 ) -> NDArray[np.floating]:
-    return -portfolio_pnl
+    return -performance
 
 
-def VAR(
+def var(
     distribution: NDArray[np.floating],
+    # prob: ProbVector,
     method: Literal["empirical", "quantile"] = "quantile",
     alpha: float = 0.05,
     axis: int = 0,
@@ -60,16 +61,18 @@ def VAR(
     return quantile_val if distribution_type == "loss" else -quantile_val
 
 
-def CVAR(
+def cvar(
     distribution: NDArray[np.floating],
+    # prob: ProbVector,
     method: Literal["empirical", "quantile"] = "quantile",
     alpha: float = 0.05,
     axis: int = 0,
     *,
     distribution_type: Literal["pnl", "loss"] = "loss",
 ) -> NDArray[np.floating]:
-    var_cutoff = VAR(
+    var_cutoff = var(
         distribution=distribution,
+        # prob=prob,
         method=method,
         alpha=alpha,
         distribution_type=distribution_type,

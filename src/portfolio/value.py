@@ -24,7 +24,7 @@ class PortfolioInfoT0:
 @dataclass(frozen=True, slots=True)
 class PortfolioForecast:
     values: NDArray[np.floating]
-    pnl: NDArray[np.floating]
+    incremental_pnl: NDArray[np.floating]
     pnl_type: PnL_OPTIONS
     weight_mode: WEIGHT_MODE
     asset_weights: dict[str, NDArray[np.floating]]
@@ -35,21 +35,21 @@ class PortfolioForecast:
             raise ValueError(
                 f"values must be 2-D (n_sims, n_periods); got ndim={self.values.ndim}"
             )
-        if self.pnl.ndim != 2:
+        if self.incremental_pnl.ndim != 2:
             raise ValueError(
-                f"pnl must be 2-D (n_sims, n_periods or n_periods-1); got ndim={self.pnl.ndim}"
+                f"pnl must be 2-D (n_sims, n_periods or n_periods-1); got ndim={self.incremental_pnl.ndim}"
             )
 
         n_sims, n_periods = self.values.shape
 
-        if self.pnl.shape[0] != n_sims:
+        if self.incremental_pnl.shape[0] != n_sims:
             raise ValueError(
-                f"Mismatch in number of simulations: values has {n_sims} but pnl has {self.pnl.shape[0]}"
+                f"Mismatch in number of simulations: values has {n_sims} but pnl has {self.incremental_pnl.shape[0]}"
             )
 
-        if self.pnl.shape[1] not in (n_periods, n_periods - 1):
+        if self.incremental_pnl.shape[1] not in (n_periods, n_periods - 1):
             raise ValueError(
-                f"pnl must have either the same number of periods as values ({n_periods}) or one fewer; got {self.pnl.shape[1]}"
+                f"pnl must have either the same number of periods as values ({n_periods}) or one fewer; got {self.incremental_pnl.shape[1]}"
             )
 
         for name, arr in self.asset_weights.items():
@@ -63,7 +63,6 @@ class PortfolioForecast:
                     f"Weight array shape mismatch for asset '{name}': expected ({n_sims}, {n_periods}), got {w.shape}"
                 )
 
-        # If path_probs is sized, ensure length matches n_sims
         try:
             if len(self.path_probs) != n_sims:
                 raise ValueError(
@@ -73,13 +72,17 @@ class PortfolioForecast:
             # path_probs might be a callable or other unsized object; ignore in that case
             pass
 
-    def cumulative_pnl(
+    @property
+    def cumulative_performance(self) -> NDArray[np.floating]:
+        return cumulative_pnl_forecast(self.incremental_pnl, self.pnl_type)
+
+    def performance_at_horizon(
         self,
         end_horizon: int | None = None,
         at_horizon: int | None = None,
     ) -> NDArray[np.floating]:
         return cumulative_pnl_forecast(
-            self.pnl,
+            self.incremental_pnl,
             self.pnl_type,
             end_horizon=end_horizon,
             at_horizon=at_horizon,
@@ -95,7 +98,7 @@ class PortfolioForecast:
             raise ValueError(f"Unknown value_type: {value_type}")
 
         if not plot_cumulative:
-            data = self.values if value_type == "value" else self.pnl
+            data = self.values if value_type == "value" else self.incremental_pnl
             plot_simulation_results(
                 data,
                 title=f"Portfolio {value_type} ({self.weight_mode})",
@@ -108,7 +111,7 @@ class PortfolioForecast:
             cumulative_changes = self.values / initial - 1.0
         else:
             cumulative_changes = cumulative_pnl_forecast(
-                self.pnl, self.pnl_type, end_horizon=end_horizon
+                self.incremental_pnl, self.pnl_type, end_horizon=end_horizon
             )
 
         plot_simulation_results(
@@ -680,7 +683,7 @@ def portfolio_forecast(
 
     return PortfolioForecast(
         values=values,
-        pnl=pnl,
+        incremental_pnl=pnl,
         pnl_type=pnl_type,
         weight_mode=weight_mode,
         asset_weights=weights,

@@ -304,14 +304,20 @@ def plot_simulation_results(
         raise ValueError("y_paths must be a 2D array (n_paths, horizon).")
 
     n_paths, horizon = y.shape
-    x = np.arange(1, horizon + 1)
 
     if integrate:
-        y_plot = logP0 + np.cumsum(y, axis=1)
+        # cumulative log-price for steps 1..horizon, prepend logP0 at t=0
+        y_cum = logP0 + np.cumsum(y, axis=1)
+        y_plot = np.concatenate([np.full((n_paths, 1), logP0), y_cum], axis=1)
         y_label = "Cumulative log-price (logP0 + cumsum)"
     else:
-        y_plot = y
+        # If y contains values for steps 1..horizon, prepend NaN at t=0 so the
+        # t=0 column exists but isn't included in quantile calculations/drawn
+        y_plot = np.concatenate([np.full((n_paths, 1), np.nan), y], axis=1)
         y_label = "Simulated values"
+
+    # Use time steps starting at 0
+    x = np.arange(y_plot.shape[1])
 
     # Select a subset of paths to plot
     rng = np.random.default_rng(0)
@@ -322,9 +328,9 @@ def plot_simulation_results(
         else np.arange(n_paths)
     )
 
-    # Compute quantiles across paths for each time step
+    # Compute quantiles across paths for each time step (use nanquantile if NaNs present)
     qs = np.array(quantiles, dtype=float)
-    qvals = np.quantile(y_plot, qs, axis=0)  # shape (len(qs), horizon)
+    qvals = np.nanquantile(y_plot, qs, axis=0)  # shape (len(qs), horizon+1)
 
     # Identify median index (must exist)
     if not np.any(np.isclose(qs, 0.50)):

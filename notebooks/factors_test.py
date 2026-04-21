@@ -1,12 +1,12 @@
+import numpy as np
 import polars as pl
 
 from pipelines.forecasting import run_n_steps_forecast
 from portfolio.attribution.performance import portfolio_factor_attribution
 from portfolio.attribution.risk import (
     PortfolioRiskAttribution,
-    effective_bets,
 )
-from portfolio.risk import CVAR, LossDistribution
+from portfolio.risk import LossDistribution, cvar
 from portfolio.value import (
     build_equal_weight_portfolio_from_df,
     equal_weight_target_weights,
@@ -27,9 +27,8 @@ cols_to_keep = [
     if col == "date" or (data[col].null_count() == 0 and data[col].min() >= 1)
 ]
 data = data.select(cols_to_keep)
-assets = data.columns[20:30] + factors_cols
+assets = list(data.columns[15:20]) + list(factors_cols)
 data = data.select("date", *assets)
-
 # %%
 # ── Portfolio construction (unchanged) ───────────────────────────────
 tradable_assets = [a for a in assets if a not in factors_cols]
@@ -42,12 +41,12 @@ port = build_equal_weight_portfolio_from_df(d2, initial_value=10000)
 # %%
 # ── Forecasting (unchanged) ───────────────────────────────────────────
 horizon = 30
-prob_ex = state_smooth_probs(data.height, half_life=60, time_based=True)
+prob_ex = state_smooth_probs(data.height, half_life=120, time_based=True)
 forecasts = run_n_steps_forecast(
     data=data,
     prob=prob_ex,
     horizon=horizon,
-    n_sims=10000,
+    n_sims=30000,
     seed=2,
     assets=assets,
     factors=factors_cols,
@@ -70,11 +69,8 @@ port_forecast = portfolio_forecast(
     target_weights=target_weights,
 )
 
-port_forecast.plot(end_horizon=30)
-
-
+port_forecast.plot(end_horizon=30, plot_cumulative=True)
 # %%
-
 f_a = portfolio_factor_attribution(
     port_forecast,
     forecasts.factor_paths,
@@ -85,16 +81,10 @@ f_a = portfolio_factor_attribution(
 )
 # %%
 loss_dist = LossDistribution.from_portfolio_forecast(port_forecast)
-a = PortfolioRiskAttribution.from_performance_attribution(f_a)
-CVAR(distribution=loss_dist.loss_values)
-# %%
-port_forecast.path_probs
+risk_attribution = PortfolioRiskAttribution.from_performance_attribution(f_a)
+factor_exposures = risk_attribution.exposures
+factor_keys = [
+    k for k, v in factor_exposures.items() if isinstance(v, (float, np.floating))
+]
 
-factors = a.joint_distribution.drop("loss")
-
-# %%
-
-# %%
-terminal_loss = -port_forecast.cumulative_pnl(at_horizon=30)
-effective_bets = effective_bets(factors.to_numpy(), a.exposures, a.probs)
-effective_bets.plot()
+latest_cvar = cvar(distribution=loss_dist.loss_values)[-1]

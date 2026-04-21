@@ -1,7 +1,7 @@
 import polars as pl
 
 from pipelines.forecasting import run_n_steps_forecast
-from portfolio.risk import CVAR, VAR, LossDistribution
+from portfolio.risk import VAR, LossDistribution, cvar
 from portfolio.value import (
     build_equal_weight_portfolio_from_df,
     equal_weight_target_weights,
@@ -73,4 +73,4 @@ port_forecast.plot()
 # %%
 loss_dist = LossDistribution.from_portfolio_forecast(port_forecast)
 VAR(loss_dist.loss_values, alpha=0.01)
-CVAR(loss_dist.loss_values, alpha=0.01)
+cvar(loss_dist.loss_values, alpha=0.01)
