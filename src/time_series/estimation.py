@@ -146,15 +146,18 @@ def weighted_covariance(
 
 
 def weighted_variance(
-    data: NDArray[np.floating],
-    prob: ProbVector,
+    covariance: NDArray[np.floating] | None = None,
+    data: NDArray[np.floating] | None = None,
+    prob: ProbVector | None = None,
     center: bool = True,
-) -> NDArray[np.floating] | float:
-    cov = weighted_covariance(data, prob, center)
-    if np.ndim(cov) == 0:
-        return float(cov)
-    diag = np.diag(cov)
-    return float(diag[0]) if diag.size == 1 else diag
+) -> NDArray[np.floating]:
+    if covariance is None:
+        if data is None or prob is None:
+            raise ValueError(
+                "Either `covariance` or both `data` and `prob` must be provided"
+            )
+        covariance = weighted_covariance(data, prob, center)
+    return np.diag(covariance)
 
 
 def weighted_correlation(

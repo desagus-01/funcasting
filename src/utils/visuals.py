@@ -358,3 +358,87 @@ def plot_simulation_results(
     plt.legend()
     plt.tight_layout()
     plt.show()
+
+
+def plot_effective_bets(effective_bets_result) -> None:
+    factor_contributions = effective_bets_result.factor_contributions
+    enb = effective_bets_result.effective_bets
+
+    if not factor_contributions:
+        raise ValueError("factor_contributions is empty, nothing to plot.")
+
+    df = pl.DataFrame(
+        {
+            "bet": list(factor_contributions.keys()),
+            "contribution": list(factor_contributions.values()),
+        }
+    )
+
+    df = (
+        df.with_columns((pl.col("contribution") * 100).alias("pct"))
+        .sort("contribution", descending=True)
+        .with_columns(pl.col("pct").cum_sum().alias("cumulative_pct"))
+    )
+
+    bets = df["bet"].to_list()
+    pct_list = df["pct"].to_list()
+    cumulative_list = df["cumulative_pct"].to_list()
+
+    # 1) Contribution bar chart
+    plt.figure(figsize=(8, 4.8))
+    positions = range(len(bets))
+    plt.bar(positions, pct_list)
+    plt.ylabel("Risk contribution (%)")
+    plt.xlabel("Bet")
+    plt.title("Effective Bets: Contribution by Bet")
+    plt.xticks(list(positions), bets, rotation=0)
+
+    y_offset = max(pct_list) * 0.02 if pct_list else 0.0
+    for i, v in enumerate(pct_list):
+        plt.text(i, v + y_offset, f"{v:.1f}%", ha="center")
+
+    plt.ylim(0, max(pct_list) * 1.18 if pct_list else 1)
+    plt.tight_layout()
+    plt.show()
+    plt.close()
+
+    # 2) Concentration curve
+    plt.figure(figsize=(8, 4.8))
+    x_positions = list(range(1, len(bets) + 1))
+    plt.plot(x_positions, cumulative_list, marker="o")
+    plt.xticks(x_positions, bets, rotation=0)
+    plt.ylabel("Cumulative risk contribution (%)")
+    plt.xlabel("Ordered bets")
+    plt.title("Effective Bets: Concentration Curve")
+
+    for i, v in enumerate(cumulative_list, start=1):
+        plt.text(i, v + 2, f"{v:.1f}%", ha="center")
+
+    plt.ylim(0, max(110, max(cumulative_list) * 1.05 if cumulative_list else 1))
+    plt.tight_layout()
+    plt.show()
+    plt.close()
+
+    # 3) ENB vs maximum possible
+    max_bets = len(bets)
+    labels = ["Effective bets", "Maximum possible"]
+    values = [enb, max_bets]
+
+    plt.figure(figsize=(7, 4.8))
+    plt.bar(labels, values)
+    plt.ylabel("Number of bets")
+    plt.title("Effective Bets vs Maximum Possible")
+
+    y_offset = max(values) * 0.02 if values else 0.0
+    for i, v in enumerate(values):
+        plt.text(
+            i,
+            v + y_offset,
+            f"{v:.2f}" if i == 0 else f"{int(v)}",
+            ha="center",
+        )
+
+    plt.ylim(0, max(values) * 1.2 if values else 1)
+    plt.tight_layout()
+    plt.show()
+    plt.close()

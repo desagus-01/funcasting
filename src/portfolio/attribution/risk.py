@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, NamedTuple
 
 import numpy as np
 import polars as pl
@@ -9,7 +9,16 @@ from polars import DataFrame
 from portfolio.attribution.performance import PortfolioPerformanceAttribution
 from scenarios.types import ProbVector
 from time_series.dimensionality_reduction import minimum_torsion_matrix
-from time_series.estimation import weighted_variance
+from time_series.estimation import weighted_covariance
+from utils.visuals import plot_effective_bets
+
+
+class EffectiveBets(NamedTuple):
+    factor_contributions: dict[str, float]
+    effective_bets: float
+
+    def plot(self) -> None:
+        return plot_effective_bets(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,33 +59,52 @@ def _min_torso_factor_exposures(
     return inv_min_torso.T @ exposures
 
 
-def _min_torso_updated_joint(
-    min_torso_matrix: NDArray[np.floating], joint_distribution: NDArray[np.floating]
-) -> NDArray[np.floating]:
-    return joint_distribution @ min_torso_matrix.T
-
-
-def variance_share_contributions(
+def effective_bets(
     factor_joint_distribution: NDArray[np.floating],
-    loss_values: NDArray[np.floating],
     factor_exposures: dict[str, float],
     prob: ProbVector,
     method: Literal["approximate", "exact"] = "approximate",
     max_iter: int | None = None,
-):
+) -> EffectiveBets:
+    """Compute effective bets and factor risk contributions."""
     min_torso_matrix = minimum_torsion_matrix(
         factor_joint_distribution, prob, method, max_iter
     )
+
+    # Preserve the ordering of factors when extracting exposures
+    factor_keys = [
+        k for k, v in factor_exposures.items() if isinstance(v, (float, np.floating))
+    ]
+
+    # b in the R code
+    exposures = np.array([factor_exposures[k] for k in factor_keys], dtype=float)
+    covariance = weighted_covariance(data=factor_joint_distribution, prob=prob)
     min_torso_exposures = _min_torso_factor_exposures(
         min_torso_matrix, factor_exposures
     )
-    updated_joint = _min_torso_updated_joint(
-        min_torso_matrix, factor_joint_distribution
+
+    transformed_covariance_exposure = min_torso_matrix @ covariance @ exposures
+    portfolio_variance = float(exposures @ covariance @ exposures)
+
+    factor_risk_contribution = (
+        min_torso_exposures * transformed_covariance_exposure / portfolio_variance
     )
 
-    variance_joint = weighted_variance(data=updated_joint, prob=prob)
-    contribution = (min_torso_exposures**2) * variance_joint
+    enb = float(
+        np.exp(
+            -np.sum(
+                factor_risk_contribution
+                * np.log(
+                    1.0
+                    + (factor_risk_contribution - 1.0)
+                    * (factor_risk_contribution > 1e-5)
+                )
+            )
+        )
+    )
 
-    variance_loss = weighted_variance(data=loss_values, prob=prob)
+    factor_contributions = {
+        k: float(v) for k, v in zip(factor_keys, factor_risk_contribution)
+    }
 
-    return contribution / variance_loss
+    return EffectiveBets(factor_contributions=factor_contributions, effective_bets=enb)

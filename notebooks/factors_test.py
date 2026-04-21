@@ -4,7 +4,7 @@ from pipelines.forecasting import run_n_steps_forecast
 from portfolio.attribution.performance import portfolio_factor_attribution
 from portfolio.attribution.risk import (
     PortfolioRiskAttribution,
-    variance_share_contributions,
+    effective_bets,
 )
 from portfolio.risk import CVAR, LossDistribution
 from portfolio.value import (
@@ -96,8 +96,5 @@ factors = a.joint_distribution.drop("loss")
 
 # %%
 terminal_loss = -port_forecast.cumulative_pnl(at_horizon=30)
-var_conts = variance_share_contributions(
-    factors.to_numpy(), terminal_loss, a.exposures, a.probs
-)
-
-var_conts.sum()
+effective_bets = effective_bets(factors.to_numpy(), a.exposures, a.probs)
+effective_bets.plot()
