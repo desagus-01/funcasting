@@ -82,25 +82,33 @@ def _factors_n_horizon_performance(
 ) -> dict[str, NDArray]:
     if end_horizon <= 0:
         raise ValueError("end_horizon must be a positive integer")
+
     factors_t0 = _get_t0_factor_values(
         original_data=original_data,
         factors_names=factors_names,
         is_log_price=is_log_price,
     )
+
     factors_forecast_w_t0 = {}
-    for factor, forecast in factors_forecast.items():
-        idx = end_horizon - 1
+    idx = end_horizon - 1
+
+    for factor in factors_names:
+        forecast = factors_forecast[factor]
         t0_price = factors_t0[factor]
         factors_forecast_w_t0[factor] = (forecast[:, idx] / t0_price) - 1.0
+
     return factors_forecast_w_t0
 
 
 def _build_factor_ols_equation(
     factors_cum_forecast: dict[str, NDArray],
+    factor_names: list[str],
     portfolio_cum_forecast: NDArray[np.floating],
     eq_type: EquationTypes = "c",
 ) -> OLSEquation:
-    independent_vars = np.column_stack(list(factors_cum_forecast.values()))
+    independent_vars = np.column_stack(
+        [factors_cum_forecast[name] for name in factor_names]
+    )
     dependent_var = portfolio_cum_forecast.reshape(-1, 1)
     if eq_type != "nc":
         independent_vars = add_deterministics_to_eq(
@@ -136,6 +144,7 @@ def factor_ols_regression(
 
     ols_eq = _build_factor_ols_equation(
         factors_cum_forecast=factors_cum_forecast,
+        factor_names=factor_names,
         portfolio_cum_forecast=portfolio_cum_forecast,
         eq_type=eq_type,
     )
@@ -157,7 +166,7 @@ def factor_ols_regression(
             selected_factors=selected,
             selection_result=fwd_result,
         )
-    # ie runs a normal ols on ALL features
+
     ols_result = weighted_ols(
         dependent_var=ols_eq.dep_vars,
         independent_vars=ols_eq.ind_var,
@@ -173,21 +182,23 @@ def factor_ols_regression(
 
 def _extract_ols_components(
     ols_results: OLSResults,
-    n_factors: int,
-    eq_type: EquationTypes,
+    selected_factors: list[str],
 ) -> tuple[float, NDArray[np.floating]]:
-    """Split OLS coefficients into (shift_term, exposures)."""
-    n_deterministics = {"nc": 0, "c": 1, "ct": 2, "ctt": 3}[
-        eq_type
-    ]  # ie which column idx
+    if ols_results.feature_names_order is None:
+        raise ValueError("OLSResults.feature_names_order is required")
+
     coeffs = ols_results.res.flatten()
+    name_to_coeff = {
+        name: float(coeffs[i]) for i, name in enumerate(ols_results.feature_names_order)
+    }
 
-    if n_deterministics == 0:
-        shift_term = 0.0
-    else:
-        shift_term = float(coeffs[0])
+    shift_term = float(name_to_coeff.get("const", 0.0))
 
-    exposures = coeffs[n_deterministics : n_deterministics + n_factors]
+    exposures = np.array(
+        [name_to_coeff[factor] for factor in selected_factors],
+        dtype=float,
+    )
+
     return shift_term, exposures
 
 
@@ -230,16 +241,12 @@ def portfolio_factor_attribution(
 
     shift_term, exposures = _extract_ols_components(
         ols_results=ols,
-        n_factors=len(selected),
-        eq_type=eq_type,
+        selected_factors=selected,
     )
-
     return PortfolioPerformanceAttribution(
         horizon=horizon,
         portfolio_performance_forecast=portfolio_cum,
-        factor_performance_forecast={
-            k: v for k, v in factors_cum.items() if k in selected
-        },
+        factor_performance_forecast={k: factors_cum[k] for k in selected},
         exposures=exposures,
         shift_term=shift_term,
         residuals=ols.residuals.flatten(),

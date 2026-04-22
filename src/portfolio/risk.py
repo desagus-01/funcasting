@@ -32,7 +32,7 @@ def _loss_value_from_pnl(
 
 def var(
     distribution: NDArray[np.floating],
-    # prob: ProbVector,
+    prob: ProbVector | None,
     method: Literal["empirical", "quantile"] = "quantile",
     alpha: float = 0.05,
     axis: int = 0,
@@ -53,17 +53,44 @@ def var(
     axis = normalize_axis_index(axis, distribution.ndim)
     q = alpha if distribution_type == "pnl" else 1 - alpha
 
-    if method == "empirical":
-        quantile_val = np.quantile(distribution, q, axis=axis, method="inverted_cdf")
-    else:
+    if method == "empirical" and (prob is not None):
+        quantile_val = np.quantile(
+            distribution, q, axis=axis, method="inverted_cdf", weights=prob
+        )
+    elif (method == "quantile") and (prob is None):
         quantile_val = np.quantile(distribution, q, axis=axis)
+    else:
+        raise ValueError(
+            "Must choose either empirical or quantile methods with corresponding prob vector."
+        )
 
     return quantile_val if distribution_type == "loss" else -quantile_val
 
 
+def var_scenario_index(
+    distribution: NDArray[np.floating],
+    prob: ProbVector,
+    alpha: float = 0.05,
+    *,
+    distribution_type: Literal["pnl", "loss"] = "loss",
+) -> int:
+    alpha = alpha if distribution_type == "pnl" else 1.0 - alpha
+    order = np.argsort(distribution)
+    distribution_sorted = distribution[order]
+    prob_sorted = prob[order]
+    cum_prob = np.cumsum(prob_sorted)
+
+    idx_sorted = int(np.searchsorted(cum_prob, alpha, side="left"))
+
+    print(idx_sorted)
+    idx_sorted = min(idx_sorted, distribution_sorted.size - 1)
+    print(idx_sorted)
+    return int(order[idx_sorted])
+
+
 def cvar(
     distribution: NDArray[np.floating],
-    # prob: ProbVector,
+    prob: ProbVector,
     method: Literal["empirical", "quantile"] = "quantile",
     alpha: float = 0.05,
     axis: int = 0,
@@ -72,7 +99,7 @@ def cvar(
 ) -> NDArray[np.floating]:
     var_cutoff = var(
         distribution=distribution,
-        # prob=prob,
+        prob=prob,
         method=method,
         alpha=alpha,
         distribution_type=distribution_type,
