@@ -3,7 +3,7 @@ import polars as pl
 import seaborn as sns
 
 from pipelines.forecasting import run_n_steps_forecast
-from portfolio.value import build_equal_weight_portfolio_from_df, portfolio_forecast
+from portfolio import build_equal_weight_portfolio_from_df, portfolio_forecast
 from probability.distributions import state_smooth_probs, uniform_probs
 from utils.helpers import wide_to_long
 from utils.tiingo import plot_ticker_lines

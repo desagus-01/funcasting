@@ -5,7 +5,7 @@ import numpy as np
 from numpy._typing import NDArray
 from numpy.lib.array_utils import normalize_axis_index
 
-from portfolio.value import PortfolioForecast
+from portfolio.simulation import PortfolioForecast
 from scenarios.types import ProbVector
 
 

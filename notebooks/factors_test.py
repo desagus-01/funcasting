@@ -2,17 +2,17 @@ import numpy as np
 import polars as pl
 
 from pipelines.forecasting import run_n_steps_forecast
+from portfolio import (
+    build_equal_weight_portfolio_from_df,
+    equal_weight_target_weights,
+    portfolio_forecast,
+)
 from portfolio.attribution.performance import portfolio_factor_attribution
 from portfolio.attribution.risk import (
     PortfolioRiskAttribution,
     cvar_contribution,
 )
 from portfolio.risk import LossDistribution, cvar, var
-from portfolio.value import (
-    build_equal_weight_portfolio_from_df,
-    equal_weight_target_weights,
-    portfolio_forecast,
-)
 from probability.distributions import state_smooth_probs
 from utils.helpers import wide_to_long
 from utils.tiingo import import_tickers_and_factors

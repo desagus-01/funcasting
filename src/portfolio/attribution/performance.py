@@ -4,7 +4,7 @@ import numpy as np
 from numpy.typing import NDArray
 from polars import DataFrame
 
-from portfolio.value import PortfolioForecast
+from portfolio.simulation import PortfolioForecast
 from scenarios.types import ProbVector
 from time_series.estimation import (
     EquationTypes,
