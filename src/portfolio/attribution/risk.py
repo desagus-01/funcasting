@@ -13,6 +13,12 @@ from time_series.estimation import weighted_covariance
 from utils.visuals import plot_effective_bets
 
 
+class RiskContributions(NamedTuple):
+    risk_measure: str
+    value: float
+    contributions: dict[str, float]
+
+
 class EffectiveBets(NamedTuple):
     factor_contributions: dict[str, float]
     effective_bets: float
@@ -108,3 +114,35 @@ def effective_bets(
     }
 
     return EffectiveBets(factor_contributions=factor_contributions, effective_bets=enb)
+
+
+def var_contribution(
+    joint_distribution_factors: DataFrame,
+    factors_exposures: dict[str, float],
+    prob: ProbVector,
+    alpha: float = 0.05,
+) -> RiskContributions:
+    q = 1 - alpha
+
+    joint_risk = joint_distribution_factors.with_columns(prob=pl.Series(prob))
+
+    var_row = (
+        joint_risk.sort("loss")
+        .with_columns(pl.col("prob").cum_sum().alias("cum_prob"))
+        .filter(pl.col("cum_prob") >= q)
+        .head(1)
+    )
+    factor_cols = [
+        c for c in joint_risk.columns if c not in ("loss", "prob", "cum_prob")
+    ]
+
+    contributions = {
+        c: float(var_row.select(c).item()) * float(factors_exposures[c])
+        for c in factor_cols
+    }
+
+    return RiskContributions(
+        risk_measure="var",
+        value=float(var_row.select("loss").item()),
+        contributions=contributions,
+    )

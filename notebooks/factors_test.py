@@ -5,8 +5,9 @@ from pipelines.forecasting import run_n_steps_forecast
 from portfolio.attribution.performance import portfolio_factor_attribution
 from portfolio.attribution.risk import (
     PortfolioRiskAttribution,
+    var_contribution,
 )
-from portfolio.risk import LossDistribution, var, var_scenario_index
+from portfolio.risk import LossDistribution, var
 from portfolio.value import (
     build_equal_weight_portfolio_from_df,
     equal_weight_target_weights,
@@ -89,46 +90,11 @@ factor_keys = [
 var_vals = var(
     distribution=loss_dist.loss_values, prob=loss_dist.probs, method="empirical"
 )
-last_var = var_vals[-1]
-
-# %%
-joint_risk = risk_attribution.joint_distribution
-
-factors_at_var = (
-    joint_risk.filter(pl.col("loss") == last_var)
-    .sort("loss", descending=True)
-    .drop("loss")
-)
-exposures = risk_attribution.exposures
-factors_at_var.select(
-    [(pl.col(col) * exposures.get(col, 0)).alias(col) for col in factors_at_var.columns]
-)
-
-# %%
-idx = var_scenario_index(loss_dist.loss_values[:, 0], prob=loss_dist.probs)
 
 # %%
 
-alpha = 0.05  # or 0.01 for 99% VaR
-q = 1 - alpha
-
-joint_risk = risk_attribution.joint_distribution.with_columns(
-    prob=pl.Series(risk_attribution.probs)
+var_contribution(
+    risk_attribution.joint_distribution,
+    risk_attribution.exposures,
+    prob=risk_attribution.probs,
 )
-
-var_row = (
-    joint_risk.sort("loss")
-    .with_columns(pl.col("prob").cum_sum().alias("cum_prob"))
-    .filter(pl.col("cum_prob") >= q)
-    .head(1)
-)
-
-factor_cols = [c for c in joint_risk.columns if c not in ("loss", "prob", "cum_prob")]
-exposures = risk_attribution.exposures
-
-contribs = {
-    c: float(var_row.select(c).item()) * float(exposures[c]) for c in factor_cols
-}
-
-sum_contribs = sum(contribs.values())
-loss_at_var_row = float(var_row.select("loss").item())

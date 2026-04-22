@@ -67,27 +67,6 @@ def var(
     return quantile_val if distribution_type == "loss" else -quantile_val
 
 
-def var_scenario_index(
-    distribution: NDArray[np.floating],
-    prob: ProbVector,
-    alpha: float = 0.05,
-    *,
-    distribution_type: Literal["pnl", "loss"] = "loss",
-) -> int:
-    alpha = alpha if distribution_type == "pnl" else 1.0 - alpha
-    order = np.argsort(distribution)
-    distribution_sorted = distribution[order]
-    prob_sorted = prob[order]
-    cum_prob = np.cumsum(prob_sorted)
-
-    idx_sorted = int(np.searchsorted(cum_prob, alpha, side="left"))
-
-    print(idx_sorted)
-    idx_sorted = min(idx_sorted, distribution_sorted.size - 1)
-    print(idx_sorted)
-    return int(order[idx_sorted])
-
-
 def cvar(
     distribution: NDArray[np.floating],
     prob: ProbVector,
