@@ -5,9 +5,9 @@ from pipelines.forecasting import run_n_steps_forecast
 from portfolio.attribution.performance import portfolio_factor_attribution
 from portfolio.attribution.risk import (
     PortfolioRiskAttribution,
-    var_contribution,
+    cvar_contribution,
 )
-from portfolio.risk import LossDistribution, var
+from portfolio.risk import LossDistribution, cvar, var
 from portfolio.value import (
     build_equal_weight_portfolio_from_df,
     equal_weight_target_weights,
@@ -93,8 +93,10 @@ var_vals = var(
 
 # %%
 
-var_contribution(
+cvar_contribution(
     risk_attribution.joint_distribution,
     risk_attribution.exposures,
     prob=risk_attribution.probs,
 )
+# %%
+cvar(distribution=loss_dist.loss_values, prob=loss_dist.probs, method="empirical")

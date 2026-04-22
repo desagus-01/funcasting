@@ -116,22 +116,67 @@ def effective_bets(
     return EffectiveBets(factor_contributions=factor_contributions, effective_bets=enb)
 
 
+def get_var_data(
+    joint_distribution_factors_prob: DataFrame,
+    alpha: float,
+) -> DataFrame:
+    quantile = 1 - alpha
+    return (
+        joint_distribution_factors_prob.sort("loss")
+        .with_columns(pl.col("prob").cum_sum().alias("cum_prob"))
+        .filter(pl.col("cum_prob") >= quantile)
+    )
+
+
+def cvar_contribution(
+    joint_distribution_factors: DataFrame,
+    factors_exposures: dict[str, float],
+    prob: ProbVector,
+    alpha: float = 0.05,
+) -> RiskContributions:
+    joint_risk = joint_distribution_factors.with_columns(prob=pl.Series(prob))
+    cvar_tail = get_var_data(joint_risk, alpha)
+
+    factor_cols = [
+        c for c in joint_risk.columns if c not in ("loss", "prob", "cum_prob")
+    ]
+
+    weighted_means = {
+        c: float(
+            cvar_tail.select(
+                (pl.col(c) * pl.col("prob")).sum() / pl.col("prob").sum()
+            ).item()
+        )
+        for c in factor_cols
+    }
+
+    loss_cvar = float(
+        cvar_tail.select(
+            (pl.col("loss") * pl.col("prob")).sum() / pl.col("prob").sum()
+        ).item()
+    )
+
+    contributions = {
+        c: weighted_means[c] * float(factors_exposures[c]) for c in factor_cols
+    }
+
+    return RiskContributions(
+        risk_measure="cvar",
+        value=loss_cvar,
+        contributions=contributions,
+    )
+
+
 def var_contribution(
     joint_distribution_factors: DataFrame,
     factors_exposures: dict[str, float],
     prob: ProbVector,
     alpha: float = 0.05,
 ) -> RiskContributions:
-    q = 1 - alpha
-
     joint_risk = joint_distribution_factors.with_columns(prob=pl.Series(prob))
+    var_row = get_var_data(joint_risk, alpha).head(1)
+    print(var_row)
 
-    var_row = (
-        joint_risk.sort("loss")
-        .with_columns(pl.col("prob").cum_sum().alias("cum_prob"))
-        .filter(pl.col("cum_prob") >= q)
-        .head(1)
-    )
     factor_cols = [
         c for c in joint_risk.columns if c not in ("loss", "prob", "cum_prob")
     ]
