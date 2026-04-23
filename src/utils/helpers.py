@@ -216,18 +216,6 @@ def compensate_prob(prob: ProbVector, n_remove: int) -> ProbVector:
     return prob[n_remove:] + diff_fac
 
 
-def drop_nulls_and_compensate_prob(
-    data: pl.DataFrame, prob_vector: ProbVector
-) -> tuple[pl.DataFrame, ProbVector]:
-    nulls = data.null_count().sum_horizontal().item()
-    if nulls > 0:
-        no_nulls = data.drop_nulls()
-        rows_dropped = data.height - no_nulls.height
-        prob_vector = compensate_prob(prob_vector, rows_dropped)
-        return no_nulls, prob_vector
-    return data, prob_vector
-
-
 def timeit(func):
     @wraps(func)
     def wrapper(*args, **kwargs):

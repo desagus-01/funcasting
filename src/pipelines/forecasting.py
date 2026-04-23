@@ -17,6 +17,7 @@ from pipelines.preprocess import (
     run_univariate_preprocess,
 )
 from scenarios.copula_marginal import CopulaMarginalModel
+from scenarios.panel import AssetPanel
 from scenarios.resampling import weighted_bootstrapping_idx
 from scenarios.types import ProbVector
 from simulation.simulate_paths import (
@@ -25,7 +26,6 @@ from simulation.simulate_paths import (
 from simulation.state import SimulationForecast
 from time_series.models.fitted_types import UnivariateRes
 from time_series.transforms.inverses import apply_inverse_transforms
-from utils.helpers import drop_nulls_and_compensate_prob
 
 logger = logging.getLogger(__name__)
 
@@ -227,11 +227,11 @@ def draw_innovations(
     )
 
     invariants_df = invariants_df.select(assets)
-    invariants, prob = drop_nulls_and_compensate_prob(invariants_df, prob_vector)
+    panel = AssetPanel.from_frame(invariants_df, prob_vector).drop_nulls()
 
     logger.info(
         "Prepared invariant scenarios after null handling: n_scenarios=%d",
-        invariants.height,
+        panel.n_rows,
     )
 
     if (target_copula is not None or target_marginals is not None) and method != "cma":
@@ -252,21 +252,19 @@ def draw_innovations(
             target_marginals,
         )
 
-        invariants_cma = CopulaMarginalModel.from_data_and_prob(
-            data=invariants,
-            prob=prob,
-        )
-
-        invariants, prob = invariants_cma.update_distribution(
+        cma_model = CopulaMarginalModel.from_panel(panel)
+        invariants_cma, cma_prob = cma_model.update_distribution(
             seed=seed,
             target_marginals=target_marginals,
             target_copula=target_copula,
             copula_fit_method=copula_fit_method,
         )
+        panel = AssetPanel(values=invariants_cma, dates=panel.dates, prob=cma_prob)
 
-        logger.info("CMA update complete: n_scenarios=%d", invariants.height)
+        logger.info("CMA update complete: n_scenarios=%d", panel.n_rows)
 
-    invariants_vector = invariants.to_numpy()
+    invariants_vector = panel.values.to_numpy()
+    prob = panel.prob
 
     if method == "historical":
         logger.info("Returning historical innovations without resampling")
@@ -277,7 +275,7 @@ def draw_innovations(
     logger.info("Bootstrapping %d innovation draws", n_draws)
 
     idx = weighted_bootstrapping_idx(
-        invariants,
+        panel.values,
         prob,
         n_samples=n_draws,
         seed=seed,

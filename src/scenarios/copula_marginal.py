@@ -7,8 +7,8 @@ import polars as pl
 from numpy import interp
 from polars import DataFrame
 
-from probability.distributions import uniform_probs
 from probability.sampling import marginal_quantile_mapping, sample_copula
+from scenarios.panel import AssetPanel
 from scenarios.types import ProbVector
 from utils.helpers import compute_cdf_and_pobs
 
@@ -20,123 +20,51 @@ class CopulaMarginalModel:
     cdfs: DataFrame
     copula: DataFrame
     prob: ProbVector
-    dates: DataFrame | None
+    dates: pl.Series | None
+
+    @classmethod
+    def from_panel(cls, panel: AssetPanel) -> CopulaMarginalModel:
+        """Construct a CopulaMarginalModel from an :class:`AssetPanel`.
+
+        The panel must already have its date column separated (handled by
+        ``AssetPanel.from_frame``) and nulls dropped before calling this.
+        """
+        cdf_cols: dict[str, pl.Series] = {}
+        copula_cols: dict[str, pl.Series] = {}
+        sorted_marginals: dict[str, pl.Series] = {}
+
+        for col in panel.values.iter_columns():
+            asset = col.name
+            temp = compute_cdf_and_pobs(panel.values, asset, panel.prob)
+
+            cdf_cols[asset] = temp["cdf"]
+            copula_cols[asset] = temp["pobs"]
+            sorted_marginals[asset] = temp[asset]
+
+        return cls(
+            marginals=DataFrame(sorted_marginals),
+            cdfs=DataFrame(cdf_cols),
+            copula=DataFrame(copula_cols),
+            prob=panel.prob,
+            dates=panel.dates,
+        )
 
     @classmethod
     def from_data_and_prob(
-        cls, data: DataFrame, prob: ProbVector | None
+        cls, data: DataFrame, prob: ProbVector | None = None
     ) -> CopulaMarginalModel:
+        """Construct from a raw DataFrame and optional prior.
+
+        Delegates to :meth:`from_panel` after normalising via
+        :class:`AssetPanel`.
         """
-        Construct a CopulaMarginalModel from raw data and a prior probability vector.
+        return cls.from_panel(AssetPanel.from_frame(data, prob))
 
-        This factory computes per-asset empirical cumulative distribution
-        functions (CDFs) and probability integral transforms (pseudo-observations)
-        required to build a copula/marginal representation of the joint
-        distribution. If ``prob`` is ``None``, a uniform prior is used.
+    def to_panel(self) -> AssetPanel:
+        """Convert back to an :class:`AssetPanel` by interpolating marginals.
 
-        Parameters
-        ----------
-        data : DataFrame
-            Polars DataFrame with one column per asset. May include a 'date'
-            column which will be separated and stored in the resulting model.
-        prob : ProbVector | None
-            Probability weights for the rows of ``data``. If omitted, rows
-            are treated as equally likely.
-
-        Returns
-        -------
-        CopulaMarginalModel
-            Instance containing sorted marginals, their CDFs, pseudo-observations
-            (copula matrix) and the probability vector.
-        """
-        if prob is None:
-            prob = uniform_probs(data.height)
-
-        if "date" in data:
-            dates = data.select("date")
-            data = data.drop("date")
-        else:
-            dates = None
-
-        cdf_cols = {}
-        copula_cols = {}
-        sorted_marginals = {}
-
-        for col in data.iter_columns():
-            asset = col.name
-            temp = compute_cdf_and_pobs(data, asset, prob)
-
-            cdf_cols[asset] = temp["cdf"]
-            copula_cols[asset] = temp["pobs"]
-            sorted_marginals[asset] = temp[asset]
-
-        return CopulaMarginalModel(
-            marginals=DataFrame(sorted_marginals),
-            cdfs=DataFrame(cdf_cols),
-            copula=DataFrame(copula_cols),
-            prob=prob,
-            dates=dates,
-        )
-
-    @classmethod
-    def from_scenario_dist(
-        cls, scenarios: DataFrame, prob: ProbVector, dates: DataFrame | None
-    ) -> CopulaMarginalModel:
-        """
-        Build a CopulaMarginalModel from an existing scenario distribution.
-
-        This method assumes ``scenarios`` contains per-asset scenario values
-        (rows are scenarios) and uses the provided probability vector to
-        compute empirical CDFs and pseudo-observations.
-
-        Parameters
-        ----------
-        scenarios : DataFrame
-            DataFrame with one column per asset representing scenario values.
-        prob : ProbVector
-            Probability weights associated with the rows of ``scenarios``.
-        dates : DataFrame | None
-            Optional dates column corresponding to scenarios.
-
-        Returns
-        -------
-        CopulaMarginalModel
-            Copula/marginal model constructed from the scenario distribution.
-        """
-        cdf_cols = {}
-        copula_cols = {}
-        sorted_marginals = {}
-
-        for col in scenarios.iter_columns():
-            asset = col.name
-            temp = compute_cdf_and_pobs(scenarios, asset, prob)
-
-            cdf_cols[asset] = temp["cdf"]
-            copula_cols[asset] = temp["pobs"]
-            sorted_marginals[asset] = temp[asset]
-
-        return CopulaMarginalModel(
-            marginals=DataFrame(sorted_marginals),
-            cdfs=DataFrame(cdf_cols),
-            copula=DataFrame(copula_cols),
-            prob=prob,
-            dates=dates,
-        )
-
-    def to_scenario_dist(self) -> tuple[DataFrame, ProbVector]:
-        """
-        Convert the copula/marginal representation back to a scenario distribution.
-
-        The conversion interpolates each marginal by mapping copula pseudo-
-        observations through the empirical marginal CDFs to recover scenario
-        values corresponding to the current copula.
-
-        Returns
-        -------
-        tuple[DataFrame, ProbVector]
-            A tuple ``(scenarios, prob)`` where ``scenarios`` is a DataFrame of
-            reconstructed per-asset scenario values (rows correspond to
-            copula rows) and ``prob`` is the associated probability vector.
+        Each marginal is reconstructed by mapping copula pseudo-observations
+        through the empirical CDF.
         """
         interp_res = {}
         for asset in self.marginals.columns:
@@ -145,8 +73,16 @@ class CopulaMarginalModel:
                 xp=self.cdfs.select(asset).to_numpy().ravel(),
                 fp=self.marginals.select(asset).to_numpy().ravel(),
             )
+        return AssetPanel(
+            values=DataFrame(interp_res),
+            dates=self.dates,
+            prob=self.prob,
+        )
 
-        return DataFrame(interp_res), self.prob
+    def to_scenario_dist(self) -> tuple[DataFrame, ProbVector]:
+        """Backward-compatible wrapper around :meth:`to_panel`."""
+        panel = self.to_panel()
+        return panel.values, panel.prob
 
     def update_marginals(self, target_dists: dict[str, Literal["t", "norm"]]) -> Self:
         """

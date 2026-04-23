@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 import polars as pl
 from polars import DataFrame
 
-from probability.distributions import uniform_probs
+from scenarios.panel import AssetPanel
 from scenarios.types import ProbVector, View
 
 
@@ -14,40 +14,35 @@ class ScenarioDistribution:
     """
     Core representation of a discrete scenario distribution.
 
-    All complex processes (EP, CMA) take a ScenarioDistribution in
-    and return a new ScenarioDistribution out.
+    Internally backed by an :class:`AssetPanel` so all date-stripping and
+    prob-length validation is handled in one place.  The public attributes
+    ``scenarios``, ``prob`` and ``dates`` are kept for backward compatibility.
     """
 
-    scenarios: DataFrame
-    prob: ProbVector
-    dates: DataFrame | None = None
+    panel: AssetPanel
 
-    def __post_init__(self):
-        # Extract date column if present
-        if "date" in self.scenarios.columns:
-            date_df = self.scenarios.select(pl.col("date"))
-            scenarios_exdate = self.scenarios.drop("date")
-            object.__setattr__(self, "scenarios", scenarios_exdate)
-            object.__setattr__(self, "dates", date_df)
+    @property
+    def scenarios(self) -> DataFrame:
+        """Asset-value matrix (no 'date' column)."""
+        return self.panel.values
 
-        # Always check prob length
-        if self.scenarios.height != self.prob.shape[0]:
-            raise ValueError("prob vector length does not match number of scenarios")
+    @property
+    def prob(self) -> ProbVector:
+        return self.panel.prob
 
-        # Only check dates if they exist
-        if self.dates is not None and self.scenarios.height != self.dates.height:
-            raise ValueError("dates do not have the same number of rows as scenarios")
+    @property
+    def dates(self) -> DataFrame | None:
+        """Single-column 'date' DataFrame for callers that expect it."""
+        if self.panel.dates is None:
+            return None
+        return pl.DataFrame({"date": self.panel.dates})
 
     @classmethod
     def default_instance(
         cls, scenarios: DataFrame, prob: ProbVector | None = None
     ) -> ScenarioDistribution:
-        """
-        Defaults prob vector to uniform if None
-        """
-        if prob is None:
-            prob = uniform_probs(scenarios.height)
-        return cls(scenarios=scenarios, prob=prob)
+        """Build from a raw DataFrame; uniform prior when *prob* is None."""
+        return cls(panel=AssetPanel.from_frame(scenarios, prob))
 
 
 @dataclass
