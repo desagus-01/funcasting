@@ -28,10 +28,6 @@ from utils.helpers import (
     get_assets_names,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 

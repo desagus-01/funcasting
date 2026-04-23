@@ -10,10 +10,6 @@ from numpy._typing import NDArray
 from policy import VolatilityModelConfig
 from time_series.models.fitted_types import GARCH_DISTRIBUTIONS, AutoGARCHRes
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 

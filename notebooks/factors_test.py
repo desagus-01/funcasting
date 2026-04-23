@@ -1,7 +1,10 @@
+import logging
+
 import numpy as np
 import polars as pl
 
 from pipelines.forecasting import run_n_steps_forecast
+from policy import LogConfig
 from portfolio import (
     build_equal_weight_portfolio_from_df,
     equal_weight_target_weights,
@@ -15,7 +18,10 @@ from portfolio.attribution.risk import (
 from portfolio.risk import LossDistribution, cvar, var
 from probability.distributions import state_smooth_probs
 from utils.helpers import wide_to_long
+from utils.log import setup_logging
 from utils.tiingo import import_tickers_and_factors
+
+setup_logging(LogConfig(level=logging.WARNING))
 
 # %%
 # ── Data loading (unchanged) ─────────────────────────────────────────

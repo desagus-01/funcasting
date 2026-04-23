@@ -27,10 +27,6 @@ from time_series.models.fitted_types import UnivariateRes
 from time_series.transforms.inverses import apply_inverse_transforms
 from utils.helpers import drop_nulls_and_compensate_prob
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 

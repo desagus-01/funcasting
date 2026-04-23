@@ -399,8 +399,6 @@ def get_univariate_results(
             combined_audit.notes.extend(vol_audits[asset].notes)
 
         quality = score_audit(combined_audit, cfg.quality)
-        print(f"{asset} model is {quality}")
-
         asset_model[asset] = UnivariateRes(
             mean_res=mean_modelling.get(asset),
             volatility_res=volatility_modelling.get(asset),

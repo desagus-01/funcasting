@@ -9,10 +9,6 @@ from time_series.preprocessing.types import (
 from time_series.selection.trend import AssetTrendDiagnostic
 from time_series.tests.seasonality import SEASONAL_MAP, SeasonalityPeriodTest
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 

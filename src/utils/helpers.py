@@ -1,3 +1,4 @@
+import logging
 import time
 from functools import wraps
 from typing import NamedTuple
@@ -10,6 +11,8 @@ from pydantic import validate_call
 
 from globals import model_cfg, sign_operations
 from scenarios.types import CorrInfo, ProbVector, View
+
+logger = logging.getLogger(__name__)
 
 
 class SplitDF(NamedTuple):
@@ -231,7 +234,7 @@ def timeit(func):
         start = time.perf_counter()
         result = func(*args, **kwargs)
         elapsed = time.perf_counter() - start
-        print(f"{func.__name__} took {elapsed:.4f}s")
+        logger.info("%s took %.4fs", func.__name__, elapsed)
         return result
 
     return wrapper

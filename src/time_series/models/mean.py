@@ -12,10 +12,6 @@ from typing_extensions import Literal
 from policy import MeanModelConfig
 from time_series.models.fitted_types import AutoARMARes
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 

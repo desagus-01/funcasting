@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from typing import Literal, NamedTuple
 
@@ -11,6 +12,8 @@ from scenarios.types import ProbVector
 from time_series.dimensionality_reduction import minimum_torsion_matrix
 from time_series.estimation import weighted_covariance
 from utils.visuals import plot_effective_bets
+
+logger = logging.getLogger(__name__)
 
 
 class RiskContributions(NamedTuple):
@@ -175,7 +178,7 @@ def var_contribution(
 ) -> RiskContributions:
     joint_risk = joint_distribution_factors.with_columns(prob=pl.Series(prob))
     var_row = get_var_data(joint_risk, alpha).head(1)
-    print(var_row)
+    logger.debug("VaR row: %s", var_row)
 
     factor_cols = [
         c for c in joint_risk.columns if c not in ("loss", "prob", "cum_prob")

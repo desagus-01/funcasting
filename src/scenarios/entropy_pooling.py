@@ -1,3 +1,5 @@
+import logging
+
 import cvxpy as cp
 import numpy as np
 from cvxpy.constraints.constraint import Constraint as CvxConstraint
@@ -7,6 +9,8 @@ from pydantic import validate_call
 from globals import model_cfg
 from scenarios.types import ProbVector, View
 from utils.helpers import select_operator, weighted_moments
+
+logger = logging.getLogger(__name__)
 
 
 def ens(prob_vector: ProbVector) -> int:
@@ -299,7 +303,10 @@ def entropy_pooling(
     elif posterior_res.min() < 0:
         posterior_res = clip_normalise_probs(posterior_res)
     if include_diags:
-        print(get_constraints_diags(views, constraints, posterior_res))
+        logger.debug(
+            "EP constraint diagnostics: %s",
+            get_constraints_diags(views, constraints, posterior_res),
+        )
 
     return posterior_res
 
