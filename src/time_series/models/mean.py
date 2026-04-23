@@ -9,6 +9,7 @@ from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.stattools import arma_order_select_ic
 from typing_extensions import Literal
 
+from policy import MeanModelConfig
 from time_series.models.fitted_types import AutoARMARes
 
 logging.basicConfig(
@@ -73,14 +74,10 @@ def _arma_top_candidates(
 
 def _arma_filter(
     params: dict[str, float],
-    stationarity_buffer: float = 1e-3,
-    invertibility_buffer: float = 1e-3,
+    cfg: MeanModelConfig,
 ) -> bool:
     """
     Filter ARMA candidates using root-based stationarity / invertibility checks.
-
-    This is more reliable than crude coefficient-sum heuristics, especially
-    for higher-order ARMA models.
     """
     ar_vals = [float(v) for k, v in sorted(params.items()) if k.startswith("ar.L")]
     ma_vals = [float(v) for k, v in sorted(params.items()) if k.startswith("ma.L")]
@@ -89,13 +86,13 @@ def _arma_filter(
         if ar_vals:
             ar_poly = np.r_[1.0, -np.asarray(ar_vals, dtype=float)]
             ar_roots = np.roots(ar_poly)
-            if np.any(np.abs(ar_roots) <= 1.0 + stationarity_buffer):
+            if np.any(np.abs(ar_roots) <= 1.0 + cfg.arma_stationarity_buffer):
                 return False
 
         if ma_vals:
             ma_poly = np.r_[1.0, np.asarray(ma_vals, dtype=float)]
             ma_roots = np.roots(ma_poly)
-            if np.any(np.abs(ma_roots) <= 1.0 + invertibility_buffer):
+            if np.any(np.abs(ma_roots) <= 1.0 + cfg.arma_invertibility_buffer):
                 return False
     except (ValueError, np.linalg.LinAlgError):
         return False
@@ -105,23 +102,41 @@ def _arma_filter(
 
 def auto_arma(
     asset_array: NDArray[np.floating],
-    max_ar_order: int,
-    max_ma_order: int,
-    top_n_models: int,
-    information_criteria: Literal["bic", "aic"],
+    cfg: MeanModelConfig | None = None,
+    max_ar_order: int | None = None,
+    max_ma_order: int | None = None,
+    top_n_models: int | None = None,
+    information_criteria: Literal["bic", "aic"] | None = None,
 ) -> list[AutoARMARes]:
-    """
-    Fit ARMA models for the top candidate orders and collect their results.
+    """Fit ARMA models for the top candidate orders and collect their results."""
+    if cfg is None:
+        cfg = MeanModelConfig()
+    # Allow legacy callers to override individual fields via keyword args
+    if any(
+        v is not None
+        for v in [max_ar_order, max_ma_order, top_n_models, information_criteria]
+    ):
+        cfg = MeanModelConfig(
+            max_ar_order=max_ar_order if max_ar_order is not None else cfg.max_ar_order,
+            max_ma_order=max_ma_order if max_ma_order is not None else cfg.max_ma_order,
+            search_n_models=top_n_models
+            if top_n_models is not None
+            else cfg.search_n_models,
+            information_criteria=information_criteria
+            if information_criteria is not None
+            else cfg.information_criteria,
+            arma_stationarity_buffer=cfg.arma_stationarity_buffer,
+            arma_invertibility_buffer=cfg.arma_invertibility_buffer,
+            ljung_box_lags=cfg.ljung_box_lags,
+            min_ljung_box_rejections=cfg.min_ljung_box_rejections,
+        )
 
-    Candidate model orders are selected using an information criterion,
-    then re-fitted using a more accurate estimation method.
-    """
     candidates_for_arma = _arma_top_candidates(
         asset_array,
-        max_ar_order,
-        max_ma_order,
-        information_criteria,
-        top_n_models,
+        cfg.max_ar_order,
+        cfg.max_ma_order,
+        cfg.information_criteria,
+        cfg.search_n_models,
     )
 
     arma_res = []
@@ -136,7 +151,7 @@ def auto_arma(
                     order=(ar_order, 0, ma_order),
                     seasonal_order=[0, 0, 0, 0],
                     trend="n",
-                )  # no integration order needed as we have done that in pre-processing
+                )
                 res = model.fit(method="statespace")
         except ConvergenceWarning:
             logger.info(
@@ -156,13 +171,12 @@ def auto_arma(
 
         params = _build_arma_parameters(model.param_names, res.arparams, res.maparams)  # type: ignore[attr-defined]
 
-        if not _arma_filter(params):
+        if not _arma_filter(params, cfg):
             logger.info(
                 "Model (%s, %s) failed ARMA admissibility checks; will drop it",
                 ar_order,
                 ma_order,
             )
-
             continue
 
         arma_res.append(
@@ -170,8 +184,8 @@ def auto_arma(
                 model_order=(ar_order, ma_order),
                 params=params,
                 degrees_of_freedom=ar_order + ma_order,
-                criteria=information_criteria,
-                criteria_res=float(getattr(res, information_criteria)),
+                criteria=cfg.information_criteria,
+                criteria_res=float(getattr(res, cfg.information_criteria)),
                 p_values=res.pvalues,  # type: ignore[attr-defined]
                 residuals=res.resid,  # type: ignore[attr-defined]
                 residual_scale=float(np.std(res.resid, ddof=1)),  # type: ignore[attr-defined]

@@ -7,6 +7,7 @@ from arch import arch_model
 from arch.univariate.base import ARCHModelResult
 from numpy._typing import NDArray
 
+from policy import VolatilityModelConfig
 from time_series.models.fitted_types import GARCH_DISTRIBUTIONS, AutoGARCHRes
 
 logging.basicConfig(
@@ -44,8 +45,7 @@ def _garch_persistence_calc(params: dict[str, float]) -> float:
 
 def _garch_boundaries_check(
     params: dict[str, float],
-    tolerance_zero: float = 1e-10,
-    tolerance_dups: float = 1e-6,
+    cfg: VolatilityModelConfig,
 ) -> bool:
     vals = {k: float(v) for k, v in params.items()}
 
@@ -53,17 +53,14 @@ def _garch_boundaries_check(
         m = re.search(r"\[(\d+)\]$", name)
         return int(m.group(1)) if m else 1
 
-    # zero higher-order lags suggest weak identification, but do not reject
-    # first-order terms merely because they are near zero.
     for k, v in vals.items():
         if (
             (k.startswith("alpha") or k.startswith("beta") or k.startswith("gamma"))
             and (_lag_num(k) > 1)
-            and abs(v) < tolerance_zero
+            and abs(v) < cfg.tolerance_zero
         ):
             return True
 
-    # duplicated higher-order betas suggest weak identification
     beta_items = sorted(
         [(k, v) for k, v in vals.items() if k.startswith("beta")],
         key=lambda kv: _lag_num(kv[0]),
@@ -72,20 +69,20 @@ def _garch_boundaries_check(
         betas = [v for _, v in beta_items]
         for i in range(len(betas)):
             for j in range(i + 1, len(betas)):
-                if abs(betas[i] - betas[j]) < tolerance_dups:
+                if abs(betas[i] - betas[j]) < cfg.tolerance_dups:
                     return True
 
     return False
 
 
 def _admissable_garch_model(
-    params: dict[str, float], max_persistence: float = 0.995
+    params: dict[str, float], cfg: VolatilityModelConfig
 ) -> bool:
     persistence = _garch_persistence_calc(params)
 
-    if persistence >= max_persistence:
+    if persistence >= cfg.max_persistence:
         return False
-    if _garch_boundaries_check(params):
+    if _garch_boundaries_check(params, cfg):
         return False
 
     omega = params.get("omega", 0.0)
@@ -97,24 +94,24 @@ def _admissable_garch_model(
 
 def auto_garch(
     asset_array: NDArray[np.floating],
-    max_p_order: int = 2,
-    max_o_order: int = 1,
-    max_q_order: int = 2,
+    cfg: VolatilityModelConfig | None = None,
 ) -> list[AutoGARCHRes]:
+    if cfg is None:
+        cfg = VolatilityModelConfig()
+
     base_model = _garch_base_model(asset_array=asset_array)
     if base_model.convergence_flag != 0:
         raise ValueError(
             f"Baseline GARCH(1,0,1) failed to converge with flag={base_model.convergence_flag}"
         )
 
-    dists: tuple[GARCH_DISTRIBUTIONS, GARCH_DISTRIBUTIONS] = ("t", "normal")
     garch_candidates: list[AutoGARCHRes] = []
 
     for p, q, o, distribution in product(
-        range(1, max_p_order + 1),
-        range(1, max_q_order + 1),
-        range(0, max_o_order + 1),
-        dists,
+        range(1, cfg.max_p_order + 1),
+        range(1, cfg.max_q_order + 1),
+        range(0, cfg.max_o_order + 1),
+        cfg.candidate_distributions,
     ):
         key = (p, o, q)
         if (key == (1, 0, 1)) and (distribution == "t"):
@@ -134,7 +131,7 @@ def auto_garch(
             continue
 
         params = proposed_model.params.to_dict()  # type: ignore[attr-defined]
-        if not _admissable_garch_model(params):
+        if not _admissable_garch_model(params, cfg):
             logger.info(
                 "GARCH%s dist=%s failed admissibility checks; dropping candidate",
                 key,
@@ -169,7 +166,7 @@ def auto_garch(
         conditional_volatility=base_model.conditional_volatility,  # type: ignore[attr-defined]
     )
 
-    if _admissable_garch_model(base_params):
+    if _admissable_garch_model(base_params, cfg):
         garch_candidates.append(base_res)
     else:
         logger.warning(

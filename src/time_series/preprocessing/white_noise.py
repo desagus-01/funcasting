@@ -3,9 +3,9 @@ import logging
 import polars as pl
 from polars.dataframe.frame import DataFrame
 
-from globals import LAGS
-from scenarios.types import ProbVector
+from policy import IIDConfig
 from scenarios.copula_marginal import CopulaMarginalModel
+from scenarios.types import ProbVector
 from time_series.tests.iid import (
     TestResultByAsset,
     copula_lag_independence_test,
@@ -27,7 +27,7 @@ def _run_iid_simple(
     data: DataFrame,
     prob: ProbVector,
     assets: list[str],
-    lags: int = LAGS["simple"],
+    lags: int,
 ) -> dict[str, TestResultByAsset]:
     """Run the cheaper IID screens."""
     ellipsoid_test = ellipsoid_lag_test(
@@ -50,7 +50,7 @@ def _run_iid_complex(
     data: DataFrame,
     prob: ProbVector,
     assets: list[str],
-    lags: int = LAGS["complex"],
+    lags: int,
 ) -> dict[str, TestResultByAsset]:
     """Run the expensive copula IID screen."""
     copula_marginal_model = CopulaMarginalModel.from_data_and_prob(
@@ -74,16 +74,17 @@ def check_white_noise(
     data: DataFrame,
     prob: ProbVector,
     assets: list[str],
-    lags_simple: int = LAGS["simple"],
-    lags_complex: int = LAGS["complex"],
+    cfg: IIDConfig | None = None,
 ) -> dict[str, bool]:
     """Return whether each asset passes the white-noise screen."""
+    if cfg is None:
+        cfg = IIDConfig()
 
     simple_tests = _run_iid_simple(
         data=data,
         prob=prob,
         assets=assets,
-        lags=lags_simple,
+        lags=cfg.lags_simple,
     )
 
     simple_pass = {
@@ -109,7 +110,7 @@ def check_white_noise(
         data=data,
         prob=prob,
         assets=assets_for_copula,
-        lags=lags_complex,
+        lags=cfg.lags_complex,
     )
 
     copula_pass = {
@@ -138,19 +139,27 @@ def _diff_assets(data: DataFrame, assets: list[str]) -> DataFrame:
 
 
 def _find_nonwhite_noise_assets(
-    increments_df: pl.DataFrame, prob: ProbVector, assets: list[str]
+    increments_df: pl.DataFrame,
+    prob: ProbVector,
+    assets: list[str],
+    cfg: IIDConfig | None = None,
 ) -> list[str]:
     """Return assets whose increments fail white-noise tests."""
-    wn = check_white_noise(data=increments_df.select(assets), assets=assets, prob=prob)
+    wn = check_white_noise(
+        data=increments_df.select(assets), assets=assets, prob=prob, cfg=cfg
+    )
     return [a for a, ok in wn.items() if not ok]
 
 
 def test_increments_idd(
-    data: pl.DataFrame, original_prob: ProbVector, assets: list[str]
+    data: pl.DataFrame,
+    original_prob: ProbVector,
+    assets: list[str],
+    cfg: IIDConfig | None = None,
 ) -> list[str]:
     increments_df = _diff_assets(data, assets)
     increments_prob = compensate_prob(original_prob, data.height - increments_df.height)
     assets_need_preprocess = _find_nonwhite_noise_assets(
-        increments_df=increments_df, prob=increments_prob, assets=assets
+        increments_df=increments_df, prob=increments_prob, assets=assets, cfg=cfg
     )
     return assets_need_preprocess

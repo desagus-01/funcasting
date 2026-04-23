@@ -6,6 +6,8 @@ from typing import Literal
 import numpy as np
 from numpy._typing import NDArray
 
+from policy import QualityConfig
+
 QualityEvent = Literal[
     "MEAN_FALLBACK_DEMEAN",
     "MEAN_FALLBACK_BEST_IC_NO_DIAG_PASS",
@@ -20,12 +22,14 @@ EVENT_SEVERITY: dict[QualityEvent, Severity] = {
     "VOL_FALLBACK_BEST_IC_NO_DIAG_PASS": "high",
 }
 
-
-@dataclass(frozen=True, slots=True)
-class QualityConfig:
-    penalty_high: float = 30.0
-    penalty_medium: float = 20.0
-    penalty_low: float = 10.0
+# QualityConfig is defined in globals and re-exported here for convenience.
+__all__ = [
+    "QualityConfig",
+    "SelectionAudit",
+    "ModelQuality",
+    "score_audit",
+    "crps_ensemble",
+]
 
 
 @dataclass(slots=True)
@@ -46,12 +50,16 @@ class ModelQuality:
     reason_codes: tuple[QualityEvent, ...]
 
 
-def _grade(score: float) -> Literal["A", "B", "C", "D"]:
-    if score >= 85:
+def _grade(
+    score: float, cfg: QualityConfig | None = None
+) -> Literal["A", "B", "C", "D"]:
+    if cfg is None:
+        cfg = QualityConfig()
+    if score >= cfg.grade_a_threshold:
         return "A"
-    if score >= 70:
+    if score >= cfg.grade_b_threshold:
         return "B"
-    if score >= 50:
+    if score >= cfg.grade_c_threshold:
         return "C"
     return "D"
 
@@ -72,7 +80,7 @@ def score_audit(audit: SelectionAudit, cfg: QualityConfig) -> ModelQuality:
 
     return ModelQuality(
         score=round(score, 2),
-        grade=_grade(score),
+        grade=_grade(score, cfg),
         reason_codes=tuple(audit.events),
     )
 

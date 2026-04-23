@@ -18,9 +18,9 @@ DEFAULT_ROUNDING = 4
 
 ITERS = {"PERM_TEST": 200, "MC": 2000}
 
-SIGN_LVL = 0.05
+SIGN_LVL = 0.05  # see policy.IIDConfig.significance_level
 
-LAGS = {"simple": 10, "complex": 5}
+LAGS = {"simple": 10, "complex": 5}  # see policy.IIDConfig.lags_simple / lags_complex
 
 model_cfg = ConfigDict(arbitrary_types_allowed=True)
 

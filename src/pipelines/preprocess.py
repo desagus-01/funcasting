@@ -1,9 +1,9 @@
 import logging
-from typing import Literal
 
 import polars as pl
 from polars.dataframe.frame import DataFrame
 
+from policy import PreprocessConfig
 from scenarios.types import ProbVector
 from time_series.preprocessing.apply import (
     apply_deseason,
@@ -69,13 +69,12 @@ def detrend_pipeline(
     data: DataFrame,
     prob: ProbVector,
     assets: list[str] | None = None,
-    order_max: int = 3,
-    threshold_order: int = 2,
+    cfg: PreprocessConfig | None = None,
     include_diagnostics: bool = False,
-    *,
-    trend_type: Literal["deterministic", "stochastic", "both"] = "both",
 ) -> PipelineAssetBatchRes:
     """Diagnose, decide, and apply detrending per asset."""
+    if cfg is None:
+        cfg = PreprocessConfig()
     if assets is None:
         assets = get_assets_names(df=data, assets=assets)
 
@@ -83,9 +82,9 @@ def detrend_pipeline(
         data=data,
         assets=assets,
         prob=prob,
-        order_max=order_max,
-        threshold_order=threshold_order,
-        trend_type=trend_type,
+        order_max=cfg.trend_order_max,
+        threshold_order=cfg.trend_threshold_order,
+        trend_type=cfg.trend_type,
     )
 
     per_asset_decision = detrend_decision_rule(
@@ -113,6 +112,7 @@ def run_univariate_preprocess(
     data: pl.DataFrame,
     prob: ProbVector,
     assets: list[str] | None = None,
+    cfg: PreprocessConfig | None = None,
 ) -> UnivariatePreprocess:
     """
     Pipeline:
@@ -130,6 +130,8 @@ def run_univariate_preprocess(
         needs_further_modelling:
             Assets whose increments failed the white-noise screen.
     """
+    if cfg is None:
+        cfg = PreprocessConfig()
     if assets is None:
         assets = get_assets_names(df=data, assets=assets)
 
@@ -143,6 +145,7 @@ def run_univariate_preprocess(
         data=data,
         original_prob=prob,
         assets=assets,
+        cfg=cfg.iid,
     )
 
     inverse_specs: dict[str, list[InverseSpec]] = {
@@ -155,6 +158,7 @@ def run_univariate_preprocess(
         assets=assets_need_preprocess,
         include_diagnostics=False,
         prob=prob,
+        cfg=cfg,
     )
 
     if detrend.inverse_spec is not None:
