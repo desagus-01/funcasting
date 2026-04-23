@@ -22,7 +22,8 @@ class MeanModelConfig:
     arma_invertibility_buffer: float = 1e-3
 
     # Ljung-Box lags tested when screening for residual autocorrelation.
-    ljung_box_lags: list[int] = [10, 15, 20]
+    # Tuple enforces immutability on the frozen dataclass.
+    ljung_box_lags: tuple[int, ...] = (10, 15, 20)
 
     # Minimum number of rejected lags to flag a series as needing a model
     min_ljung_box_rejections: int = 1
@@ -45,8 +46,8 @@ class VolatilityModelConfig:
 
     # Residual diagnostic lags / rejection thresholds.
     # Tuples enforce immutability on the frozen dataclass.
-    ljung_box_lags: list[int] = [10, 20]
-    arch_lags: list[int] = [5, 10, 15]
+    ljung_box_lags: tuple[int, ...] = (10, 20)
+    arch_lags: tuple[int, ...] = (5, 10, 15)
     min_ljung_box_rejections: int = 2
     min_arch_rejections: int = 1
 

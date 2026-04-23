@@ -302,8 +302,8 @@ def univariate_kolmogrov_smirnov_test(
 
 def ljung_box_test(
     data: pl.DataFrame | NDArray[np.floating],
+    lags: tuple[int, ...],
     asset: str | None = None,
-    lags: list[int] = [10, 20],
     degrees_of_freedom: int = 0,
 ) -> PerAssetTestResult:
     """Run Ljung-Box tests on a 1D series."""
@@ -344,7 +344,7 @@ def ljung_box_test(
 
 def arch_test(
     residual_array: NDArray[np.floating],
-    lags_to_test: list[int],
+    lags_to_test: tuple[int, ...],
     degrees_of_freedom: int,
 ) -> PerAssetTestResult:
     """Run ARCH tests over the requested lags."""
