@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal, Self
 
 import polars as pl
@@ -14,7 +14,7 @@ from utils.helpers import compute_cdf_and_pobs
 
 
 # TODO: Need to find a way to allow nulls at the start
-@dataclass
+@dataclass(frozen=True)
 class CopulaMarginalModel:
     marginals: DataFrame
     cdfs: DataFrame
@@ -165,8 +165,11 @@ class CopulaMarginalModel:
         Returns
         -------
         CopulaMarginalModel
-            The modified model with updated marginals and their CDFs.
+            New model instance with updated marginals and their CDFs.
         """
+        new_marginals = self.marginals
+        new_cdfs = self.cdfs
+
         for marginal, target_dist in target_dists.items():
             grades = self.copula.select(marginal).to_numpy().ravel()
             sample_values = self.marginals.select(marginal).to_numpy().ravel()
@@ -182,12 +185,12 @@ class CopulaMarginalModel:
                 compute_pobs=False,
             )
 
-            self.marginals = self.marginals.with_columns(
+            new_marginals = new_marginals.with_columns(
                 rebuilt[marginal].alias(marginal)
             )
-            self.cdfs = self.cdfs.with_columns(rebuilt["cdf"].alias(marginal))
+            new_cdfs = new_cdfs.with_columns(rebuilt["cdf"].alias(marginal))
 
-        return self
+        return replace(self, marginals=new_marginals, cdfs=new_cdfs)
 
     def update_copula(
         self,
@@ -214,15 +217,15 @@ class CopulaMarginalModel:
         Returns
         -------
         CopulaMarginalModel
-            Self with the updated copula matrix (pseudo-observations).
+            New model instance with the updated copula matrix (pseudo-observations).
         """
-        self.copula = sample_copula(
+        new_copula = sample_copula(
             self.copula,
             seed=seed,
             parametric_copula=target_copula,
             fit_method=fit_method,
         )
-        return self
+        return replace(self, copula=new_copula)
 
     def update_distribution(
         self,
@@ -262,12 +265,14 @@ class CopulaMarginalModel:
         if target_copula is None and target_marginals is None:
             raise ValueError("Choose a target marginal or target copula!")
 
+        model = self
+
         if (target_copula is not None) and (copula_fit_method is not None):
-            self.update_copula(
+            model = model.update_copula(
                 seed=seed, target_copula=target_copula, fit_method=copula_fit_method
             )
 
         if target_marginals is not None:
-            self.update_marginals(target_marginals)
+            model = model.update_marginals(target_marginals)
 
-        return self.to_scenario_dist()
+        return model.to_scenario_dist()

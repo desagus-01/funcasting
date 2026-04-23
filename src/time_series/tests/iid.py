@@ -7,7 +7,7 @@ import scipy.stats as st
 from numpy.typing import NDArray
 from statsmodels.stats.diagnostic import acorr_ljungbox, het_arch
 
-from globals import ITERS, LAGS
+from policy import IIDConfig
 from scenarios.types import ProbVector
 from time_series.estimation import weighted_covariance, weighted_mean
 from time_series.tests.types import HypTestRes, format_hyp_test_result
@@ -16,6 +16,8 @@ from utils.helpers import (
     get_assets_names,
     split_df_in_half,
 )
+
+_DEFAULT_IID = IIDConfig()
 
 StatFunc = Callable[[np.ndarray, ProbVector, np.ndarray], float]
 PairTest = Callable[..., HypTestRes]
@@ -49,7 +51,7 @@ def run_lagged_tests(
     prob: ProbVector,
     assets: list[str] | None,
     test_fn: PairTest,
-    lags: int = LAGS["simple"],
+    lags: int = _DEFAULT_IID.lags_simple,
     **test_kwargs: Any,
 ) -> TestResultByAsset:
     """Run a pairwise test over lags for each selected asset."""
@@ -140,7 +142,7 @@ def autocorrelation_pair_test(
 def ellipsoid_lag_test(
     data: pl.DataFrame,
     prob: ProbVector,
-    lags: int = LAGS["simple"],
+    lags: int = _DEFAULT_IID.lags_simple,
     assets: list[str] | None = None,
 ) -> TestResultByAsset:
     """Run the ellipsoid lag test for each asset and lag."""
@@ -194,7 +196,7 @@ def _sw_stat(
 def _draw_mc_points(
     dim: int,
     rng: np.random.Generator,
-    mc_iters: int = ITERS["MC"],
+    mc_iters: int = _DEFAULT_IID.mc_iters,
 ) -> np.ndarray:
     """Draw uniform Monte Carlo points once for a test."""
     return rng.uniform(0.0, 1.0, size=(mc_iters, dim))
@@ -214,7 +216,7 @@ def independence_permutation_test(
     prob: ProbVector,
     assets: tuple[str, str],
     stat_fun: StatFunc = sw_mc,
-    iter: int = ITERS["PERM_TEST"],
+    iter: int = _DEFAULT_IID.perm_test_iters,
     rng: np.random.Generator | None = None,
 ) -> HypTestRes:
     """Run a permutation independence test on a 2-column array."""
@@ -246,7 +248,7 @@ def independence_permutation_test(
 def copula_lag_independence_test(
     copula: pl.DataFrame,
     prob: ProbVector,
-    lags: int = LAGS["complex"],
+    lags: int = _DEFAULT_IID.lags_complex,
     assets: list[str] | None = None,
 ) -> TestResultByAsset:
     """Run the copula lag independence test for each asset and lag."""

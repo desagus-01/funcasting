@@ -249,7 +249,6 @@ def entropy_pooling(
     prior: ProbVector,
     views: list[View],
     solver: str = "SCS",
-    include_diags: bool = False,
     **solver_kwargs: str,
 ) -> ProbVector:
     """
@@ -269,8 +268,6 @@ def entropy_pooling(
         correlations or orderings.
     solver : str, optional
         CVXPY solver name to use (default: 'SCS').
-    include_diags : bool, optional
-        If True prints constraint diagnostics after solving.
     **solver_kwargs : dict
         Additional solver keyword arguments forwarded to cvxpy.
 
@@ -302,7 +299,7 @@ def entropy_pooling(
         )
     elif posterior_res.min() < 0:
         posterior_res = clip_normalise_probs(posterior_res)
-    if include_diags:
+    if logger.isEnabledFor(logging.DEBUG):
         logger.debug(
             "EP constraint diagnostics: %s",
             get_constraints_diags(views, constraints, posterior_res),
@@ -316,7 +313,6 @@ def entropy_pooling_probs(
     prior: ProbVector,
     views: list[View],
     confidence: float = 1.0,
-    include_diags: bool = False,
 ) -> ProbVector:
     """
     Run entropy pooling and blend the posterior with the prior by confidence.
@@ -332,14 +328,12 @@ def entropy_pooling_probs(
         Views to impose through entropy pooling.
     confidence : float, optional
         Weight to give to the posterior in the convex combination (default: 1.0).
-    include_diags : bool, optional
-        If True print constraint diagnostics.
 
     Returns
     -------
     ProbVector
         Final probability vector after blending.
     """
-    entropy_pooling_res = entropy_pooling(prior, views, include_diags=include_diags)
+    entropy_pooling_res = entropy_pooling(prior, views)
 
     return confidence * entropy_pooling_res + (1 - confidence) * prior

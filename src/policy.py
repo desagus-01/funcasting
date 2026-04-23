@@ -74,6 +74,8 @@ class IIDConfig:
     lags_simple: int = 10
     lags_complex: int = 5
     significance_level: float = 0.05
+    mc_iters: int = 2000
+    perm_test_iters: int = 200
 
 
 @dataclass(frozen=True, slots=True)
