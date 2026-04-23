@@ -7,9 +7,8 @@ import numpy as np
 import polars as pl
 import polars.selectors as cs
 from numpy.typing import NDArray
-from pydantic import validate_call
 
-from globals import model_cfg, sign_operations
+from globals import sign_operations
 from scenarios.types import CorrInfo, ProbVector, View
 
 logger = logging.getLogger(__name__)
@@ -117,65 +116,6 @@ def indicator_quantile_marginal(
     return data.with_columns(quant_ind=(cs.numeric() <= threshold).cast(pl.Int8))
 
 
-def compute_cdf_and_pobs(
-    data: pl.DataFrame,
-    marginal_name: str,
-    prob: ProbVector,
-    compute_pobs: bool = True,
-) -> pl.DataFrame:
-    """
-    Compute empirical CDF and pseudo-observations for a single marginal.
-
-    The function expects no missing values in ``data`` and will raise if any
-    are present. It returns a DataFrame containing the sorted marginal, the
-    cumulative probability (cdf) and, optionally, the pseudo-observations
-    (pobs) aligned to the original row order.
-
-    Parameters
-    ----------
-    data : pl.DataFrame
-        DataFrame containing the marginal column.
-    marginal_name : str
-        Column name of the marginal to process.
-    prob : ProbVector
-        Probability weights associated with each row; must sum to one.
-    compute_pobs : bool, optional
-        Whether to compute pseudo-observations aligned to original order
-        (default: True).
-
-    Returns
-    -------
-    pl.DataFrame
-        DataFrame with columns ['index', marginal_name, 'prob', 'cdf'] and
-        optionally 'pobs' when ``compute_pobs`` is True.
-
-    Raises
-    ------
-    ValueError
-        If any nulls are present in the input ``data``.
-    """
-    if data.null_count().sum_horizontal().item() > 0:
-        raise ValueError(
-            f"You have a total of {data.null_count().sum_horizontal().item()} Nulls in your data, please fix this."
-        )
-    df = (
-        data.select(pl.col(marginal_name))
-        .with_row_index()
-        .with_columns(prob=prob)
-        .sort(marginal_name)
-        .with_columns(
-            cdf=pl.cum_sum("prob") * data.height / (data.height + 1),
-        )
-    )
-
-    if compute_pobs:
-        df = df.with_columns(
-            pobs=pl.col("cdf").gather(pl.col("index").arg_sort()),
-        )
-
-    return df
-
-
 def build_diff_df(data: pl.DataFrame, asset: str, diffs: int = 1) -> pl.DataFrame:
     if diffs <= 0:
         raise ValueError("Diffs need to be bigger than 0 dummy")
@@ -186,34 +126,6 @@ def build_diff_df(data: pl.DataFrame, asset: str, diffs: int = 1) -> pl.DataFram
             for i in range(1, diffs + 1)
         ],
     )
-
-
-@validate_call(config=model_cfg, validate_return=True)
-def compensate_prob(prob: ProbVector, n_remove: int) -> ProbVector:
-    """
-    Remove the top ``n_remove`` probabilities and re-normalize the remainder.
-
-    This helper is used when rows are dropped (e.g. due to nulls) to
-    compensate the prior probability vector by evenly distributing the
-    removed mass across the remaining entries.
-
-    Parameters
-    ----------
-    prob : ProbVector
-        Original probability vector.
-    n_remove : int
-        Number of top entries to remove from the probability vector.
-
-    Returns
-    -------
-    ProbVector
-        Adjusted probability vector of length ``len(prob) - n_remove`` that
-        sums to one.
-    """
-    removed_probs = prob[0:n_remove]
-    diff_fac = removed_probs.sum() / (len(prob) - len(removed_probs))
-
-    return prob[n_remove:] + diff_fac
 
 
 def timeit(func):

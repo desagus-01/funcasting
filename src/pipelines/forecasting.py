@@ -252,14 +252,12 @@ def draw_innovations(
             target_marginals,
         )
 
-        cma_model = CopulaMarginalModel.from_panel(panel)
-        invariants_cma, cma_prob = cma_model.update_distribution(
+        panel = CopulaMarginalModel.from_panel(panel).update_distribution(
             seed=seed,
             target_marginals=target_marginals,
             target_copula=target_copula,
             copula_fit_method=copula_fit_method,
         )
-        panel = AssetPanel(values=invariants_cma, dates=panel.dates, prob=cma_prob)
 
         logger.info("CMA update complete: n_scenarios=%d", panel.n_rows)
 

@@ -21,7 +21,7 @@ from utils.helpers import wide_to_long
 from utils.log import setup_logging
 from utils.tiingo import import_tickers_and_factors
 
-setup_logging(LogConfig(level=logging.WARNING))
+setup_logging(LogConfig(level=logging.INFO))
 
 # %%
 # ── Data loading (unchanged) ─────────────────────────────────────────
@@ -57,7 +57,8 @@ forecasts = run_n_steps_forecast(
     seed=2,
     assets=assets,
     factors=factors_cols,
-    method="bootstrap",
+    method="cma",
+    target_copula="norm",
     back_to_price=True,
 )
 

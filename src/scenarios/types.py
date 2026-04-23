@@ -36,7 +36,7 @@ class View(BaseModel):
     mean_ref: NDArray[np.floating] | None = None
 
 
-def _as_prob_vector(a: NDArray[np.float64]) -> NDArray[np.float64]:
+def validate_prob_vector(a: NDArray[np.float64]) -> NDArray[np.float64]:
     if a.ndim != 1:
         raise ValueError("Array must be 1D.")
     if np.any(np.isnan(a)) or np.any(np.isinf(a)):
@@ -50,4 +50,4 @@ def _as_prob_vector(a: NDArray[np.float64]) -> NDArray[np.float64]:
     return a
 
 
-ProbVector = Annotated[NDArray[np.float64], AfterValidator(_as_prob_vector)]
+ProbVector = Annotated[NDArray[np.float64], AfterValidator(validate_prob_vector)]

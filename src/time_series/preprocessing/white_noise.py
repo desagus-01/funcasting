@@ -5,15 +5,13 @@ from polars.dataframe.frame import DataFrame
 
 from policy import IIDConfig
 from scenarios.copula_marginal import CopulaMarginalModel
+from scenarios.panel import AssetPanel
 from scenarios.types import ProbVector
 from time_series.tests.iid import (
     TestResultByAsset,
     copula_lag_independence_test,
     ellipsoid_lag_test,
     univariate_kolmogrov_smirnov_test,
-)
-from utils.helpers import (
-    compensate_prob,
 )
 
 logger = logging.getLogger(__name__)
@@ -126,23 +124,17 @@ def check_white_noise(
     return final_pass
 
 
-def _diff_assets(data: DataFrame, assets: list[str]) -> DataFrame:
-    """First-difference selected asset columns; drop the leading null via slice."""
-    df = data.select(list(assets)).with_columns(
-        [pl.col(a).diff().alias(a) for a in assets]
-    )
-    return df.slice(1)  # removes the first null introduced by diff
-
-
 def _find_nonwhite_noise_assets(
-    increments_df: pl.DataFrame,
-    prob: ProbVector,
+    increments: AssetPanel,
     assets: list[str],
     cfg: IIDConfig | None = None,
 ) -> list[str]:
-    """Return assets whose increments fail white-noise tests."""
+    """Return assets whose increments fail the white-noise screen."""
     wn = check_white_noise(
-        data=increments_df.select(assets), assets=assets, prob=prob, cfg=cfg
+        data=increments.values.select(assets),
+        assets=assets,
+        prob=increments.prob,
+        cfg=cfg,
     )
     return [a for a, ok in wn.items() if not ok]
 
@@ -153,9 +145,6 @@ def test_increments_idd(
     assets: list[str],
     cfg: IIDConfig | None = None,
 ) -> list[str]:
-    increments_df = _diff_assets(data, assets)
-    increments_prob = compensate_prob(original_prob, data.height - increments_df.height)
-    assets_need_preprocess = _find_nonwhite_noise_assets(
-        increments_df=increments_df, prob=increments_prob, assets=assets, cfg=cfg
-    )
-    return assets_need_preprocess
+    """Diff each asset and return those whose increments are not white noise."""
+    panel = AssetPanel.from_frame(data.select(assets), original_prob).diff()
+    return _find_nonwhite_noise_assets(increments=panel, assets=assets, cfg=cfg)

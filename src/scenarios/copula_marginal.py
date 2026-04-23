@@ -10,7 +10,41 @@ from polars import DataFrame
 from probability.sampling import marginal_quantile_mapping, sample_copula
 from scenarios.panel import AssetPanel
 from scenarios.types import ProbVector
-from utils.helpers import compute_cdf_and_pobs
+
+
+def _compute_cdf_and_pobs(
+    data: pl.DataFrame,
+    marginal_name: str,
+    prob: ProbVector,
+    compute_pobs: bool = True,
+) -> pl.DataFrame:
+    """Compute empirical CDF (and optionally pseudo-observations) for one marginal.
+
+    Returns a DataFrame with columns ``[index, <marginal_name>, prob, cdf]``
+    and, when ``compute_pobs`` is True, also ``pobs`` aligned to the original
+    row order. Input must be null-free.
+    """
+    if data.null_count().sum_horizontal().item() > 0:
+        raise ValueError(
+            "compute_cdf_and_pobs expects null-free data; drop nulls first."
+        )
+
+    df = (
+        data.select(pl.col(marginal_name))
+        .with_row_index()
+        .with_columns(prob=prob)
+        .sort(marginal_name)
+        .with_columns(
+            cdf=pl.cum_sum("prob") * data.height / (data.height + 1),
+        )
+    )
+
+    if compute_pobs:
+        df = df.with_columns(
+            pobs=pl.col("cdf").gather(pl.col("index").arg_sort()),
+        )
+
+    return df
 
 
 # TODO: Need to find a way to allow nulls at the start
@@ -26,8 +60,8 @@ class CopulaMarginalModel:
     def from_panel(cls, panel: AssetPanel) -> CopulaMarginalModel:
         """Construct a CopulaMarginalModel from an :class:`AssetPanel`.
 
-        The panel must already have its date column separated (handled by
-        ``AssetPanel.from_frame``) and nulls dropped before calling this.
+        The panel must be null-free; callers should run ``panel.drop_nulls()``
+        first when appropriate.
         """
         cdf_cols: dict[str, pl.Series] = {}
         copula_cols: dict[str, pl.Series] = {}
@@ -35,7 +69,7 @@ class CopulaMarginalModel:
 
         for col in panel.values.iter_columns():
             asset = col.name
-            temp = compute_cdf_and_pobs(panel.values, asset, panel.prob)
+            temp = _compute_cdf_and_pobs(panel.values, asset, panel.prob)
 
             cdf_cols[asset] = temp["cdf"]
             copula_cols[asset] = temp["pobs"]
@@ -79,29 +113,12 @@ class CopulaMarginalModel:
             prob=self.prob,
         )
 
-    def to_scenario_dist(self) -> tuple[DataFrame, ProbVector]:
-        """Backward-compatible wrapper around :meth:`to_panel`."""
-        panel = self.to_panel()
-        return panel.values, panel.prob
-
     def update_marginals(self, target_dists: dict[str, Literal["t", "norm"]]) -> Self:
-        """
-        Replace selected marginals with target families via quantile mapping.
+        """Replace selected marginals with target families via quantile mapping.
 
         For each specified marginal the function treats the current copula
-        pseudo-observations as grades and maps the empirical marginal quantiles
-        to the target distribution (e.g. Student-t or Normal) using
-        quantile-matching sampling.
-
-        Parameters
-        ----------
-        target_dists : dict[str, {"t", "norm"}]
-            Mapping of asset name -> target marginal distribution family.
-
-        Returns
-        -------
-        CopulaMarginalModel
-            New model instance with updated marginals and their CDFs.
+        pseudo-observations as grades and maps the empirical marginal
+        quantiles to the target distribution (Student-t or Normal).
         """
         new_marginals = self.marginals
         new_cdfs = self.cdfs
@@ -114,7 +131,7 @@ class CopulaMarginalModel:
                 marginal=sample_values, grades=grades, kind=target_dist
             )
 
-            rebuilt = compute_cdf_and_pobs(
+            rebuilt = _compute_cdf_and_pobs(
                 pl.DataFrame({marginal: new_scenarios.ravel()}),
                 marginal,
                 self.prob,
@@ -134,27 +151,7 @@ class CopulaMarginalModel:
         fit_method: Literal["ml", "irho", "itau"] = "itau",
         target_copula: Literal["t", "norm"] = "t",
     ) -> Self:
-        """
-        Re-fit or sample a copula given the current pseudo-observations.
-
-        This function uses the project's copula sampling utility to either
-        fit a parametric copula (Student-t or Normal) to the pseudo-
-        observations or to resample a copula preserving dependence structure.
-
-        Parameters
-        ----------
-        seed : int | None, optional
-            RNG seed for reproducibility.
-        fit_method : {"ml", "irho", "itau"}, optional
-            Method to estimate copula parameters.
-        target_copula : {"t", "norm"}, optional
-            Parametric copula family to fit or sample.
-
-        Returns
-        -------
-        CopulaMarginalModel
-            New model instance with the updated copula matrix (pseudo-observations).
-        """
+        """Re-fit or sample a copula given the current pseudo-observations."""
         new_copula = sample_copula(
             self.copula,
             seed=seed,
@@ -170,9 +167,8 @@ class CopulaMarginalModel:
         *,
         target_copula: Literal["t", "norm"] | None = None,
         copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
-    ) -> tuple[DataFrame, ProbVector]:
-        """
-        Apply CMA updates to marginals and/or the copula and return scenarios.
+    ) -> AssetPanel:
+        """Apply CMA updates to marginals and/or the copula and return a panel.
 
         Parameters
         ----------
@@ -189,9 +185,9 @@ class CopulaMarginalModel:
 
         Returns
         -------
-        tuple[DataFrame, ProbVector]
-            Reconstructed scenario DataFrame and the associated probability
-            vector after applying updates.
+        AssetPanel
+            Reconstructed scenarios with dates (if any) and probability vector
+            carried through.
 
         Raises
         ------
@@ -211,4 +207,4 @@ class CopulaMarginalModel:
         if target_marginals is not None:
             model = model.update_marginals(target_marginals)
 
-        return model.to_scenario_dist()
+        return model.to_panel()
