@@ -61,7 +61,7 @@ class UnivariateState:
         ):
             p, q = univariate_model.mean_order
             if x_hist.size < p:
-                x_hist = post_series_non_null[-p:].copy()
+                raise ValueError("Full series is too short, longer input is needed.")
             eps = fitting_results.mean_res.residuals
             eps_mean_hist = eps[-q:].copy() if q > 0 else None
 

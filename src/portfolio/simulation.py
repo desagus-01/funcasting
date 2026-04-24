@@ -4,13 +4,13 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from portfolio.construction import (
+from portfolio.positions import (
     WEIGHT_MODE,
-    _initial_portfolio_values_from_shares,
-    _portfolio_values_static_weights,
-    _validate_target_weights,
+    initial_portfolio_values_from_shares,
+    portfolio_values_static_weights,
     portfolio_weights_forecast_buy_and_hold,
     portfolio_weights_forecast_static,
+    validate_target_weights,
 )
 from scenarios.types import ProbVector
 from utils.visuals import plot_simulation_results
@@ -344,14 +344,14 @@ def portfolio_forecast(
                 "target_weights must be provided when weight_mode='static'"
             )
 
-        _validate_target_weights(target_weights, asset_order)
-        initial_portfolio_values = _initial_portfolio_values_from_shares(
+        validate_target_weights(target_weights, asset_order)
+        initial_portfolio_values = initial_portfolio_values_from_shares(
             prices=prices,
             initial_asset_shares=initial_asset_shares,
             asset_order=asset_order,
         )
 
-        values = _portfolio_values_static_weights(
+        values = portfolio_values_static_weights(
             prices=prices,
             target_weights=target_weights,
             asset_order=asset_order,

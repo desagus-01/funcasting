@@ -193,7 +193,7 @@ class CopulaMarginalModel:
             parametric_copula=target_copula,
             fit_method=fit_method,
         )
-        return replace(self, copula=new_copula)
+        return replace(self, copula_grades=new_copula)
 
     def update_distribution(
         self,
