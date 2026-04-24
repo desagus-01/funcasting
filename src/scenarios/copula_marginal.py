@@ -52,7 +52,7 @@ def _compute_cdf_and_pobs(
 class CopulaMarginalModel:
     marginals: DataFrame
     cdfs: DataFrame
-    copula: DataFrame
+    copula_grades: DataFrame
     prob: ProbVector
     dates: pl.Series | None
 
@@ -69,7 +69,11 @@ class CopulaMarginalModel:
         """Raise if marginals / cdfs / copula differ in columns or height,
         or if any frame height disagrees with ``len(self.prob)``.
         """
-        frames = {"marginals": self.marginals, "cdfs": self.cdfs, "copula": self.copula}
+        frames = {
+            "marginals": self.marginals,
+            "cdfs": self.cdfs,
+            "copula": self.copula_grades,
+        }
         ref_name, ref = "marginals", self.marginals
         for name, frame in frames.items():
             if name == ref_name:
@@ -109,7 +113,7 @@ class CopulaMarginalModel:
         return cls(
             marginals=DataFrame(sorted_marginals),
             cdfs=DataFrame(cdf_cols),
-            copula=DataFrame(copula_cols),
+            copula_grades=DataFrame(copula_cols),
             prob=panel.prob,
             dates=panel.dates,
         )
@@ -134,7 +138,7 @@ class CopulaMarginalModel:
         interp_res = {}
         for asset in self.marginals.columns:
             interp_res[asset] = interp(
-                x=self.copula.select(asset).to_numpy().ravel(),
+                x=self.copula_grades.select(asset).to_numpy().ravel(),
                 xp=self.cdfs.select(asset).to_numpy().ravel(),
                 fp=self.marginals.select(asset).to_numpy().ravel(),
             )
@@ -155,7 +159,7 @@ class CopulaMarginalModel:
         new_cdfs = self.cdfs
 
         for marginal, target_dist in target_dists.items():
-            grades = self.copula.select(marginal).to_numpy().ravel()
+            grades = self.copula_grades.select(marginal).to_numpy().ravel()
             sample_values = self.marginals.select(marginal).to_numpy().ravel()
 
             new_scenarios = marginal_quantile_mapping(
@@ -184,7 +188,7 @@ class CopulaMarginalModel:
     ) -> Self:
         """Re-fit or sample a copula given the current pseudo-observations."""
         new_copula = sample_copula(
-            self.copula,
+            self.copula_grades,
             seed=seed,
             parametric_copula=target_copula,
             fit_method=fit_method,

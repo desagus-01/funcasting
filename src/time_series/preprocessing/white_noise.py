@@ -53,7 +53,7 @@ def _run_iid_complex(
     )
 
     copula_lag_test_res = copula_lag_independence_test(
-        copula=copula_marginal_model.copula,
+        copula=copula_marginal_model.copula_grades,
         prob=copula_marginal_model.prob,
         lags=lags,
         assets=assets,
