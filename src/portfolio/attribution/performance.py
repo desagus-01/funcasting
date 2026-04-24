@@ -4,7 +4,7 @@ import numpy as np
 from numpy.typing import NDArray
 from polars import DataFrame
 
-from portfolio.simulation import PortfolioForecast
+from portfolio.forecast import PortfolioForecast
 from scenarios.panel import ScenarioPanel
 from scenarios.types import ProbVector
 from time_series.estimation import (
@@ -235,7 +235,7 @@ def portfolio_factor_attribution(
         is_log_price=is_log_price,
     )
 
-    portfolio_cum = portfolio_forecast.performance_at_horizon(at_horizon=horizon)
+    portfolio_cum = portfolio_forecast.performance_at_horizon(horizon=horizon)
 
     factor_result = factor_ols_regression(
         factors_cum_forecast=factors_cum,

@@ -3,6 +3,7 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
+from polars import DataFrame
 
 from portfolio.positions import (
     WEIGHT_MODE,
@@ -12,14 +13,47 @@ from portfolio.positions import (
     portfolio_weights_forecast_static,
     validate_target_weights,
 )
-from scenarios.types import ProbVector
+from scenarios.panel import ScenarioPanel
+from scenarios.types import ProbVector, validate_prob_vector
 from utils.visuals import plot_simulation_results
 
 PnL_OPTIONS = Literal["relative", "absolute", "log"]
 
 
+PortfolioPanelKind = Literal[
+    "value",
+    "incremental_pnl",
+    "cumulative_performance",
+    "loss",
+]
+
+
 @dataclass(frozen=True, slots=True)
 class PortfolioForecast:
+    """
+    Full Monte Carlo portfolio forecast.
+
+    Shape conventions
+    -----------------
+    values:
+        Shape (n_paths, n_periods). Includes t0 in column 0.
+
+    incremental_pnl:
+        Shape (n_paths, n_periods - 1) in the normal case.
+        Each column is the incremental return/PnL from one period to the next.
+
+    cumulative_performance:
+        Derived from incremental_pnl.
+        Shape (n_paths, n_periods). Column 0 is always zero.
+
+    path_probs:
+        One probability per simulated path.
+
+    asset_weights:
+        Dict asset -> array of shape (n_paths, n_periods).
+        Includes t0 weights in column 0.
+    """
+
     values: NDArray[np.floating]
     incremental_pnl: NDArray[np.floating]
     pnl_type: PnL_OPTIONS
@@ -28,93 +62,264 @@ class PortfolioForecast:
     path_probs: ProbVector
 
     def __post_init__(self) -> None:
-        if self.values.ndim != 2:
-            raise ValueError(
-                f"values must be 2-D (n_sims, n_periods); got ndim={self.values.ndim}"
-            )
-        if self.incremental_pnl.ndim != 2:
-            raise ValueError(
-                f"pnl must be 2-D (n_sims, n_periods or n_periods-1); got ndim={self.incremental_pnl.ndim}"
-            )
+        values = np.asarray(self.values, dtype=float)
+        incremental_pnl = np.asarray(self.incremental_pnl, dtype=float)
 
-        n_sims, n_periods = self.values.shape
-
-        if self.incremental_pnl.shape[0] != n_sims:
+        if values.ndim != 2:
             raise ValueError(
-                f"Mismatch in number of simulations: values has {n_sims} but pnl has {self.incremental_pnl.shape[0]}"
+                f"values must be 2-D (n_paths, n_periods); got shape={values.shape}"
             )
 
-        if self.incremental_pnl.shape[1] not in (n_periods, n_periods - 1):
+        if incremental_pnl.ndim != 2:
             raise ValueError(
-                f"pnl must have either the same number of periods as values ({n_periods}) or one fewer; got {self.incremental_pnl.shape[1]}"
+                "incremental_pnl must be 2-D "
+                f"(n_paths, n_periods - 1); got shape={incremental_pnl.shape}"
             )
 
-        for name, arr in self.asset_weights.items():
-            w = np.asarray(arr, dtype=float)
-            if w.ndim != 2:
+        n_paths, n_periods = values.shape
+
+        if incremental_pnl.shape[0] != n_paths:
+            raise ValueError(
+                f"Path mismatch: values has {n_paths} paths but "
+                f"incremental_pnl has {incremental_pnl.shape[0]}"
+            )
+
+        if incremental_pnl.shape[1] != n_periods - 1:
+            raise ValueError(
+                "incremental_pnl should have one fewer period than values. "
+                f"values has {n_periods} periods, incremental_pnl has "
+                f"{incremental_pnl.shape[1]} periods."
+            )
+
+        if self.pnl_type not in {"relative", "absolute", "log"}:
+            raise ValueError(f"Unknown pnl_type: {self.pnl_type}")
+
+        validate_prob_vector(self.path_probs)
+
+        if len(self.path_probs) != n_paths:
+            raise ValueError(
+                f"path_probs length ({len(self.path_probs)}) must equal "
+                f"number of paths ({n_paths})"
+            )
+
+        clean_weights: dict[str, NDArray[np.floating]] = {}
+        for asset, arr in self.asset_weights.items():
+            weight = np.asarray(arr, dtype=float)
+
+            if weight.ndim != 2:
                 raise ValueError(
-                    f"Weight array for asset '{name}' must be 2-D (n_sims, n_periods); got ndim={w.ndim}"
-                )
-            if w.shape != (n_sims, n_periods):
-                raise ValueError(
-                    f"Weight array shape mismatch for asset '{name}': expected ({n_sims}, {n_periods}), got {w.shape}"
+                    f"Weight array for asset '{asset}' must be 2-D "
+                    f"(n_paths, n_periods); got shape={weight.shape}"
                 )
 
-        try:
-            if len(self.path_probs) != n_sims:
+            if weight.shape != values.shape:
                 raise ValueError(
-                    f"path_probs length ({len(self.path_probs)}) must equal number of simulations ({n_sims})"
+                    f"Weight array shape mismatch for asset '{asset}': "
+                    f"expected {values.shape}, got {weight.shape}"
                 )
-        except TypeError:
-            # path_probs might be a callable or other unsized object; ignore in that case
-            pass
+
+            clean_weights[asset] = weight
+
+        object.__setattr__(self, "values", values)
+        object.__setattr__(self, "incremental_pnl", incremental_pnl)
+        object.__setattr__(self, "asset_weights", clean_weights)
+
+    @property
+    def n_paths(self) -> int:
+        return self.values.shape[0]
+
+    @property
+    def n_periods(self) -> int:
+        """
+        Number of portfolio value columns, including t0.
+        """
+        return self.values.shape[1]
+
+    @property
+    def n_horizons(self) -> int:
+        """
+        Number of forecast horizons, excluding t0.
+        """
+        return self.n_periods - 1
+
+    @property
+    def asset_names(self) -> list[str]:
+        return list(self.asset_weights.keys())
 
     @property
     def cumulative_performance(self) -> NDArray[np.floating]:
-        return cumulative_pnl_forecast(self.incremental_pnl, self.pnl_type)
-
-    def performance_at_horizon(
-        self,
-        end_horizon: int | None = None,
-        at_horizon: int | None = None,
-    ) -> NDArray[np.floating]:
         return cumulative_pnl_forecast(
             self.incremental_pnl,
             self.pnl_type,
-            end_horizon=end_horizon,
-            at_horizon=at_horizon,
         )
+
+    @property
+    def losses(self) -> NDArray[np.floating]:
+        return -self.cumulative_performance
+
+    def _validate_horizon(self, horizon: int) -> None:
+        """
+        Validate horizon using portfolio convention:
+
+        horizon=0:
+            t0 / initial portfolio state
+
+        horizon=1:
+            first forecast step
+
+        horizon=n:
+            nth forecast step
+        """
+        if horizon < 0:
+            raise ValueError("horizon must be >= 0")
+
+        if horizon > self.n_horizons:
+            raise ValueError(
+                f"horizon={horizon} is out of range. "
+                f"Valid range is 0..{self.n_horizons}."
+            )
+
+    def performance_at_horizon(self, horizon: int) -> NDArray[np.floating]:
+        self._validate_horizon(horizon)
+        return self.cumulative_performance[:, horizon]
+
+    def loss_at_horizon(self, horizon: int) -> NDArray[np.floating]:
+        self._validate_horizon(horizon)
+        return self.losses[:, horizon]
+
+    def value_at_horizon(self, horizon: int) -> NDArray[np.floating]:
+        self._validate_horizon(horizon)
+        return self.values[:, horizon]
+
+    def at_horizon(self, horizon: int) -> ScenarioPanel:
+        """
+        Return one portfolio horizon as a ScenarioPanel.
+
+        Rows are simulated paths.
+        Columns are portfolio-level quantities.
+        Probabilities are path probabilities.
+        """
+        self._validate_horizon(horizon)
+
+        columns: dict[str, NDArray[np.floating]] = {
+            "portfolio_value": self.values[:, horizon],
+            "cumulative_performance": self.cumulative_performance[:, horizon],
+            "loss": self.losses[:, horizon],
+        }
+
+        if horizon > 0:
+            columns["incremental_pnl"] = self.incremental_pnl[:, horizon - 1]
+
+        return ScenarioPanel(
+            values=DataFrame(columns),
+            dates=None,
+            prob=self.path_probs,
+        )
+
+    def weights_at_horizon(self, horizon: int) -> ScenarioPanel:
+        """
+        Return portfolio asset weights at one horizon as a ScenarioPanel.
+
+        Rows are simulated paths.
+        Columns are assets.
+        Probabilities are path probabilities.
+        """
+        self._validate_horizon(horizon)
+
+        return ScenarioPanel(
+            values=DataFrame(
+                {
+                    asset: weights[:, horizon]
+                    for asset, weights in self.asset_weights.items()
+                }
+            ),
+            dates=None,
+            prob=self.path_probs,
+        )
+
+    def panel(
+        self,
+        kind: PortfolioPanelKind,
+    ) -> ScenarioPanel:
+        """
+        Return a wide ScenarioPanel with one column per horizon.
+
+        h0 is t0. h1 is the first forecast step.
+        """
+        if kind == "value":
+            data = self.values
+
+        elif kind == "incremental_pnl":
+            data = self.incremental_pnl
+            return ScenarioPanel(
+                values=DataFrame(
+                    {f"h{h}": data[:, h - 1] for h in range(1, self.n_horizons + 1)}
+                ),
+                dates=None,
+                prob=self.path_probs,
+            )
+
+        elif kind == "cumulative_performance":
+            data = self.cumulative_performance
+
+        elif kind == "loss":
+            data = self.losses
+
+        else:
+            raise ValueError(f"Unknown panel kind: {kind}")
+
+        return ScenarioPanel(
+            values=DataFrame({f"h{h}": data[:, h] for h in range(self.n_periods)}),
+            dates=None,
+            prob=self.path_probs,
+        )
+
+    def loss_panel(self) -> ScenarioPanel:
+        return self.panel("loss")
+
+    def cumulative_performance_panel(self) -> ScenarioPanel:
+        return self.panel("cumulative_performance")
+
+    def value_panel(self) -> ScenarioPanel:
+        return self.panel("value")
 
     def plot(
         self,
-        end_horizon: int,
-        value_type: Literal["value", "pnl"] = "pnl",
+        end_horizon: int | None = None,
+        value_type: Literal["value", "pnl", "loss"] = "pnl",
         plot_cumulative: bool = False,
     ) -> None:
-        if value_type not in {"value", "pnl"}:
+        if end_horizon is None:
+            end_horizon = self.n_horizons
+
+        self._validate_horizon(end_horizon)
+
+        if value_type not in {"value", "pnl", "loss"}:
             raise ValueError(f"Unknown value_type: {value_type}")
 
-        if not plot_cumulative:
-            data = self.values if value_type == "value" else self.incremental_pnl
-            plot_simulation_results(
-                data,
-                title=f"Portfolio {value_type} ({self.weight_mode})",
-            )
-            return
-
         if value_type == "value":
-            initial = self.values[:, :1].astype(float, copy=True)
-            initial[np.abs(initial) < 1e-12] = np.nan
-            cumulative_changes = self.values / initial - 1.0
-        else:
-            cumulative_changes = cumulative_pnl_forecast(
-                self.incremental_pnl, self.pnl_type, end_horizon=end_horizon
-            )
+            if plot_cumulative:
+                initial = self.values[:, :1].astype(float, copy=True)
+                initial[np.abs(initial) < 1e-12] = np.nan
+                data = self.values[:, : end_horizon + 1] / initial - 1.0
+                title = f"Portfolio Cumulative Value ({self.weight_mode})"
+            else:
+                data = self.values[:, : end_horizon + 1]
+                title = f"Portfolio Value ({self.weight_mode})"
 
-        plot_simulation_results(
-            cumulative_changes,
-            title=f"Portfolio Cumulative {value_type} ({self.weight_mode})",
-        )
+        elif value_type == "loss":
+            data = self.losses[:, : end_horizon + 1]
+            title = f"Portfolio Loss ({self.weight_mode})"
+
+        else:
+            if plot_cumulative:
+                data = self.cumulative_performance[:, : end_horizon + 1]
+                title = f"Portfolio Cumulative PnL ({self.weight_mode})"
+            else:
+                data = self.incremental_pnl[:, :end_horizon]
+                title = f"Portfolio Incremental PnL ({self.weight_mode})"
+
+        plot_simulation_results(data, title=title)
 
 
 def cumulative_pnl_forecast(
