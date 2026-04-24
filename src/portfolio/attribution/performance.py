@@ -5,6 +5,7 @@ from numpy.typing import NDArray
 from polars import DataFrame
 
 from portfolio.simulation import PortfolioForecast
+from scenarios.panel import ScenarioPanel
 from scenarios.types import ProbVector
 from time_series.estimation import (
     EquationTypes,
@@ -52,9 +53,19 @@ class PortfolioPerformanceAttribution:
 
     @property
     def joint_distribution(self) -> DataFrame:
-        return DataFrame(self.factor_performance_forecast).with_columns(
+        return self.joint_panel.values
+
+    @property
+    def joint_panel(self) -> ScenarioPanel:
+        values = DataFrame(self.factor_performance_forecast).with_columns(
             z0=self.residuals + self.shift_term,
             portfolio_performance=self.portfolio_performance_forecast,
+        )
+
+        return ScenarioPanel(
+            values=values,
+            dates=None,
+            prob=self.path_probs,
         )
 
 

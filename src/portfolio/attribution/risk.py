@@ -8,6 +8,7 @@ from numpy._typing import NDArray
 from polars import DataFrame
 
 from portfolio.attribution.performance import PortfolioPerformanceAttribution
+from scenarios.panel import ScenarioPanel
 from scenarios.types import ProbVector
 from time_series.dimensionality_reduction import minimum_torsion_matrix
 from time_series.estimation import weighted_covariance
@@ -34,25 +35,38 @@ class EffectiveBets(NamedTuple):
 class PortfolioRiskAttribution:
     horizon: int
     exposures: dict[str, float]
-    joint_distribution: DataFrame
-    probs: ProbVector
+    joint_panel: ScenarioPanel
+
+    @property
+    def joint_distribution(self) -> DataFrame:
+        return self.joint_panel.values
+
+    @property
+    def probs(self) -> ProbVector:
+        return self.joint_panel.prob
 
     @classmethod
     def from_performance_attribution(
-        cls, performance_attribution: PortfolioPerformanceAttribution
-    ):
-        joint = performance_attribution.joint_distribution.with_columns(
+        cls,
+        performance_attribution: PortfolioPerformanceAttribution,
+    ) -> "PortfolioRiskAttribution":
+        perf_panel = performance_attribution.joint_panel
+
+        risk_values = perf_panel.values.with_columns(
             loss=-pl.col("portfolio_performance")
         ).drop("portfolio_performance")
 
-        return PortfolioRiskAttribution(
+        return cls(
             horizon=performance_attribution.horizon,
             exposures={
                 factor: -exposure
                 for factor, exposure in performance_attribution.full_exposures.items()
             },
-            joint_distribution=joint,
-            probs=performance_attribution.path_probs,
+            joint_panel=ScenarioPanel(
+                values=risk_values,
+                dates=None,
+                prob=perf_panel.prob,
+            ),
         )
 
 
