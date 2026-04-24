@@ -4,23 +4,54 @@ from typing import Literal
 import numpy as np
 from numpy._typing import NDArray
 from numpy.lib.array_utils import normalize_axis_index
+from polars import DataFrame
 
 from portfolio.simulation import PortfolioForecast
+from scenarios.panel import ScenarioPanel
 from scenarios.types import ProbVector
 
 
 @dataclass(frozen=True, slots=True)
 class LossDistribution:
-    loss_values: NDArray[np.floating]
-    probs: ProbVector
-    asset_weights: dict[str, NDArray[np.floating]]
+    panel: ScenarioPanel
+    asset_weights: dict[str, NDArray[np.floating]] | None = None
 
     @classmethod
-    def from_portfolio_forecast(cls, portfolio_forecast: PortfolioForecast):
+    def from_portfolio_forecast(
+        cls,
+        portfolio_forecast: PortfolioForecast,
+    ) -> "LossDistribution":
+        loss_values = -portfolio_forecast.cumulative_performance
+
+        columns = {f"h{h}": loss_values[:, h] for h in range(loss_values.shape[1])}
+
         return cls(
-            loss_values=_loss_value_from_pnl(portfolio_forecast.cumulative_performance),
-            probs=portfolio_forecast.path_probs,
+            panel=ScenarioPanel(
+                values=DataFrame(columns),
+                dates=None,
+                prob=portfolio_forecast.path_probs,
+            ),
             asset_weights=portfolio_forecast.asset_weights,
+        )
+
+    @property
+    def loss_values(self) -> NDArray[np.floating]:
+        return self.panel.values.to_numpy()
+
+    @property
+    def probs(self) -> ProbVector:
+        return self.panel.prob
+
+    def at_horizon(self, horizon: int) -> ScenarioPanel:
+        col = f"h{horizon}"
+
+        if col not in self.panel.values.columns:
+            raise ValueError(f"horizon={horizon} is out of range for LossDistribution")
+
+        return ScenarioPanel(
+            values=self.panel.values.select(col).rename({col: "loss"}),
+            dates=None,
+            prob=self.panel.prob,
         )
 
 

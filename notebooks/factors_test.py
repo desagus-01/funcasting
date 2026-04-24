@@ -190,7 +190,7 @@ perf_attr.joint_distribution.head()
 
 loss_dist = LossDistribution.from_portfolio_forecast(port_forecast)
 
-loss_at_horizon = loss_dist.loss_values[:, analysis_horizon]
+loss_at_horizon = loss_dist.at_horizon(analysis_horizon).values.to_numpy()
 path_probs = loss_dist.probs
 
 var_at_horizon = var(
@@ -227,5 +227,3 @@ cvar_contrib = cvar_contribution(
     factors_exposures=risk_attr.exposures,
     prob=risk_attr.probs,
 )
-
-cvar_contrib
