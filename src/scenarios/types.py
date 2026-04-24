@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Annotated, Literal, TypeAlias
+from typing import Annotated, Literal, TypeAlias, TypedDict
 
 import numpy as np
 from numpy.typing import NDArray
@@ -51,3 +51,11 @@ def validate_prob_vector(a: NDArray[np.float64]) -> NDArray[np.float64]:
 
 
 ProbVector = Annotated[NDArray[np.float64], AfterValidator(validate_prob_vector)]
+
+
+class ConstraintDiag(TypedDict):
+    risk_driver: tuple[str, str] | str
+    sign: ConstraintSignLike
+    constraint_value: NDArray[np.floating] | None
+    active: bool
+    sensitivity: float | None

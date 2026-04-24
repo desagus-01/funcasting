@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 
 import cvxpy as cp
 import numpy as np
@@ -7,7 +8,7 @@ from numpy._typing import NDArray
 from pydantic import validate_call
 
 from globals import model_cfg
-from scenarios.types import ProbVector, View
+from scenarios.types import ConstraintDiag, ProbVector, View
 from utils.helpers import select_operator, weighted_moments
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,7 @@ def ens(prob_vector: ProbVector) -> int:
             "ENS is larger than total number of scenarios or smaller than 1."
         )
 
-    return int(ens) + 1  # ensure rounding is ok
+    return int(np.ceil(ens))  # ensure rounding is ok
 
 
 # TODO: Finish writing this
@@ -54,81 +55,149 @@ def effective_rank(views_target):
     pass
 
 
-def _assign_constraint_equation(views: View, posterior: cp.Variable, prior: ProbVector):
+@dataclass(frozen=True)
+class CompiledView:
     """
-    Map a View into a CVXPY linear constraint to be used in entropy pooling.
+    Compiled representation of a single :class:`View`.
 
-    The function inspects the view type and constructs the appropriate
-    linear equality/inequality constraint for the optimization problem.
+    Stores the original view, the CVXPY constraint, and the raw ``lhs``/``rhs``
+    expressions used to build it.  Keeping ``lhs`` and ``rhs`` here means
+    diagnostic code never has to reverse-engineer the constraint math, and
+    both construction and evaluation logic live in the same place.
+
+    Attributes
+    ----------
+    view : View
+        The original view specification.
+    constraint : CvxConstraint
+        The CVXPY constraint passed to the solver.
+    lhs : cp.Expression
+        Left-hand side of the constraint expression.
+    rhs : cp.Expression | float | NDArray[np.floating]
+        Right-hand side of the constraint expression.
+    """
+
+    view: View
+    constraint: CvxConstraint
+    lhs: cp.Expression
+    rhs: cp.Expression | float | NDArray[np.floating]
+
+
+def compile_view(view: View, posterior: cp.Variable, prior: ProbVector) -> CompiledView:
+    """
+    Build a :class:`CompiledView` from a single :class:`View`.
+
+    Encapsulates all constraint-construction logic in one place so that
+    :func:`_build_constraints` and :func:`get_constraints_diags` cannot
+    diverge.
 
     Parameters
     ----------
-    views : View
-        View object describing the constraint (type, data, sign and target).
+    view : View
+        View describing the constraint.
     posterior : cp.Variable
-        CVXPY variable representing posterior probabilities.
+        CVXPY posterior-probability variable.
     prior : ProbVector
-        Prior probability vector used for reference values (e.g. means/stds).
+        Prior probability vector (reference for std/corr views).
 
     Returns
     -------
-    cvxpy.Constraint
-        A cvxpy constraint object implementing the view.
+    CompiledView
+        Frozen dataclass containing the constraint and its constituent
+        ``lhs``/``rhs`` expressions.
     """
-    operator_used = select_operator(views)
+    operator_used = select_operator(view)
 
-    match views.type:
+    match view.type:
         case "quantile":
-            if views.views_target is None:
+            if view.views_target is None:
                 raise ValueError("Your views_target cannot be None")
-
-            constraint = operator_used(views.data @ posterior, views.views_target)
+            lhs = view.data @ posterior
+            rhs = view.views_target
 
         case "sorting":
-            constraint = operator_used(
-                views.data[0] @ posterior, views.data[1] @ posterior
-            )
+            lhs = view.data[0] @ posterior
+            rhs = view.data[1] @ posterior
 
         case "std":
-            if views.views_target is None:
+            if view.views_target is None:
                 raise ValueError("Your views_target cannot be None")
-            mu_ref = views.data @ prior if views.mean_ref is None else views.mean_ref
-            constraint = operator_used(
-                views.data**2 @ posterior, views.views_target**2 + mu_ref**2
-            )
+            mu_ref = view.data @ prior if view.mean_ref is None else view.mean_ref
+            lhs = view.data**2 @ posterior
+            rhs = view.views_target**2 + mu_ref**2
 
         case "mean":
-            if views.views_target is None:
+            if view.views_target is None:
                 raise ValueError("Your views_target cannot be None")
-            constraint = operator_used(views.data @ posterior, views.views_target)
+            lhs = view.data @ posterior
+            rhs = view.views_target
 
         case "corr":
-            mu_ref, std_ref = weighted_moments(
-                views.data, prior
-            )  # Need to anchor both mean and std on prior
-
-            constraint = operator_used(
-                (views.data[0] * views.data[1]) @ posterior,
-                views.views_target * std_ref[0] * std_ref[1] + mu_ref[0] * mu_ref[1],
-            )
+            # Anchor both mean and std on the prior
+            mu_ref, std_ref = weighted_moments(view.data, prior)
+            lhs = (view.data[0] * view.data[1]) @ posterior
+            rhs = view.views_target * std_ref[0] * std_ref[1] + mu_ref[0] * mu_ref[1]
 
         case _:
-            raise ValueError(f"Unsupported constraint type: {views.type}")
+            raise ValueError(f"Unsupported constraint type: {view.type}")
 
-    return constraint
+    constraint = operator_used(lhs, rhs)
+    return CompiledView(view=view, constraint=constraint, lhs=lhs, rhs=rhs)
+
+
+def diagnose_view(compiled: CompiledView) -> ConstraintDiag:
+    """
+    Produce a :class:`ConstraintDiag` for a compiled view after solving.
+
+    ``active`` is defined uniformly across all view types as the L-inf
+    residual ``max|lhs - rhs| <= 1e-5`` evaluated at the optimal posterior
+    (available via CVXPY's ``.value`` attribute on each expression).
+
+    Parameters
+    ----------
+    compiled : CompiledView
+        A compiled view whose underlying CVXPY problem has already been solved.
+
+    Returns
+    -------
+    ConstraintDiag
+        Diagnostic dict with keys ``risk_driver``, ``sign``,
+        ``constraint_value``, ``active``, and ``sensitivity``.
+    """
+    view = compiled.view
+    lhs_val = np.asarray(compiled.lhs.value)
+    rhs_val = (
+        np.asarray(compiled.rhs.value)
+        if isinstance(compiled.rhs, cp.Expression)
+        else np.asarray(compiled.rhs)
+    )
+    active = bool(np.all(np.abs(lhs_val - rhs_val) <= 1e-5))
+    dv = compiled.constraint.dual_value
+    if dv is None:
+        sensitivity: float | None = None
+    else:
+        raw = float(np.asarray(dv).flat[0])
+        sensitivity = raw if view.sign_type != "equal_greater" else -raw
+    return ConstraintDiag(
+        risk_driver=view.risk_driver,
+        sign=view.sign_type,
+        constraint_value=view.views_target,
+        active=active,
+        sensitivity=sensitivity,
+    )
 
 
 def _build_constraints(
     views: list[View],
     posterior: cp.Variable,
     prior: ProbVector,
-) -> list[CvxConstraint]:
+) -> tuple[list[CompiledView], list[CvxConstraint]]:
     """
-    Compile a list of CVXPY constraints for the entropy pooling problem.
+    Compile views and assemble CVXPY constraints for the entropy pooling problem.
 
-    The function always includes the simplex constraints (sum(posterior) == 1
-    and posterior >= 0) and appends linear constraints derived from each
-    View object via :func:`_assign_constraint_equation`.
+    Always includes the simplex constraints (``sum(posterior) == 1`` and
+    ``posterior >= 0``) plus one constraint per view built via
+    :func:`compile_view`.
 
     Parameters
     ----------
@@ -141,77 +210,42 @@ def _build_constraints(
 
     Returns
     -------
-    list[cvxpy.Constraint]
-        Constraints to pass into the cvxpy Problem.
+    tuple[list[CompiledView], list[CvxConstraint]]
+        - ``compiled_views``: one :class:`CompiledView` per input view.
+        - ``all_constraints``: full constraint list ready for ``cp.Problem``
+          (view constraints + simplex constraints).
     """
-    base: list[CvxConstraint] = [cp.sum(posterior) == 1, posterior >= 0]
-    constraints: list[CvxConstraint] = []
-    for view in views:
-        constraints.append(_assign_constraint_equation(view, posterior, prior))
-
-    return constraints + base
+    base: list[CvxConstraint] = [cp.sum(posterior) == 1, posterior >= 0]  # type: ignore[list-item]
+    compiled_views: list[CompiledView] = [
+        compile_view(view, posterior, prior) for view in views
+    ]
+    view_constraints: list[CvxConstraint] = [cv.constraint for cv in compiled_views]
+    return compiled_views, view_constraints + base
 
 
 # TODO: Fix info dict
 def get_constraints_diags(
-    views: list[View], constraints: list[CvxConstraint], posterior_probs: ProbVector
-) -> list[dict[str, int | bool | str]]:
+    compiled_views: list[CompiledView],
+) -> list[ConstraintDiag]:
     """
-    Produce diagnostic information for constraints after solving EP.
+    Produce diagnostic information for all views after solving EP.
 
-    The diagnostics list includes for each view whether the constraint is
-    active (binding) and the dual multiplier (sensitivity) indicating its
-    influence on the posterior. The logic for 'active' checks varies by view type.
+    Delegates per-view evaluation to :func:`diagnose_view`, which uses the
+    stored ``lhs``/``rhs`` expressions from each :class:`CompiledView`.
+    No type-specific branching needed here.
 
     Parameters
     ----------
-    views : list[View]
-        Views that were included in the entropy pooling problem.
-    constraints : list[cvxpy.Constraint]
-        Corresponding cvxpy constraints as returned by :func:`_build_constraints`.
-    posterior_probs : ProbVector
-        Posterior probability vector obtained from the optimization.
+    compiled_views : list[CompiledView]
+        Compiled views whose underlying CVXPY problem has been solved.
 
     Returns
     -------
-    list[dict]
-        Diagnostics dictionaries containing keys like 'risk_driver', 'sign',
-        'constraint_value', 'active', and 'sensitivity'.
+    list[ConstraintDiag]
+        Diagnostics dicts with keys ``risk_driver``, ``sign``,
+        ``constraint_value``, ``active``, and ``sensitivity``.
     """
-    info: list[dict] = []
-
-    for view, constraint in zip(views, constraints):
-        sensitivity = (
-            constraint.dual_value
-            if view.sign_type != "equal_greater"
-            else -constraint.dual_value
-        )
-        if view.type == "sorting":
-            active = bool(
-                view.data[0] @ posterior_probs >= view.data[1] @ posterior_probs
-            )
-        elif view.type == "corr":
-            active = bool(
-                (
-                    view.data[0] * view.data[1] @ posterior_probs - view.views_target
-                    <= 1e-5
-                )
-            )
-
-        else:
-            active = bool(abs(view.data @ posterior_probs - view.views_target <= 1e-5))
-
-        info.append(
-            {
-                "risk_driver": view.risk_driver,
-                "sign": view.sign_type,
-                "constraint_value": view.views_target,
-                "active": active,
-                "sensitivity": sensitivity,
-            }
-        )
-
-    return info
+    return [diagnose_view(cv) for cv in compiled_views]
 
 
 # TODO: Consider whether this is the best way (maybe instead of clipping give a v small value)
@@ -283,10 +317,12 @@ def entropy_pooling(
         infeasible/invalid posterior.
     """
     posterior = cp.Variable(prior.shape[0])
-    constraints = _build_constraints(views=views, posterior=posterior, prior=prior)
+    compiled_views, all_constraints = _build_constraints(
+        views=views, posterior=posterior, prior=prior
+    )
     obj = cp.Minimize(cp.sum(cp.kl_div(posterior, prior)))
-    prob = cp.Problem(obj, constraints)
-    _ = prob.solve(solver=solver, **solver_kwargs)
+    prob = cp.Problem(obj, all_constraints)
+    prob.solve(solver=solver, **solver_kwargs)
     posterior_res = posterior.value
 
     if prob.status not in ("optimal", "optimal_inaccurate"):
@@ -302,7 +338,7 @@ def entropy_pooling(
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug(
             "EP constraint diagnostics: %s",
-            get_constraints_diags(views, constraints, posterior_res),
+            get_constraints_diags(compiled_views),
         )
 
     return posterior_res

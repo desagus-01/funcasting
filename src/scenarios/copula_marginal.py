@@ -196,6 +196,10 @@ class CopulaMarginalModel:
         """
         if target_copula is None and target_marginals is None:
             raise ValueError("Choose a target marginal or target copula!")
+        if target_copula is not None and copula_fit_method is None:
+            raise ValueError(
+                "You must choose a copula fit method if you have selected a copula!"
+            )
 
         model = self
 

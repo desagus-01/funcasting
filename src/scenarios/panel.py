@@ -51,7 +51,7 @@ class AssetPanel:
     """
 
     values: pl.DataFrame
-    dates: pl.Series | None
+    dates: pl.Series | None  # None so that simulations can also use this
     prob: ProbVector
 
     def __post_init__(self) -> None:
@@ -144,27 +144,55 @@ class AssetPanel:
         """Return a new panel with a replaced probability vector."""
         return AssetPanel(values=self.values, dates=self.dates, prob=prob)
 
-    def with_values(
-        self,
-        values: pl.DataFrame,
-        prob: ProbVector | None = None,
-    ) -> AssetPanel:
-        """Return a new panel with replaced values.
+    def map_values_same_rows(self, values: pl.DataFrame) -> AssetPanel:
+        """Return a new panel with replaced values; row count must be unchanged.
 
-        If the row count matches, ``dates`` and ``prob`` are preserved by
-        default (``prob`` can still be overridden). If the row count changes
-        a new ``prob`` must be provided and ``dates`` are dropped because
-        they no longer align.
+        ``dates`` and ``prob`` are always preserved.  Raises if ``values`` has
+        a different number of rows, making it impossible to silently drop dates.
+        Use :meth:`filter_rows` or :meth:`diff` / :meth:`drop_nulls` when the
+        row count must change.
         """
-        if values.height == self.values.height:
-            return AssetPanel(
-                values=values,
-                dates=self.dates,
-                prob=prob if prob is not None else self.prob,
+        if values.height != self.values.height:
+            raise ValueError(
+                f"map_values_same_rows requires identical row count; "
+                f"got {values.height} vs {self.values.height}. "
+                "Use filter_rows() or diff() / drop_nulls() for row-changing ops."
             )
-        if prob is None:
-            raise ValueError("row count changed; a new prob vector must be supplied")
-        return AssetPanel(values=values, dates=None, prob=prob)
+        return AssetPanel(values=values, dates=self.dates, prob=self.prob)
+
+    def filter_rows(self, mask: pl.Series) -> AssetPanel:
+        """Keep rows where *mask* is True, updating ``dates`` and ``prob``.
+
+        Probability mass from dropped rows is redistributed evenly across the
+        survivors (same policy as :meth:`drop_nulls`).
+        """
+        if len(mask) != self.values.height:
+            raise ValueError(f"mask length {len(mask)} != rows {self.values.height}")
+        if not bool(mask.any()):
+            raise ValueError("filter_rows would remove every row")
+
+        new_values = self.values.filter(mask)
+        new_dates = self.dates.filter(mask) if self.dates is not None else None
+        dropped_idx = np.flatnonzero((~mask).to_numpy())
+        new_prob = redistribute_prob_mass(self.prob, dropped_idx)
+        return AssetPanel(values=new_values, dates=new_dates, prob=new_prob)
+
+    @property
+    def has_dates(self) -> bool:
+        """True when a row-aligned ``date`` series is present."""
+        return self.dates is not None
+
+    def require_dates(self) -> pl.Series:
+        """Return the ``date`` series or raise if the panel has none.
+
+        Prefer this over ``panel.dates`` at call sites that genuinely need
+        dates; it makes the dependency explicit and the error message clear.
+        """
+        if self.dates is None:
+            raise ValueError(
+                "This operation requires a dated panel, but AssetPanel.dates is None."
+            )
+        return self.dates
 
     @property
     def asset_names(self) -> list[str]:
