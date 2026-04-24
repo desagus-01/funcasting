@@ -9,7 +9,7 @@ from polars import DataFrame
 
 from probability.sampling import marginal_quantile_mapping, sample_copula
 from scenarios.panel import AssetPanel
-from scenarios.types import ProbVector
+from scenarios.types import ProbVector, validate_prob_vector
 
 
 def _compute_cdf_and_pobs(
@@ -55,6 +55,37 @@ class CopulaMarginalModel:
     copula: DataFrame
     prob: ProbVector
     dates: pl.Series | None
+
+    def __post_init__(self) -> None:
+        self._validate_frames()
+        validate_prob_vector(self.prob)
+        self.prob.setflags(write=False)
+        if self.dates is not None and len(self.dates) != self.marginals.height:
+            raise ValueError(
+                f"dates length {len(self.dates)} != frame height {self.marginals.height}"
+            )
+
+    def _validate_frames(self) -> None:
+        """Raise if marginals / cdfs / copula differ in columns or height,
+        or if any frame height disagrees with ``len(self.prob)``.
+        """
+        frames = {"marginals": self.marginals, "cdfs": self.cdfs, "copula": self.copula}
+        ref_name, ref = "marginals", self.marginals
+        for name, frame in frames.items():
+            if name == ref_name:
+                continue
+            if frame.columns != ref.columns:
+                raise ValueError(
+                    f"column mismatch: {ref_name}.columns={ref.columns} "
+                    f"vs {name}.columns={frame.columns}"
+                )
+            if frame.height != ref.height:
+                raise ValueError(
+                    f"height mismatch: {ref_name}.height={ref.height} "
+                    f"vs {name}.height={frame.height}"
+                )
+        if ref.height != len(self.prob):
+            raise ValueError(f"frame height {ref.height} != len(prob) {len(self.prob)}")
 
     @classmethod
     def from_panel(cls, panel: AssetPanel) -> CopulaMarginalModel:
