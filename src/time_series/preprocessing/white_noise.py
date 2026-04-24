@@ -5,7 +5,7 @@ from polars.dataframe.frame import DataFrame
 
 from policy import IIDConfig
 from scenarios.copula_marginal import CopulaMarginalModel
-from scenarios.panel import AssetPanel
+from scenarios.panel import ScenarioPanel
 from scenarios.types import ProbVector
 from time_series.tests.iid import (
     TestResultByAsset,
@@ -125,7 +125,7 @@ def check_white_noise(
 
 
 def _find_nonwhite_noise_assets(
-    increments: AssetPanel,
+    increments: ScenarioPanel,
     assets: list[str],
     cfg: IIDConfig | None = None,
 ) -> list[str]:
@@ -146,5 +146,5 @@ def test_increments_idd(
     cfg: IIDConfig | None = None,
 ) -> list[str]:
     """Diff each asset and return those whose increments are not white noise."""
-    panel = AssetPanel.from_frame(data.select(assets), original_prob).diff()
+    panel = ScenarioPanel.from_frame(data.select(assets), original_prob).diff()
     return _find_nonwhite_noise_assets(increments=panel, assets=assets, cfg=cfg)

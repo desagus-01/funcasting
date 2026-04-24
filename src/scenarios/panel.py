@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 import polars as pl
 from numpy.typing import NDArray
+from polars import DataFrame
 
 from probability.distributions import uniform_probs
 from scenarios.types import ProbVector, validate_prob_vector
@@ -38,7 +39,7 @@ def compensate_prob(prob: ProbVector, n_remove: int) -> ProbVector:
 
 
 @dataclass(frozen=True)
-class AssetPanel:
+class ScenarioPanel:
     """Canonical (values × dates × prob) triple used throughout the pipeline.
 
     Invariants (enforced in ``__post_init__``):
@@ -84,7 +85,7 @@ class AssetPanel:
         cls,
         df: pl.DataFrame,
         prob: ProbVector | None = None,
-    ) -> AssetPanel:
+    ) -> ScenarioPanel:
         """Build a panel from a DataFrame, splitting out the ``date`` column.
 
         A uniform prior is assigned when ``prob`` is not provided.
@@ -101,7 +102,13 @@ class AssetPanel:
 
         return cls(values=values, dates=dates, prob=prob)
 
-    def drop_nulls(self) -> AssetPanel:
+    def to_frame(self) -> DataFrame:
+        if self.dates is None:
+            return self.values
+
+        return DataFrame({"date": self.dates}).hstack(self.values)
+
+    def drop_nulls(self) -> ScenarioPanel:
         """Drop every row that contains a null in any column.
 
         The probability mass of each dropped row is redistributed evenly
@@ -122,9 +129,9 @@ class AssetPanel:
         dropped_idx = np.flatnonzero(null_mask.to_numpy())
         new_prob = redistribute_prob_mass(self.prob, dropped_idx)
 
-        return AssetPanel(values=clean, dates=new_dates, prob=new_prob)
+        return ScenarioPanel(values=clean, dates=new_dates, prob=new_prob)
 
-    def diff(self, lag: int = 1) -> AssetPanel:
+    def diff(self, lag: int = 1) -> ScenarioPanel:
         """Apply a ``lag``-step first-difference to every column.
 
         The leading ``lag`` rows are dropped (they become null) and their
@@ -138,13 +145,13 @@ class AssetPanel:
         ).slice(lag)
         new_dates = self.dates.slice(lag) if self.dates is not None else None
         new_prob = compensate_prob(self.prob, lag)
-        return AssetPanel(values=diffed, dates=new_dates, prob=new_prob)
+        return ScenarioPanel(values=diffed, dates=new_dates, prob=new_prob)
 
-    def with_prob(self, prob: ProbVector) -> AssetPanel:
+    def with_prob(self, prob: ProbVector) -> ScenarioPanel:
         """Return a new panel with a replaced probability vector."""
-        return AssetPanel(values=self.values, dates=self.dates, prob=prob)
+        return ScenarioPanel(values=self.values, dates=self.dates, prob=prob)
 
-    def map_values_same_rows(self, values: pl.DataFrame) -> AssetPanel:
+    def map_values_same_rows(self, values: pl.DataFrame) -> ScenarioPanel:
         """Return a new panel with replaced values; row count must be unchanged.
 
         ``dates`` and ``prob`` are always preserved.  Raises if ``values`` has
@@ -158,9 +165,9 @@ class AssetPanel:
                 f"got {values.height} vs {self.values.height}. "
                 "Use filter_rows() or diff() / drop_nulls() for row-changing ops."
             )
-        return AssetPanel(values=values, dates=self.dates, prob=self.prob)
+        return ScenarioPanel(values=values, dates=self.dates, prob=self.prob)
 
-    def filter_rows(self, mask: pl.Series) -> AssetPanel:
+    def filter_rows(self, mask: pl.Series) -> ScenarioPanel:
         """Keep rows where *mask* is True, updating ``dates`` and ``prob``.
 
         Probability mass from dropped rows is redistributed evenly across the
@@ -175,7 +182,7 @@ class AssetPanel:
         new_dates = self.dates.filter(mask) if self.dates is not None else None
         dropped_idx = np.flatnonzero((~mask).to_numpy())
         new_prob = redistribute_prob_mass(self.prob, dropped_idx)
-        return AssetPanel(values=new_values, dates=new_dates, prob=new_prob)
+        return ScenarioPanel(values=new_values, dates=new_dates, prob=new_prob)
 
     @property
     def has_dates(self) -> bool:

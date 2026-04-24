@@ -10,9 +10,9 @@ from polars import DataFrame
 
 from pipelines.fitted_universe import FittedUniverse
 from scenarios.copula_marginal import CopulaMarginalModel
-from scenarios.panel import AssetPanel
+from scenarios.panel import ScenarioPanel
 from scenarios.resampling import weighted_bootstrapping_idx
-from scenarios.types import ProbVector
+from scenarios.types import ProbVector, validate_prob_vector
 from time_series.transforms.inverses import apply_inverse_transforms
 
 logger = logging.getLogger(__name__)
@@ -58,15 +58,64 @@ class InnovationPaths:
     path_probs: ProbVector
 
 
+AssetSubset = Literal["all", "tradable", "factors"]
+
+
 @dataclass(frozen=True, slots=True)
 class ForecastPaths:
     asset_paths: dict[str, NDArray[np.floating]]
     path_probs: ProbVector
     universe: AssetUniverse | None = None
 
+    def __post_init__(self) -> None:
+        if not self.asset_paths:
+            raise ValueError("ForecastPaths.asset_paths cannot be empty")
+
+        validate_prob_vector(self.path_probs)
+
+        base_shape: tuple[int, int] | None = None
+
+        for asset, path in self.asset_paths.items():
+            if path.ndim != 2:
+                raise ValueError(
+                    f"Forecast for {asset} must have shape "
+                    f"(n_paths, n_horizons); got {path.shape}"
+                )
+
+            if base_shape is None:
+                base_shape = path.shape
+            elif path.shape != base_shape:
+                raise ValueError(
+                    f"Forecast shape mismatch for {asset}: {path.shape} != {base_shape}"
+                )
+
+            self.asset_paths[asset] = path
+
+        assert base_shape is not None
+        n_paths, _ = base_shape
+
+        if len(self.path_probs) != n_paths:
+            raise ValueError(
+                f"path_probs length {len(self.path_probs)} "
+                f"must equal number of paths {n_paths}"
+            )
+
+    @property
+    def n_paths(self) -> int:
+        first = next(iter(self.asset_paths.values()))
+        return first.shape[0]
+
+    @property
+    def n_horizons(self) -> int:
+        first = next(iter(self.asset_paths.values()))
+        return first.shape[1]
+
+    @property
+    def asset_names(self) -> list[str]:
+        return list(self.asset_paths.keys())
+
     @property
     def tradable_paths(self) -> dict[str, NDArray[np.floating]]:
-        """Only paths for tradable assets (excludes factors)."""
         if self.universe is None:
             return self.asset_paths
         assets_set = set(self.universe.assets)
@@ -74,11 +123,54 @@ class ForecastPaths:
 
     @property
     def factor_paths(self) -> dict[str, NDArray[np.floating]]:
-        """Only paths for factors (non-tradable)."""
         if self.universe is None:
             return {}
         factors_set = set(self.universe.factors)
         return {k: v for k, v in self.asset_paths.items() if k in factors_set}
+
+    def _paths_for(self, subset: AssetSubset) -> dict[str, NDArray[np.floating]]:
+        if subset == "all":
+            return self.asset_paths
+        if subset == "tradable":
+            return self.tradable_paths
+        if subset == "factors":
+            return self.factor_paths
+        raise ValueError(f"Unknown subset: {subset}")
+
+    def at_horizon(
+        self,
+        horizon: int,
+        *,
+        subset: AssetSubset = "all",
+    ) -> ScenarioPanel:
+        """
+        Return a 2D scenario panel at one forecast horizon.
+
+        horizon is 1-based:
+            horizon=1 means the first simulated forecast step.
+        """
+        if horizon < 1:
+            raise ValueError("horizon must be >= 1")
+
+        if horizon > self.n_horizons:
+            raise ValueError(
+                f"horizon={horizon} is out of range. "
+                f"Forecast has {self.n_horizons} horizons."
+            )
+
+        idx = horizon - 1
+        paths = self._paths_for(subset)
+
+        if not paths:
+            raise ValueError(f"No paths available for subset={subset!r}")
+
+        values = DataFrame({asset: arr[:, idx] for asset, arr in paths.items()})
+
+        return ScenarioPanel(
+            values=values,
+            dates=None,
+            prob=self.path_probs,
+        )
 
 
 def _validate_method_options(method: Method, horizon: int, assets: list[str]) -> None:
@@ -95,7 +187,7 @@ def _validate_method_options(method: Method, horizon: int, assets: list[str]) ->
 
 
 def draw_innovations(
-    invariants: AssetPanel,
+    invariants: ScenarioPanel,
     horizon: int,
     n_sims: int,
     seed: int | None,

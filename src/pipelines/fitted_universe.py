@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 from pipelines.model_selection import get_univariate_results
 from pipelines.preprocess import run_univariate_preprocess
 from policy import PipelineConfig
-from scenarios.panel import AssetPanel
+from scenarios.panel import ScenarioPanel
 from scenarios.types import ProbVector
 from simulation.simulate_paths import simulate_asset_paths
 from simulation.state import SimulationForecast
@@ -30,7 +30,7 @@ class FittedUniverse:
     preprocess: UnivariatePreprocess
     models: Mapping[str, UnivariateRes]
     simulation_forecasts: Mapping[str, SimulationForecast]
-    invariants: AssetPanel
+    invariants: ScenarioPanel
 
     @property
     def inverse_specs(self) -> dict[str, list[InverseSpec]]:
@@ -143,7 +143,7 @@ def _build_invariants_panel(
     models: Mapping[str, UnivariateRes],
     assets: list[str],
     prob: ProbVector,
-) -> AssetPanel:
+) -> ScenarioPanel:
     """Assemble an :class:`AssetPanel` of invariants aligned to ``post`` dates.
 
     Each column holds the invariant (innovation) series for one asset, with
@@ -165,4 +165,4 @@ def _build_invariants_panel(
         innovations_df = innovations_df.join(patch, on="date", how="left")
 
     logger.info("Invariants shape=%s", innovations_df.shape)
-    return AssetPanel.from_frame(innovations_df, prob)
+    return ScenarioPanel.from_frame(innovations_df, prob)

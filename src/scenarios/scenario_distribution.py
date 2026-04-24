@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 import polars as pl
 from polars import DataFrame
 
-from scenarios.panel import AssetPanel
+from scenarios.panel import ScenarioPanel
 from scenarios.types import ProbVector, View
 
 
@@ -17,7 +17,7 @@ class ScenarioDistribution:
     public ``scenarios`` / ``prob`` / ``dates`` properties are thin views.
     """
 
-    panel: AssetPanel
+    panel: ScenarioPanel
 
     @property
     def scenarios(self) -> DataFrame:
@@ -38,7 +38,7 @@ class ScenarioDistribution:
         cls, scenarios: DataFrame, prob: ProbVector | None = None
     ) -> ScenarioDistribution:
         """Build from a raw DataFrame; uniform prior when *prob* is None."""
-        return cls(panel=AssetPanel.from_frame(scenarios, prob))
+        return cls(panel=ScenarioPanel.from_frame(scenarios, prob))
 
 
 @dataclass

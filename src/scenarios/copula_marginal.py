@@ -8,7 +8,7 @@ from numpy import interp
 from polars import DataFrame
 
 from probability.sampling import marginal_quantile_mapping, sample_copula
-from scenarios.panel import AssetPanel
+from scenarios.panel import ScenarioPanel
 from scenarios.types import ProbVector, validate_prob_vector
 
 
@@ -92,7 +92,7 @@ class CopulaMarginalModel:
             raise ValueError(f"frame height {ref.height} != len(prob) {len(self.prob)}")
 
     @classmethod
-    def from_panel(cls, panel: AssetPanel) -> CopulaMarginalModel:
+    def from_panel(cls, panel: ScenarioPanel) -> CopulaMarginalModel:
         """Construct a CopulaMarginalModel from an :class:`AssetPanel`.
 
         The panel must be null-free; callers should run ``panel.drop_nulls()``
@@ -127,9 +127,9 @@ class CopulaMarginalModel:
         Delegates to :meth:`from_panel` after normalising via
         :class:`AssetPanel`.
         """
-        return cls.from_panel(AssetPanel.from_frame(data, prob))
+        return cls.from_panel(ScenarioPanel.from_frame(data, prob))
 
-    def to_panel(self) -> AssetPanel:
+    def to_panel(self) -> ScenarioPanel:
         """Convert back to an :class:`AssetPanel` by interpolating marginals.
 
         Each marginal is reconstructed by mapping copula pseudo-observations
@@ -142,7 +142,7 @@ class CopulaMarginalModel:
                 xp=self.cdfs.select(asset).to_numpy().ravel(),
                 fp=self.marginals.select(asset).to_numpy().ravel(),
             )
-        return AssetPanel(
+        return ScenarioPanel(
             values=DataFrame(interp_res),
             dates=self.dates,
             prob=self.prob,
@@ -202,7 +202,7 @@ class CopulaMarginalModel:
         *,
         target_copula: Literal["t", "norm"] | None = None,
         copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
-    ) -> AssetPanel:
+    ) -> ScenarioPanel:
         """Apply CMA updates to marginals and/or the copula and return a panel.
 
         Parameters
