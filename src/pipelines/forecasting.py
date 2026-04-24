@@ -137,28 +137,27 @@ class ForecastPaths:
             return self.factor_paths
         raise ValueError(f"Unknown subset: {subset}")
 
-    def at_horizon(
+    def at_step(
         self,
-        horizon: int,
+        step: int,
         *,
         subset: AssetSubset = "all",
     ) -> ScenarioPanel:
         """
-        Return a 2D scenario panel at one forecast horizon.
+        Return a 2D scenario panel at one forecast step.
 
-        horizon is 1-based:
-            horizon=1 means the first simulated forecast step.
+        step is 1-based: step=1 is the first simulated forecast step.
+        t0 is excluded; ForecastPaths contains no t0 column.
         """
-        if horizon < 1:
-            raise ValueError("horizon must be >= 1")
+        if step < 1:
+            raise ValueError("step must be >= 1")
 
-        if horizon > self.n_horizons:
+        if step > self.n_horizons:
             raise ValueError(
-                f"horizon={horizon} is out of range. "
-                f"Forecast has {self.n_horizons} horizons."
+                f"step={step} is out of range. Forecast has {self.n_horizons} steps."
             )
 
-        idx = horizon - 1
+        idx = step - 1
         paths = self._paths_for(subset)
 
         if not paths:

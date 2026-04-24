@@ -235,7 +235,7 @@ def portfolio_factor_attribution(
         is_log_price=is_log_price,
     )
 
-    portfolio_cum = portfolio_forecast.performance_at_horizon(horizon=horizon)
+    portfolio_cum = portfolio_forecast.performance_at_period(period=horizon)
 
     factor_result = factor_ols_regression(
         factors_cum_forecast=factors_cum,

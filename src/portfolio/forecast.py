@@ -157,58 +157,56 @@ class PortfolioForecast:
     def losses(self) -> NDArray[np.floating]:
         return -self.cumulative_performance
 
-    def _validate_horizon(self, horizon: int) -> None:
+    def _validate_period(self, period: int) -> None:
         """
-        Validate horizon using portfolio convention:
+        Validate period using portfolio convention:
 
-        horizon=0:
+        period=0:
             t0 / initial portfolio state
 
-        horizon=1:
+        period=1:
             first forecast step
 
-        horizon=n:
+        period=n:
             nth forecast step
         """
-        if horizon < 0:
-            raise ValueError("horizon must be >= 0")
+        if period < 0:
+            raise ValueError("period must be >= 0")
 
-        if horizon > self.n_horizons:
+        if period > self.n_horizons:
             raise ValueError(
-                f"horizon={horizon} is out of range. "
-                f"Valid range is 0..{self.n_horizons}."
+                f"period={period} is out of range. Valid range is 0..{self.n_horizons}."
             )
 
-    def performance_at_horizon(self, horizon: int) -> NDArray[np.floating]:
-        self._validate_horizon(horizon)
-        return self.cumulative_performance[:, horizon]
+    def performance_at_period(self, period: int) -> NDArray[np.floating]:
+        self._validate_period(period)
+        return self.cumulative_performance[:, period]
 
-    def loss_at_horizon(self, horizon: int) -> NDArray[np.floating]:
-        self._validate_horizon(horizon)
-        return self.losses[:, horizon]
+    def loss_at_period(self, period: int) -> NDArray[np.floating]:
+        self._validate_period(period)
+        return self.losses[:, period]
 
-    def value_at_horizon(self, horizon: int) -> NDArray[np.floating]:
-        self._validate_horizon(horizon)
-        return self.values[:, horizon]
+    def value_at_period(self, period: int) -> NDArray[np.floating]:
+        self._validate_period(period)
+        return self.values[:, period]
 
-    def at_horizon(self, horizon: int) -> ScenarioPanel:
+    def at_period(self, period: int) -> ScenarioPanel:
         """
-        Return one portfolio horizon as a ScenarioPanel.
+        Return one portfolio period as a ScenarioPanel.
 
-        Rows are simulated paths.
-        Columns are portfolio-level quantities.
-        Probabilities are path probabilities.
+        period=0 is t0. period=1 is the first forecast step.
+        Rows are simulated paths. Columns are portfolio-level quantities.
         """
-        self._validate_horizon(horizon)
+        self._validate_period(period)
 
         columns: dict[str, NDArray[np.floating]] = {
-            "portfolio_value": self.values[:, horizon],
-            "cumulative_performance": self.cumulative_performance[:, horizon],
-            "loss": self.losses[:, horizon],
+            "portfolio_value": self.values[:, period],
+            "cumulative_performance": self.cumulative_performance[:, period],
+            "loss": self.losses[:, period],
         }
 
-        if horizon > 0:
-            columns["incremental_pnl"] = self.incremental_pnl[:, horizon - 1]
+        if period > 0:
+            columns["incremental_pnl"] = self.incremental_pnl[:, period - 1]
 
         return ScenarioPanel(
             values=DataFrame(columns),
@@ -216,20 +214,30 @@ class PortfolioForecast:
             prob=self.path_probs,
         )
 
-    def weights_at_horizon(self, horizon: int) -> ScenarioPanel:
+    def at_step(self, step: int) -> ScenarioPanel:
         """
-        Return portfolio asset weights at one horizon as a ScenarioPanel.
+        Return one forecast step as a ScenarioPanel.
 
-        Rows are simulated paths.
-        Columns are assets.
-        Probabilities are path probabilities.
+        step is 1-based: step=1 is the first forecast step. t0 is excluded.
+        Delegates to at_period(step).
         """
-        self._validate_horizon(horizon)
+        if step < 1:
+            raise ValueError("step must be >= 1")
+        return self.at_period(step)
+
+    def weights_at_period(self, period: int) -> ScenarioPanel:
+        """
+        Return portfolio asset weights at one period as a ScenarioPanel.
+
+        period=0 is t0. period=1 is the first forecast step.
+        Rows are simulated paths. Columns are assets.
+        """
+        self._validate_period(period)
 
         return ScenarioPanel(
             values=DataFrame(
                 {
-                    asset: weights[:, horizon]
+                    asset: weights[:, period]
                     for asset, weights in self.asset_weights.items()
                 }
             ),
@@ -292,7 +300,7 @@ class PortfolioForecast:
         if end_horizon is None:
             end_horizon = self.n_horizons
 
-        self._validate_horizon(end_horizon)
+        self._validate_period(end_horizon)
 
         if value_type not in {"value", "pnl", "loss"}:
             raise ValueError(f"Unknown value_type: {value_type}")

@@ -102,7 +102,7 @@ class LossDistribution:
         This avoids a circular dependency:
             portfolio.forecast -> portfolio.risk
         """
-        horizon_panel = portfolio_forecast.at_horizon(horizon)
+        horizon_panel = portfolio_forecast.at_period(horizon)
         return cls.from_panel(horizon_panel, horizon=horizon, loss_col="loss")
 
     @property

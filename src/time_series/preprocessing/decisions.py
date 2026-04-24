@@ -6,10 +6,18 @@ import numpy as np
 from time_series.preprocessing.types import (
     TransformDecision,
 )
-from time_series.selection.trend import AssetTrendDiagnostic
+from time_series.selection.trend import AssetTrendDiagnostic, TrendSelection
+from time_series.transforms.detrend import TrendCandidate
 from time_series.tests.seasonality import SEASONAL_MAP, SeasonalityPeriodTest
 
 logger = logging.getLogger(__name__)
+
+
+def _accepted_candidate(selection: TrendSelection | None) -> TrendCandidate | None:
+    """Return selected candidate only if it satisfies the selection's own threshold policy."""
+    if selection is None or not selection.transformation_needed:
+        return None
+    return selection.selected
 
 
 def detrend_decision_rule(
@@ -27,10 +35,8 @@ def detrend_decision_rule(
     for asset in assets:
         deterministic = detrend_res[asset].deterministic
         stochastic = detrend_res[asset].stochastic
-        deterministic_res = (
-            deterministic.selected if deterministic is not None else None
-        )
-        stochastic_res = stochastic.selected if stochastic is not None else None
+        deterministic_res = _accepted_candidate(deterministic)
+        stochastic_res = _accepted_candidate(stochastic)
         candidates = []
 
         if deterministic_res is not None:

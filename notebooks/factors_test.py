@@ -119,17 +119,17 @@ forecasts
 # columns = assets / factors
 # prob    = path probabilities
 
-forecast_panel_h = forecasts.at_horizon(
+forecast_panel_h = forecasts.at_step(
     analysis_horizon,
     subset="all",
 )
 
-tradable_panel_h = forecasts.at_horizon(
+tradable_panel_h = forecasts.at_step(
     analysis_horizon,
     subset="tradable",
 )
 
-factor_panel_h = forecasts.at_horizon(
+factor_panel_h = forecasts.at_step(
     analysis_horizon,
     subset="factors",
 )
@@ -177,8 +177,8 @@ perf_attr.joint_distribution.head()
 # %%
 # ── Portfolio loss distribution ──────────────────────────────────────
 
-portfolio_h30 = port_forecast.at_horizon(30)
-losses_h30 = port_forecast.loss_at_horizon(30)
+portfolio_h30 = port_forecast.at_period(30)
+losses_h30 = port_forecast.loss_at_period(30)
 
 var_h30 = var(
     distribution=portfolio_h30.values["loss"].to_numpy(),
