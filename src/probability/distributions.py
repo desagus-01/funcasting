@@ -1,9 +1,9 @@
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import validate_call
-from scenarios.types import ProbVector
 
 from globals import model_cfg
+from scenarios.types import ProbVector
 
 
 def kernel_smoothing(
@@ -64,7 +64,7 @@ def state_smooth_probs(
     kernel_type: int = 1,
     reference: float | None = None,
     time_based: bool = True,
-) -> NDArray[np.float64]:
+) -> ProbVector:
     w = kernel_smoothing(
         n=n,
         half_life=half_life,

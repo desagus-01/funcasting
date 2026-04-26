@@ -3,7 +3,7 @@ import logging
 
 import polars as pl
 
-from pipelines.forecasting import run_n_steps_forecast
+from pipelines.forecasting import AssetUniverse, run_n_steps_forecast
 from policy import LogConfig
 from portfolio import (
     build_equal_weight_portfolio_from_df,
@@ -39,10 +39,10 @@ cols_to_keep = [
 
 data = data.select(cols_to_keep)
 
-assets = list(data.columns[15:20]) + list(factors_cols)
-data = data.select("date", *assets)
-
-tradable_assets = [a for a in assets if a not in factors_cols]
+tradable_assets = list(data.columns[15:20])
+factors_cols = list(factors_cols)
+universe = AssetUniverse(assets=tradable_assets, factors=factors_cols)
+data = data.select("date", *universe.all_tickers)
 
 # %%
 # ── Build historical ScenarioPanel ───────────────────────────────────
@@ -76,7 +76,7 @@ historical_panel
 
 long = wide_to_long(
     historical_panel.to_frame(),
-    assets=assets,
+    assets=universe.all_tickers,
 )
 
 d2 = long.with_columns(pl.col("adj_close").exp().alias("adj_close")).filter(
@@ -100,10 +100,9 @@ forecasts = run_n_steps_forecast(
     horizon=horizon,
     n_sims=n_sims,
     seed=2,
-    assets=assets,
-    factors=factors_cols,
+    universe=universe,
     method="cma",
-    target_copula="norm",
+    target_copula="t",
     back_to_price=True,
 )
 

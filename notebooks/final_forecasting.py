@@ -1,6 +1,6 @@
 import polars as pl
 
-from pipelines.forecasting import run_n_steps_forecast
+from pipelines.forecasting import AssetUniverse, run_n_steps_forecast
 from probability.distributions import state_smooth_probs
 from utils.tiingo import import_tickers_and_factors, plot_ticker_lines
 from utils.visuals import plot_simulation_results
@@ -37,14 +37,14 @@ train_data
 
 # %%
 prob_ex = state_smooth_probs(train_data.height, half_life=60, time_based=True)
+universe = AssetUniverse(assets=list(assets), factors=list(factors_cols))
 forecasts = run_n_steps_forecast(
     data=train_data,
     prob=prob_ex,
     horizon=horizon,
     n_sims=5000,
     seed=2,
-    assets=assets,
-    factors=factors_cols,
+    universe=universe,
     method="bootstrap",
     # target_copula="t",
     back_to_price=False,

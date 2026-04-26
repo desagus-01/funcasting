@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import polars as pl
 import seaborn as sns
 
-from pipelines.forecasting import run_n_steps_forecast
+from pipelines.forecasting import AssetUniverse, run_n_steps_forecast
 from portfolio import build_equal_weight_portfolio_from_df, portfolio_forecast
 from probability.distributions import state_smooth_probs, uniform_probs
 from utils.helpers import wide_to_long
@@ -36,13 +36,14 @@ d2
 horizon = 30
 prob_ex = state_smooth_probs(data.height, half_life=60, time_based=True)
 prob_ex = uniform_probs(data.height)
+universe = AssetUniverse(assets=list(assets), factors=[])
 forecasts = run_n_steps_forecast(
     data=data,
     prob=prob_ex,
     horizon=horizon,
     n_sims=10000,
     seed=2,
-    assets=assets,
+    universe=universe,
     method="bootstrap",
     # target_copula="t",
     # target_marginals={"KEYS": "t", "TTC": "t", "NXRT": "t", "DHIL": "t"},

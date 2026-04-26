@@ -172,14 +172,14 @@ class ForecastPaths:
         )
 
 
-def _validate_method_options(method: Method, horizon: int, assets: list[str]) -> None:
+def _validate_method_options(method: Method, horizon: int, universe: AssetUniverse) -> None:
     if horizon < 1:
         raise ValueError("horizon must be >= 1")
     if horizon > 1 and method == "historical":
         raise ValueError(
             "Historical method for innovations can only be used for one-step forecasts."
         )
-    if len(assets) <= 1 and method == "cma":
+    if len(universe.all_tickers) <= 1 and method == "cma":
         raise ValueError(
             "Must have more than one asset in order to use the copula method."
         )
@@ -298,13 +298,12 @@ def draw_innovations(
 def run_n_steps_forecast(
     data: DataFrame,
     prob: ProbVector,
-    assets: list[str],
+    universe: AssetUniverse,
     horizon: int = 100,
     n_sims: int = 1000,
     seed: int | None = None,
     method: Method = "bootstrap",
     *,
-    factors: list[str] | None = None,
     back_to_price: bool = True,
     target_copula: Literal["t", "norm"] | None = None,
     copula_fit_method: Literal["ml", "irho", "itau"] | None = None,
@@ -324,16 +323,15 @@ def run_n_steps_forecast(
         Raw input with a ``date`` column and one numeric column per asset.
     prob : ProbVector
         Prior probability vector over historical rows.
-    assets : list[str]
-        Assets to forecast (order is preserved through the pipeline).
+    universe : AssetUniverse
+        Classifies tickers as tradable assets or non-tradable factors.
+        All tickers (``universe.all_tickers``) are forecast together;
+        only assets participate in portfolio construction.
     horizon, n_sims, seed, method
         See :func:`draw_innovations`.
 
     Other Parameters
     ----------------
-    factors
-        Non-tradable factors forecast jointly with assets but excluded from
-        portfolio construction. Available as ``ForecastPaths.factor_paths``.
     back_to_price
         If True, inverse transforms include the final ``exp(...)`` step to
         return to price scale.
@@ -341,17 +339,18 @@ def run_n_steps_forecast(
         CMA-only options; forwarded to :func:`draw_innovations`.
     """
     logger.info(
-        "Starting n-step forecast: assets=%s horizon=%d n_sims=%d method=%s seed=%s",
-        assets,
+        "Starting n-step forecast: assets=%s factors=%s horizon=%d n_sims=%d method=%s seed=%s",
+        universe.assets,
+        universe.factors,
         horizon,
         n_sims,
         method,
         seed,
     )
 
-    _validate_method_options(method, horizon, assets)
+    _validate_method_options(method, horizon, universe)
 
-    universe_fit = FittedUniverse.fit(data=data, prob=prob, assets=assets)
+    universe_fit = FittedUniverse.fit(data=data, prob=prob, assets=universe.all_tickers)
 
     innovations = draw_innovations(
         invariants=universe_fit.invariants,
@@ -374,10 +373,8 @@ def run_n_steps_forecast(
         back_to_price=back_to_price,
     )
 
-    factors_ = factors or []
-    tradable = [a for a in assets if a not in set(factors_)]
     return ForecastPaths(
         asset_paths=transformed,
         path_probs=innovations.path_probs,
-        universe=AssetUniverse(assets=tradable, factors=factors_),
+        universe=universe,
     )
