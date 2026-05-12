@@ -7,14 +7,14 @@
 - [x] Build the joint distribution of factors and residuals ✅ 2026-04-10
 - [x] Build factor attribution for risk ✅ 2026-04-21
     - [x] Add in min torsion to find orthogonal factors ✅ 2026-04-21
-- [ ] contribution of factors to risk using Euler method
-    - [ ] marginal
-    - [ ] total
+- [x] contribution of factors to risk using Euler method ✅ 2026-05-12
+    - [x] marginal ✅ 2026-05-12
+    - [x] total ✅ 2026-05-12
    
 ## Feature-Selection
-- [ ] Add in backward/forward regression based on Riskfolio to find 'best' factors
-- [ ] Add in feature importance code from sklearn
-- [ ] Add in RFE and RFECV from sklearn for feature selection
+- [x] Add in backward/forward regression based on Riskfolio to find 'best' factors ✅ 2026-05-12
+- [x] Add in feature importance code from sklearn ✅ 2026-05-12
+- [x] Add in RFE and RFECV from sklearn for feature selection ✅ 2026-05-12
 
 
 ## Re-factor
