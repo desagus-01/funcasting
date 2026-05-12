@@ -1,117 +1,42 @@
-# Funcasting
+# QRAFT
 
-**Flexible probability scenario modeling, forecasting, and portfolio construction toolkit (research-focused).**
+**Quantitative Risk, Allocation, and Forecasting Toolkit**
 
-`funcasting` is a Python codebase for building scenario distributions, encoding views, and running univariate-to-multivariate forecast workflows with probability-weighted sampling.
+QRAFT is an end-to-end quantitative portfolio construction toolkit built around probabilistic, scenario-based thinking. Rather than producing point estimates, every stage of the pipeline, from forecasting through to risk and allocation, works with full distributions of simulated outcomes, each carrying an explicit probability weight.
 
-The long-term ambition is to provide an end-to-end portfolio construction pipeline where forecasting, scenario generation, and risk management are integrated into one coherent workflow.
+The goal is a single coherent research environment where forecasting, risk, and portfolio decisions are not siloed tools bolted together, but stages of one integrated, simulation-driven workflow.
 
-> **Disclaimer**: Research and educational use only. Not investment advice.
-
----
-
-## What is in the repository now
-
-The project has moved beyond notebooks-only experiments and now contains a modular `src/` architecture:
-
-- `src/pipelines/`
-  - End-to-end orchestration (`preprocess`, `model_selection`, `forecasting`).
-- `src/time_series/`
-  - Diagnostics, stationarity/seasonality tests, transforms, and univariate model wrappers.
-- `src/scenarios/`
-  - Scenario distribution types, entropy pooling, copula-marginal updates.
-- `src/simulation/`
-  - Simulation state objects and path engines.
-- `src/probability/`
-  - Probability distributions and sampling utilities.
-- `src/utils/`
-  - Shared helpers and data-source connectors (e.g., Tiingo).
+> **Disclaimer:** Research and educational use only. Not financial or investment advice.
 
 ---
 
-## Project ambition
+## What QRAFT Does
 
-Beyond forecasting, the project is being developed toward a full portfolio construction stack with a risk-first design:
+### Research & Forecasting
 
-1. Build robust, probability-weighted scenario forecasts
-2. Convert scenarios into risk diagnostics and constraints
-3. Construct and stress-test portfolios under explicit risk budgets
-4. Support iterative view updates and re-optimization
+QRAFT provides a full probabilistic forecasting pipeline for financial time series. Raw price data is preprocessed per-asset (stationarity checks, detrending, deseasoning), a mean and volatility model is selected automatically, and innovations are extracted and used to drive a Monte Carlo simulation. The output is never a single forecast, it is always a set of probability-weighted simulated price paths across all assets and horizons, preserving the full uncertainty in the distribution.
 
-## Core forecasting entrypoint
+Beyond pure extrapolation, QRAFT supports three simulation methods for forecasting: **bootstrap**, **historical pass-through**, and **Copula-Marginal Adjustment (CMA)**, allowing the user to control the shape of the joint return distribution, stress tail dependence, or impose fat-tailed marginals on specific assets.
 
-Main pipeline entrypoint:
+### Risk Management
 
-- `src/pipelines/forecasting.py::run_n_steps_forecast(...)`
+Because every scenario object carries an explicit probability vector, the full simulation output is always available for downstream risk and allocation steps nothing is collapsed to a point estimate prematurely. This also makes it straightforward to encode  **views** directly onto the scenario distribution using **Entropy Pooling**. Rather than discarding scenarios, their probabilities are updated to be consistent with the view (e.g. "AAPL mean return will be below historical average") by solving a minimum KL-divergence problem. Views can be placed on means, volatilities, correlations, or arbitrary moments.
 
-High-level flow:
+Portfolio-level risk is computed from the simulated loss distribution, supporting both **VaR** and **CVaR** (more coming soon!). Risk attribution is available at the factor level, using top-down exposure estimation, minimum-torsion orthogonalisation, and Euler decomposition to attribute marginal and total risk contributions to each factor.
 
-1. Univariate preprocessing (white-noise screen, detrend, deseason)
-2. Mean/volatility model selection
-3. Innovation extraction and scenario drawing (`bootstrap`, `historical`, `cma`)
-4. Path simulation
-5. Optional inverse transforms back to price-like scale
+### Portfolio Construction
+
+**STILL BEING WORKED ON**
 
 ---
 
-## Data contract
+## Roadmap
 
-Expected tabular input for pipeline functions:
+- [ ] Signals interface for incorporating alpha into allocation
+- [ ] Portfolio optimisation (risk-budgeting, mean-variance under constraints)
+- [ ] Execution module (order generation, cost modelling)
+- [ ] Entropy Pooling integration into simulation probability weights
+- [ ] CRPS scores for forecast evaluation
+- [ ] Block resampling to better preserve return dynamics
+- [ ] Expand test coverage across pipeline and simulation entry points
 
-- A `date` column
-- One numeric column per asset
-- Optional probability vector (`ProbVector`) with:
-  - shape `(n_rows,)`
-  - non-negative entries
-  - sum approximately `1.0`
-
-Recommended before running pipelines:
-
-- Sort by `date`
-- Ensure unique dates
-- Ensure numeric asset columns only
-- Resolve nulls explicitly
-
----
-
-## Null handling (current behavior)
-
-The current codebase has mixed null handling strategies (asset-level and full-row drops depending on module).
-
-Practical recommendation for now:
-
-- Clean data before modeling (drop/fill policy chosen explicitly)
-- Re-check probability alignment after any row filtering
-
----
-
-## Installation
-
-Requires Python `>=3.13` and [uv](https://github.com/astral-sh/uv):
-
-```bash
-git clone https://github.com/desagus-01/funcasting.git
-cd funcasting
-uv sync
-uv pip install -e .
-```
-
----
-
-## Examples
-
-See:
-
-- `notebooks/examples/simple_entropy_pooling.py`
-- `notebooks/examples/simple_cma_example.py`
-- `notebooks/examples/advanced_entropy_pooling.py`
-
----
-
-## Roadmap (short)
-
-- Harden data validation and null-policy consistency across modules
-- Expand test coverage for pipeline and simulation entrypoints
-- Extend multivariate forecasting and optimization workflows
-- Add risk-budgeting and portfolio-construction modules on top of scenario forecasts
-- Improve documentation for scenario/view APIs and portfolio workflow design

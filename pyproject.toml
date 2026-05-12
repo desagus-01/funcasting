@@ -1,7 +1,7 @@
 [project]
-name = "funcasting"
+name = "qraft"
 version = "0.1.0"
-description = "Add your description here"
+description = "Quantitative Risk, Allocation, and Forecasting Toolkit"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -25,7 +25,7 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["qraft"]
 
 
 # [tool.basedpyright]
@@ -39,7 +39,7 @@ where = ["src"]
 
 [tool.pyrefly]
 python_version = "3.13"
-search_path = ["src"]
+search_path = ["qraft"]
 project-includes = [
   "**/*.py",
   "**/*.pyi",

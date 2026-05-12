@@ -172,7 +172,9 @@ class ForecastPaths:
         )
 
 
-def _validate_method_options(method: Method, horizon: int, universe: AssetUniverse) -> None:
+def _validate_method_options(
+    method: Method, horizon: int, universe: AssetUniverse
+) -> None:
     if horizon < 1:
         raise ValueError("horizon must be >= 1")
     if horizon > 1 and method == "historical":
