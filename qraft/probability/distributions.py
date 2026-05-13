@@ -1,8 +1,7 @@
 import numpy as np
+from globals import model_cfg
 from numpy.typing import NDArray
 from pydantic import validate_call
-
-from globals import model_cfg
 from scenarios.types import ProbVector
 
 

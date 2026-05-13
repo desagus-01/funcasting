@@ -51,3 +51,8 @@ project-excludes = [
   "**/__pycache__/**",
 ]
 
+[dependency-groups]
+dev = [
+    "ipykernel>=7.1.0",
+]
+

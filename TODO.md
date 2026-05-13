@@ -1,25 +1,11 @@
-## Portfolio & Risk
-- [x] Create risk metrics ✅ 2026-04-09
-- [x] Create some attribution factors (Z) ✅ 2026-04-09
-    - [x] Either use pre-made or just some ETFs for sectors ✅ 2026-04-09
-- [x] Estimate exposures using TOP-DOWN approach ✅ 2026-04-08
-- [x] Recover shift alpha and residual U ✅ 2026-04-10
-- [x] Build the joint distribution of factors and residuals ✅ 2026-04-10
-- [x] Build factor attribution for risk ✅ 2026-04-21
-    - [x] Add in min torsion to find orthogonal factors ✅ 2026-04-21
-- [x] contribution of factors to risk using Euler method ✅ 2026-05-12
-    - [x] marginal ✅ 2026-05-12
-    - [x] total ✅ 2026-05-12
-   
-## Feature-Selection
-- [x] Add in backward/forward regression based on Riskfolio to find 'best' factors ✅ 2026-05-12
-- [x] Add in feature importance code from sklearn ✅ 2026-05-12
-- [x] Add in RFE and RFECV from sklearn for feature selection ✅ 2026-05-12
-
-
-## Re-factor
-- [ ] Add appropriate logs to debug (but not too many)
-    - [ ] Add logging files etc as well
+## Signals
+- [ ] Add basic raw signals
+    - [ ] Distinguish between market-wide and cross-sectional
+- [ ] Add signals processing:
+    - [ ] Smoothing
+    - [ ] Scoring
+    - [ ] Ranking
+- [ ] Processed signals to expected returns (Characteristics)
 
 
 ## Forecasting pipeline
