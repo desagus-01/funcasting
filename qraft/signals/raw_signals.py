@@ -13,9 +13,9 @@ setup_logging(LogConfig(level=logging.WARNING))
 def ewma_signal(
     risk_drivers: DataFrame,
     dates: Series,
-    half_life: str,
+    half_life: str = "60d",
     drop_nulls: bool = True,
-):
+) -> DataFrame:
     ewm_df = risk_drivers.with_columns(
         pl.all().diff().ewm_mean_by(dates, half_life=half_life)
     )

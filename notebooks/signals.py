@@ -1,11 +1,17 @@
 # %%
 import logging
 
-import polars as pl
 from pipelines.forecasting import AssetUniverse
 from policy import LogConfig
 from probability.distributions import state_smooth_probs
 from scenarios.panel import ScenarioPanel
+from signals.raw_signals import ewma_signal
+from signals.signal_processing import (
+    signal_distortion,
+    signal_ranking,
+    signal_scoring,
+    signal_smoothing,
+)
 from utils.log import setup_logging
 from utils.tiingo import import_tickers_and_factors
 
@@ -46,9 +52,18 @@ asset_panel = ScenarioPanel.from_frame(
 )
 # %%
 
-asset_panel.values["CAR"].ewm_mean_by(asset_panel.dates, half_life="60d")
 
-asset_panel.values.with_columns(
-    pl.all().diff().ewm_mean_by(asset_panel.dates, half_life="60d")
-).drop_nulls()
 # %%
+mom_sig = ewma_signal(
+    asset_panel.values, asset_panel.dates, half_life="60d", drop_nulls=False
+)
+mom_sig
+# %%
+signal_smoothing(mom_sig, half_life=60)
+
+# %%
+mom_scores = signal_scoring(mom_sig, half_life=60)
+# %%
+mom_rank = signal_ranking(mom_scores)
+
+signal_distortion(mom_rank, kind="power")
