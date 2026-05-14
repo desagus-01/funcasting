@@ -7,6 +7,10 @@
     - [ ] Ranking
 - [ ] Processed signals to expected returns (Characteristics)
 
+## Optimization
+- [ ] Start with simple MV optimization
+    - [ ] Calculate first two moments of simulations
+
 
 ## Forecasting pipeline
 - [ ] Add metrics to evaluate forecast:
