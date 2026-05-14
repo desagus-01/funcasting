@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 
 import polars as pl
-
 from utils.helpers import wide_to_long
 
 
@@ -171,7 +170,6 @@ def build_equal_weight_portfolio_from_df(
     )
     total, positions = portfolio_value(eq_portfolio)
 
-    # Inline extraction of shares and prices
     shares_mapping = dict(
         zip(
             positions["ticker"].to_list(),

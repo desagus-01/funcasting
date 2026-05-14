@@ -4,7 +4,6 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 from polars import DataFrame
-
 from portfolio.positions import (
     WEIGHT_MODE,
     initial_portfolio_values_from_shares,
@@ -148,7 +147,7 @@ class PortfolioForecast:
 
     @property
     def cumulative_performance(self) -> NDArray[np.floating]:
-        return cumulative_pnl_forecast(
+        return cumulative_pnl(
             self.incremental_pnl,
             self.pnl_type,
         )
@@ -330,7 +329,7 @@ class PortfolioForecast:
         plot_simulation_results(data, title=title)
 
 
-def cumulative_pnl_forecast(
+def cumulative_pnl(
     pnl: NDArray[np.floating],
     pnl_type: PnL_OPTIONS,
     end_horizon: int | None = None,
@@ -347,7 +346,9 @@ def cumulative_pnl_forecast(
         raise ValueError(f"Unknown pnl_type: {pnl_type}")
 
     if pnl.ndim != 2:
-        raise ValueError("pnl must have shape (n_sims, n_periods)")
+        raise ValueError(
+            f"pnl must be 2-D (n_paths, n_horizons); got shape {np.asarray(pnl).shape}"
+        )
 
     # When at_horizon is set we only need to accumulate up to that point.
     effective_end = at_horizon if at_horizon is not None else end_horizon
@@ -476,18 +477,18 @@ def portfolio_value_forecast(
     return asset_values.sum(axis=0)
 
 
-def portfolio_pnl_forecast_from_values(
-    forecast_portfolio_values: NDArray[np.floating],
+def pnl_from_values(
+    values: NDArray[np.floating],
     mode: PnL_OPTIONS = "relative",
     safe_eps: float = 1e-12,
 ) -> NDArray[np.floating]:
     if mode not in {"relative", "absolute", "log"}:
-        raise ValueError(f"Unknown mode: {mode}")
+        raise ValueError(f"Unknown mode: {mode!r}")
 
-    values = np.asarray(forecast_portfolio_values, dtype=float)
+    values = np.asarray(values, dtype=float)
     if values.ndim != 2:
         raise ValueError(
-            "forecast_portfolio_values must have shape (n_sims, n_periods)"
+            f"values must be 2-D (n_paths, n_periods); got shape {values.shape}"
         )
 
     prev = values[:, :-1]
@@ -501,6 +502,7 @@ def portfolio_pnl_forecast_from_values(
         denom[np.abs(denom) < safe_eps] = np.nan
         return (curr - prev) / denom
 
+    # log — guard against non-positive values on either side
     invalid = (prev <= safe_eps) | (curr <= safe_eps)
     denom = prev.astype(float, copy=True)
     denom[invalid] = np.nan
@@ -581,8 +583,8 @@ def portfolio_forecast(
     else:
         raise ValueError(f"Unknown weight_mode: {weight_mode}")
 
-    pnl = portfolio_pnl_forecast_from_values(
-        forecast_portfolio_values=values,
+    pnl = pnl_from_values(
+        values=values,
         mode=pnl_type,
         safe_eps=safe_eps,
     )
