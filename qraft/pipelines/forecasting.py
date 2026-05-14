@@ -6,9 +6,8 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from polars import DataFrame
-
 from pipelines.fitted_universe import FittedUniverse
+from polars import DataFrame
 from scenarios.copula_marginal import CopulaMarginalModel
 from scenarios.panel import ScenarioPanel
 from scenarios.resampling import weighted_bootstrapping_idx

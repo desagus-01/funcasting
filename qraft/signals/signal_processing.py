@@ -4,6 +4,7 @@ from typing import Literal
 import polars as pl
 from polars import DataFrame
 from polars._typing import RankMethod
+from signals.raw_signals import Signal
 
 Distortion = Literal[
     "identity",
@@ -16,10 +17,8 @@ Distortion = Literal[
 ]
 
 
-def signal_smoothing(risk_drivers: DataFrame, half_life: int) -> DataFrame:
-    return risk_drivers.with_columns(
-        pl.all().ewm_mean(half_life=half_life, adjust=False)
-    )
+def signal_smoothing(signal_df: DataFrame, half_life: int) -> DataFrame:
+    return signal_df.with_columns(pl.all().ewm_mean(half_life=half_life, adjust=False))
 
 
 def signal_scoring(signal_df: DataFrame, half_life: int) -> DataFrame:
@@ -52,7 +51,7 @@ def signal_ranking(
 
 def signal_distortion(
     ranked_df: DataFrame,
-    kind: Distortion = "identity",
+    kind: Distortion,
     *,
     winsor_limit: float = 0.8,
     strength: float = 3.0,
@@ -98,3 +97,18 @@ def signal_distortion(
         raise ValueError(f"Unknown distortion: {kind}")
 
     return ranked_df.with_columns(expr)
+
+
+def process_signal(
+    signal: Signal,
+    smoothing_factor: int,
+    scoring_factor: int,
+    ranking_method: RankMethod,
+    distortion_method: Distortion = "identity",
+) -> DataFrame:
+    signal_df = signal.values
+    if signal.type != "momentum":  # momentum signals are naturally smoothed already
+        signal_df = signal_smoothing(signal_df=signal_df, half_life=smoothing_factor)
+    scored_signal = signal_scoring(signal_df=signal_df, half_life=scoring_factor)
+    ranked_signal = signal_ranking(signal_df=scored_signal, method=ranking_method)
+    return signal_distortion(ranked_df=ranked_signal, kind=distortion_method)
