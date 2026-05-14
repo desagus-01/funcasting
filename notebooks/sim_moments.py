@@ -66,9 +66,12 @@ forecasts = run_n_steps_forecast(
 
 
 # %%
-f_30 = forecasts.at_step(step=30, subset="tradable")
+f_30 = forecasts.at_step(step=9, subset="tradable")
 
 
 forecast_moms = HorizonMoments.from_forecast_paths(forecasts, step=30)
 
-forecast_moms.mean_frame
+forecast_moms.correlation_frame
+# %%
+
+forecasts.initial_prices

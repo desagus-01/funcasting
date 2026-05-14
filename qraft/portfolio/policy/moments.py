@@ -74,18 +74,33 @@ class HorizonMoments:
 
     @classmethod
     def from_forecast_paths(
-        cls, forecast_paths: ForecastPaths, step: int, subset: AssetSubset = "tradable"
-    ):
-        horizon_panel = forecast_paths.at_step(step=step, subset=subset)
-        assets = horizon_panel.values.columns
-        horizon_vals_np = horizon_panel.values.to_numpy()
-        return HorizonMoments(
+        cls,
+        forecast_paths: ForecastPaths,
+        step: int,
+        subset: AssetSubset = "tradable",
+        pnl_type: PnL_OPTIONS = "relative",
+    ) -> "HorizonMoments":
+        initial_prices = forecast_paths.initial_prices
+        paths = forecast_paths._paths_for(subset)
+        assets = list(paths.keys())
+
+        pnl_at_step: dict[str, NDArray[np.floating]] = {}
+        for asset, price_paths in paths.items():
+            t0 = initial_prices[asset]
+            panel = asset_pnl_from_paths(
+                price_paths=price_paths,
+                initial_price=t0,
+                path_probs=forecast_paths.path_probs,
+                pnl_type=pnl_type,
+            )
+            pnl_at_step[asset] = panel.values[f"h{step - 1}"].to_numpy()
+
+        prob = forecast_paths.path_probs
+        pnl_matrix = np.column_stack(list(pnl_at_step.values()))
+
+        return cls(
             assets=assets,
-            correlations=weighted_correlation(
-                data=horizon_vals_np, prob=horizon_panel.prob
-            ),
-            covariances=weighted_covariance(
-                data=horizon_vals_np, prob=horizon_panel.prob
-            ),
-            mean=weighted_mean(data=horizon_vals_np, prob=horizon_panel.prob),
+            correlations=weighted_correlation(data=pnl_matrix, prob=prob),
+            covariances=weighted_covariance(data=pnl_matrix, prob=prob),
+            mean=weighted_mean(data=pnl_matrix, prob=prob),
         )

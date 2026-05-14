@@ -64,6 +64,7 @@ AssetSubset = Literal["all", "tradable", "factors"]
 class ForecastPaths:
     asset_paths: dict[str, NDArray[np.floating]]
     path_probs: ProbVector
+    initial_prices: dict[str, float]
     universe: AssetUniverse | None = None
 
     def __post_init__(self) -> None:
@@ -374,8 +375,16 @@ def run_n_steps_forecast(
         back_to_price=back_to_price,
     )
 
+    last_row = data.tail(1)
+    initial_prices = {
+        col: np.exp((last_row[col][0]))
+        for col in universe.all_tickers
+        if col in last_row.columns
+    }
+
     return ForecastPaths(
         asset_paths=transformed,
         path_probs=innovations.path_probs,
         universe=universe,
+        initial_prices=initial_prices,
     )
