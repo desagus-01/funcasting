@@ -36,7 +36,7 @@ def asset_pnl_from_paths(
     n_periods = cum.shape[1]
 
     return ScenarioPanel(
-        values=DataFrame({f"h{h}": cum[:, h] for h in range(n_periods)}),
+        values=DataFrame({f"h{h}": cum[:, h] for h in range(1, n_periods)}),
         dates=None,
         prob=path_probs,
     )
@@ -80,8 +80,16 @@ class HorizonMoments:
         subset: AssetSubset = "tradable",
         pnl_type: PnL_OPTIONS = "relative",
     ) -> "HorizonMoments":
-        initial_prices = forecast_paths.initial_prices
         paths = forecast_paths._paths_for(subset)
+        if paths:
+            sample_path = next(iter(paths.values()))
+            max_steps = sample_path.shape[1]
+            if step > max_steps:
+                raise ValueError(
+                    f"step={step} exceeds the number of available steps in the forecast paths ({max_steps})."
+                )
+
+        initial_prices = forecast_paths.initial_prices
         assets = list(paths.keys())
 
         pnl_at_step: dict[str, NDArray[np.floating]] = {}
@@ -93,7 +101,7 @@ class HorizonMoments:
                 path_probs=forecast_paths.path_probs,
                 pnl_type=pnl_type,
             )
-            pnl_at_step[asset] = panel.values[f"h{step - 1}"].to_numpy()
+            pnl_at_step[asset] = panel.values[f"h{step}"].to_numpy()
 
         prob = forecast_paths.path_probs
         pnl_matrix = np.column_stack(list(pnl_at_step.values()))

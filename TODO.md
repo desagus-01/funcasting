@@ -9,7 +9,9 @@
 
 ## Optimization
 - [ ] Start with simple MV optimization
-    - [ ] Calculate first two moments of simulations
+    - [x] Calculate first two moments of simulations ✅ 2026-05-15
+- [ ] Review and implement better covariances techniques
+    - [ ] Look at 72.2.1
 
 
 ## Forecasting pipeline
