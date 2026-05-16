@@ -480,7 +480,6 @@ def portfolio_value_forecast(
 def pnl_from_values(
     values: NDArray[np.floating],
     mode: PnL_OPTIONS = "relative",
-    safe_eps: float = 1e-12,
 ) -> NDArray[np.floating]:
     if mode not in {"relative", "absolute", "log"}:
         raise ValueError(f"Unknown mode: {mode!r}")
@@ -499,13 +498,9 @@ def pnl_from_values(
 
     if mode == "relative":
         denom = prev.astype(float, copy=True)
-        denom[np.abs(denom) < safe_eps] = np.nan
         return (curr - prev) / denom
 
-    # log — guard against non-positive values on either side
-    invalid = (prev <= safe_eps) | (curr <= safe_eps)
     denom = prev.astype(float, copy=True)
-    denom[invalid] = np.nan
     ratio = curr / denom
     return np.log(ratio)
 
@@ -586,7 +581,6 @@ def portfolio_forecast(
     pnl = pnl_from_values(
         values=values,
         mode=pnl_type,
-        safe_eps=safe_eps,
     )
 
     return PortfolioForecast(

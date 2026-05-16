@@ -13,6 +13,9 @@
 - [ ] Review and implement better covariances techniques
     - [ ] Look at 72.2.1
 
+## Simulation
+- [ ] Using t-copula bootstrap with extreme returns is ending up in 'inf' and 'nans', how to resolve this.
+
 
 ## Forecasting pipeline
 - [ ] Add metrics to evaluate forecast:

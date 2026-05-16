@@ -20,7 +20,6 @@ def asset_pnl_from_paths(
     initial_price: float,
     path_probs: ProbVector,
     pnl_type: PnL_OPTIONS = "relative",
-    safe_eps: float = 1e-12,
 ) -> ScenarioPanel:
     if price_paths.ndim != 2:
         raise ValueError(
@@ -31,7 +30,7 @@ def asset_pnl_from_paths(
     t0_col = np.full((n_paths, 1), initial_price, dtype=float)
     values = np.concatenate([t0_col, price_paths], axis=1)
 
-    inc = pnl_from_values(values, mode=pnl_type, safe_eps=safe_eps)
+    inc = pnl_from_values(values, mode=pnl_type)
     cum = cumulative_pnl(inc, pnl_type)
     n_periods = cum.shape[1]
 
