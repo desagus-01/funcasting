@@ -4,6 +4,7 @@ import logging
 import numpy as np
 from pipelines.forecasting import AssetUniverse, run_n_steps_forecast
 from policy import LogConfig
+from portfolio.policy.constraints import FullyInvested, LongOnly, MaxWeight, MinWeight
 from portfolio.policy.moments import HorizonMoments
 from portfolio.policy.optimization import mpo_mean_cov
 from probability.distributions import state_smooth_probs
@@ -23,7 +24,12 @@ data, factors_cols = import_tickers_and_factors(
 cols_to_keep = [
     col
     for col in data.columns
-    if col == "date" or (data[col].null_count() == 0 and data[col].min() >= 1)
+    if col == "date"
+    or (
+        data[col].null_count() == 0
+        and data[col].dtype.is_numeric()
+        and float(data[col].min()) >= 1  # type: ignore[arg-type]
+    )
 ]
 
 data = data.select(cols_to_keep)
@@ -68,18 +74,24 @@ forecasts = run_n_steps_forecast(
 
 
 # %%
-# Get a stable asset ordering once.
 h = 10
 forecast_moms = HorizonMoments.from_forecast_paths(forecasts, horizons=10)
 assets = forecast_moms.assets
 
+
 x = mpo_mean_cov(
     forecast_moms,
-    10,
-    len(assets),
-    0.8,
-    np.full(len(assets), 1 / len(assets)),
+    horizons=10,
+    n_assets=len(assets),
+    risk_aversion=0.8,
+    current_weights=np.full(len(assets), 1 / len(assets)),
     transaction_cost=0.005,
+    constraints=[
+        LongOnly(),
+        FullyInvested(),
+        MaxWeight(0.3),
+        MinWeight(limit=0.02),
+    ],
 )
 
 x["target_weights_by_asset"]

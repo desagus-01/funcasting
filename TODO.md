@@ -13,7 +13,9 @@
     - [ ] Review and implement better covariances techniques
         - [ ] Look at 72.2.1
 - [ ] Implement Multi period optimization (MPO) 
-    - [ ] Use cvxpy for backend 
+    - [x] Simple implementation ✅ 2026-05-18
+    - [ ] make constraints easier
+    - [ ] make objectives easier
 
 
 ## Simulation
