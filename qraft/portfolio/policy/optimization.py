@@ -2,10 +2,29 @@
 # needs obj
 # needs constraints
 # needs cost f
+from typing import cast
+
 import cvxpy as cp
 import numpy as np
+from cvxpy import Constraint, Expression
 from numpy.typing import NDArray
 from portfolio.policy.moments import HorizonMoments
+
+
+def mpo_fixed_constraints(
+    optimized_trades_at_horizon: Expression,
+    post_trade_weights_at_horizon: Expression,
+    previous_weights: NDArray[np.floating] | Expression,
+) -> list[Constraint]:
+    return cast(
+        list[Constraint],
+        [
+            cp.sum(optimized_trades_at_horizon)
+            == 0,  # self-finance (ie each trade vector sums to 1)
+            post_trade_weights_at_horizon
+            == previous_weights + optimized_trades_at_horizon,
+        ],
+    )  # horizon linking
 
 
 # to simplify keep constraints AND objectives constant for now and just in cvxpy format
@@ -23,23 +42,20 @@ def mpo_mean_cov(
 
     previous_weights = current_weights
 
-    constraints = []
     objective_terms = []
+    constraints: list[Constraint] = []
 
     for horizon in range(horizons):
         optimized_trades_at_horizon = optimizer_trades[horizon, :]
         post_trade_weights_at_horizon = post_trade_weights[horizon, :]
 
-        # constraints
-        constraints += [cp.sum(optimized_trades_at_horizon) == 0]  # self financing
-        constraints += [
-            post_trade_weights_at_horizon
-            == previous_weights + optimized_trades_at_horizon
-        ]  # horizon linking
+        constraints += mpo_fixed_constraints(
+            optimized_trades_at_horizon, post_trade_weights_at_horizon, previous_weights
+        )
         constraints += [post_trade_weights_at_horizon >= 0]  # long only
-        constraints += [
-            cp.sum(post_trade_weights_at_horizon) == 1
-        ]  # explicit budget constraint
+        constraints += cast(
+            list[Constraint], [cp.sum(post_trade_weights_at_horizon) == 1]
+        )  # explicit budget constraint
 
         # mean variance
         mean = horizon_moments.mean[horizon]

@@ -77,7 +77,7 @@ x = mpo_mean_cov(
     forecast_moms,
     10,
     len(assets),
-    0.5,
+    0.8,
     np.full(len(assets), 1 / len(assets)),
     transaction_cost=0.005,
 )
