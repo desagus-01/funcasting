@@ -10,8 +10,11 @@
 ## Optimization
 - [ ] Start with simple MV optimization
     - [x] Calculate first two moments of simulations ✅ 2026-05-15
-- [ ] Review and implement better covariances techniques
-    - [ ] Look at 72.2.1
+    - [ ] Review and implement better covariances techniques
+        - [ ] Look at 72.2.1
+- [ ] Implement Multi period optimization (MPO) 
+    - [ ] Use cvxpy for backend 
+
 
 ## Simulation
 - [ ] Using t-copula bootstrap with extreme returns is ending up in 'inf' and 'nans', how to resolve this.
