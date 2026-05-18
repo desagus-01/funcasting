@@ -68,16 +68,17 @@ forecasts = run_n_steps_forecast(
 
 
 # %%
-
-H = 30
-
 # Get a stable asset ordering once.
-forecast_moms_1 = HorizonMoments.from_forecast_paths(forecasts, step=1)
-assets = forecast_moms_1.assets
+forecast_moms = HorizonMoments.from_forecast_paths(forecasts, horizons=5)
+assets = forecast_moms.assets
 
 mpo_mean_cov(
-    forecast_moms_1,
-    1,
+    forecast_moms,
+    5,
     len(assets),
+    0.5,
     np.full(len(assets), 1 / len(assets)),
+    transaction_cost=0.01,
 )
+# %%
+HorizonMoments.from_forecast_paths(forecasts, horizons=30).correlation_frame(horizon=1)
