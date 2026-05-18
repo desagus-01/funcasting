@@ -44,7 +44,6 @@ def mpo_mean_cov(
         # mean variance
         mean = horizon_moments.mean[horizon]
         cov = horizon_moments.covariances[horizon]
-        print(cov)
         cov = 0.5 * (cov + cov.T)
 
         objective_terms.append(mean @ post_trade_weights_at_horizon)
@@ -53,7 +52,6 @@ def mpo_mean_cov(
             * cp.quad_form(post_trade_weights_at_horizon, cov, assume_PSD=True)
         )
 
-        # key MPO-enabling term
         objective_terms.append(
             -transaction_cost * cp.norm1(optimized_trades_at_horizon)
         )
@@ -61,20 +59,33 @@ def mpo_mean_cov(
         previous_weights = post_trade_weights_at_horizon
 
     problem = cp.Problem(cp.Maximize(cp.sum(objective_terms)), constraints=constraints)
-    print(problem)
     problem.solve()
 
     if problem.status not in {"optimal", "optimal_inaccurate"}:
         raise RuntimeError(f"Optimization failed: {problem.status}")
 
-    first_trade = optimizer_trades.value[0]
-    target_weights = current_weights + first_trade
+    def clean(weights, tol=1e-6):
+        weights = np.asarray(weights, dtype=float).copy()
+        weights[np.abs(weights) < tol] = 0.0
+        weights = np.maximum(weights, 0.0)
+        return weights / weights.sum()
+
+    def readable(weights):
+        return dict(zip(horizon_moments.assets, np.round(weights, 6)))
+
+    planned_trades = np.asarray(optimizer_trades.value, dtype=float)
+    planned_weights = np.asarray(post_trade_weights.value, dtype=float)
+
+    target_weights = clean(planned_weights[0])
+    first_trade = target_weights - current_weights
 
     return {
         "status": problem.status,
         "objective_value": problem.value,
         "first_trade_weights": first_trade,
         "target_weights": target_weights,
-        "planned_trades": np.asarray(optimizer_trades.value, dtype=float),
-        "planned_weights": np.asarray(post_trade_weights.value, dtype=float),
+        "target_weights_by_asset": readable(target_weights),
+        "first_trade_by_asset": readable(first_trade),
+        "planned_trades": planned_trades,
+        "planned_weights": planned_weights,
     }

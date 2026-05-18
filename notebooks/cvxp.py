@@ -28,7 +28,7 @@ cols_to_keep = [
 
 data = data.select(cols_to_keep)
 
-tradable_assets = list(data.columns[15:20])
+tradable_assets = list(data.columns[10:20])
 factors_cols = list(factors_cols)
 universe = AssetUniverse(assets=tradable_assets, factors=factors_cols)
 data = data.select("date", *universe.all_tickers)
@@ -69,16 +69,17 @@ forecasts = run_n_steps_forecast(
 
 # %%
 # Get a stable asset ordering once.
-forecast_moms = HorizonMoments.from_forecast_paths(forecasts, horizons=5)
+h = 10
+forecast_moms = HorizonMoments.from_forecast_paths(forecasts, horizons=10)
 assets = forecast_moms.assets
 
-mpo_mean_cov(
+x = mpo_mean_cov(
     forecast_moms,
-    5,
+    10,
     len(assets),
     0.5,
     np.full(len(assets), 1 / len(assets)),
-    transaction_cost=0.01,
+    transaction_cost=0.005,
 )
-# %%
-HorizonMoments.from_forecast_paths(forecasts, horizons=30).correlation_frame(horizon=1)
+
+x["target_weights_by_asset"]
