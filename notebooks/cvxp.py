@@ -6,7 +6,7 @@ from pipelines.forecasting import AssetUniverse, run_n_steps_forecast
 from policy import LogConfig
 from portfolio.policy.constraints import FullyInvested, LongOnly, MaxWeight, MinWeight
 from portfolio.policy.moments import HorizonMoments
-from portfolio.policy.optimization import mpo_mean_cov
+from portfolio.policy.optimization import MeanCovMPO, mpo_mean_cov
 from probability.distributions import state_smooth_probs
 from scenarios.panel import ScenarioPanel
 from utils.log import setup_logging
@@ -95,3 +95,24 @@ x = mpo_mean_cov(
 )
 
 x["target_weights_by_asset"]
+# %%
+
+optimizer = MeanCovMPO(
+    horizons=10,
+    n_assets=len(assets),
+    constraints=[
+        LongOnly(),
+        FullyInvested(),
+        MaxWeight(0.3),
+        MinWeight(limit=0.02),
+    ],
+)
+
+# %%
+res = optimizer.solve(
+    horizon_moments=forecast_moms,
+    risk_aversion=0.5,
+    current_weights=np.full(len(assets), 1 / len(assets)),
+)
+
+res["target_weights_by_asset"]

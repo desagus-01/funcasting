@@ -14,7 +14,7 @@
         - [ ] Look at 72.2.1
 - [ ] Implement Multi period optimization (MPO) 
     - [x] Simple implementation ✅ 2026-05-18
-    - [ ] make constraints easier
+    - [x] make constraints easier ✅ 2026-05-19
     - [ ] make objectives easier
 
 
