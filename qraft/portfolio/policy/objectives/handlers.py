@@ -20,15 +20,13 @@ def _cov_sqrt_factor(covariance: NDArray[np.floating]) -> NDArray[np.floating]:
     when the covariance is only positive *semi*-definite.  Negative eigenvalues
     (numerical noise) are clamped to zero before taking the square root.
     """
-    cov = 0.5 * (covariance + covariance.T)  # enforce symmetry
+    cov = 0.5 * (covariance + covariance.T)
     eigvals, eigvecs = np.linalg.eigh(cov)
     eigvals = np.maximum(eigvals, 0.0)  # clip numerical negatives
     return np.diag(np.sqrt(eigvals)) @ eigvecs.T
 
 
-register_objective(ExpectedReturn)
-
-
+@register_objective(ExpectedReturn)
 class ExpectedReturnHandler:
     """
     Maximise the probability-weighted expected return at each horizon.

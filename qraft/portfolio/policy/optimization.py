@@ -1,23 +1,15 @@
-from typing import Sequence, cast
+from dataclasses import dataclass
+from typing import Any, Literal, Sequence, cast
 
 import cvxpy as cp
 import numpy as np
 from cvxpy import Constraint, Expression
 from numpy.typing import NDArray
-from portfolio.policy.constraints import (
-    DEFAULT_CONSTRAINTS,
-    PortfolioConstraint,
-)
+from portfolio.policy import PortfolioConstraint
+from portfolio.policy.constraints import DEFAULT_CONSTRAINTS
 from portfolio.policy.moments import HorizonMoments
-
-
-def _covariance_sqrt_factor(
-    covariance: NDArray[np.floating],
-) -> NDArray[np.floating]:
-    covariance = 0.5 * (covariance + covariance.T)
-
-    eigvals, eigvecs = np.linalg.eigh(covariance)
-    return np.diag(np.sqrt(eigvals)) @ eigvecs.T
+from portfolio.policy.objectives.protocol import get_objective_handler
+from portfolio.policy.objectives.specs import ObjectiveSpec
 
 
 def _structural_constraints(
@@ -35,174 +27,185 @@ def _structural_constraints(
     )
 
 
-class MeanCovMPO:
+SolverStatus = Literal[
+    "optimal",
+    "optimal_inaccurate",
+    "infeasible",
+    "infeasible_inaccurate",
+    "unbounded",
+    "unbounded_inaccurate",
+    "solver_error",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class MPOResult:
+    """
+    Outcome of a multi-period portfolio optimization.
+
+    The optimizer plans an entire (n_horizons, n_assets) weight path, but only
+    row 0 is actionable. The rest is informational.
+    """
+
+    assets: list[str]
+    planned_weights: NDArray[np.floating]
+    planned_trades: NDArray[np.floating]
+    initial_weights: NDArray[np.floating]
+    status: SolverStatus
+    objective_value: float
+    solver_stats: Any  # cvxpy.SolverStats; loose to avoid hard coupling
+
+    def __post_init__(self) -> None:
+        n_assets = len(self.assets)
+        if self.planned_weights.ndim != 2 or self.planned_weights.shape[1] != n_assets:
+            raise ValueError(
+                f"planned_weights must have shape (n_horizons, {n_assets}); "
+                f"got {self.planned_weights.shape}"
+            )
+        if self.planned_trades.shape != self.planned_weights.shape:
+            raise ValueError(
+                f"planned_trades shape {self.planned_trades.shape} must match "
+                f"planned_weights shape {self.planned_weights.shape}"
+            )
+        if self.initial_weights.shape != (n_assets,):
+            raise ValueError(
+                f"initial_weights must have shape ({n_assets},); "
+                f"got {self.initial_weights.shape}"
+            )
+
+    @property
+    def n_horizons(self) -> int:
+        return self.planned_weights.shape[0]
+
+    @property
+    def is_optimal(self) -> bool:
+        return self.status in ("optimal", "optimal_inaccurate")
+
+    @property
+    def target_weights(self) -> NDArray[np.floating]:
+        """Post-trade weights to rebalance to now."""
+        return self.planned_weights[0]
+
+    @property
+    def target_weights_by_asset(self) -> dict[str, float]:
+        """
+        ``target_weights`` keyed by asset name.
+
+        This is the dict shape consumed by
+        ``portfolio_forecast(weight_mode="static", target_weights=...)``.
+        """
+        return dict(zip(self.assets, self.target_weights.tolist()))
+
+    @property
+    def first_trade(self) -> NDArray[np.floating]:
+        return self.planned_trades[0]
+
+    @property
+    def first_trade_by_asset(self) -> dict[str, float]:
+        return dict(zip(self.assets, self.first_trade.tolist()))
+
+    @property
+    def turnover(self) -> float:
+        """One-way turnover of the first trade: 0.5 * ||first_trade||_1."""
+        return 0.5 * float(np.abs(self.first_trade).sum())
+
+    def weights_at_horizon(self, horizon: int) -> NDArray[np.floating]:
+        self._check_horizon(horizon)
+        return self.planned_weights[horizon]
+
+    def trades_at_horizon(self, horizon: int) -> NDArray[np.floating]:
+        self._check_horizon(horizon)
+        return self.planned_trades[horizon]
+
+    def _check_horizon(self, horizon: int) -> None:
+        if not 0 <= horizon < self.n_horizons:
+            raise ValueError(f"horizon must be in 0..{self.n_horizons - 1}")
+
+
+class MultiPeriodOptimizer:
     def __init__(
         self,
+        objective: ObjectiveSpec,
         horizons: int,
         n_assets: int,
         constraints: Sequence[PortfolioConstraint] | None = None,
     ) -> None:
+        self.objective = objective
         self.horizons = horizons
         self.n_assets = n_assets
         self.constraints = list(
             DEFAULT_CONSTRAINTS if constraints is None else constraints
         )
-        self._build_variables_and_parameters()
+
+        self.weights = cp.Variable((horizons, n_assets), name="weights")
+        self.trades = cp.Variable((horizons, n_assets), name="trades")
+        self.current_weights = cp.Parameter(n_assets, name="current_weights")
+
+        self._term_params: list[dict[str, Any]] = []
+        self._term_weights: list[cp.Parameter] = []
+        for term in objective.terms:
+            handler = get_objective_handler(term.spec)
+            self._term_params.append(handler.allocate(term.spec, horizons, n_assets))
+            self._term_weights.append(
+                cp.Parameter(nonneg=True, name=f"w_{type(term.spec).__name__}")
+            )
+
         self._build_problem()
 
     def _build_problem(self) -> None:
-        previous_weights: Expression = self.current_weights
-        objective_terms: list[Expression] = []
-        cvxpy_constraints: list[Constraint] = []
+        prev = self.current_weights
+        terms: list[cp.Expression] = []
+        cons: list[cp.Constraint] = []
 
         for h in range(self.horizons):
-            trades_h = self.trades[h, :]
-            weights_h = self.weights[h, :]
+            w_h, z_h = self.weights[h, :], self.trades[h, :]
+            cons += _structural_constraints(z_h, w_h, prev)
+            for c in self.constraints:
+                cons += c.compile_to_cvxpy(w_h, z_h)
 
-            cvxpy_constraints += _structural_constraints(
-                trades_h,
-                weights_h,
-                previous_weights,
-            )
+            for term, params, w_param in zip(
+                self.objective.terms, self._term_params, self._term_weights
+            ):
+                handler = get_objective_handler(term.spec)
+                terms.append(w_param * handler.compile(term.spec, params, w_h, z_h, h))
 
-            for constraint in self.constraints:
-                cvxpy_constraints += constraint.compile_to_cvxpy(
-                    weights_h,
-                    trades_h,
-                )
+            prev = w_h
 
-            objective_terms += [
-                self.mean[h, :] @ weights_h,
-                -cp.sum_squares(self.risk_factors[h] @ weights_h),
-                -self.transaction_cost * cp.norm1(trades_h),
-            ]
-
-            previous_weights = weights_h
-
-        self.problem = cp.Problem(
-            cp.Maximize(cp.sum(objective_terms)),
-            constraints=cvxpy_constraints,
-        )
-
-    def _build_variables_and_parameters(self) -> None:
-        self.trades = cp.Variable(
-            (self.horizons, self.n_assets),
-            name="trades",
-        )
-        self.weights = cp.Variable(
-            (self.horizons, self.n_assets),
-            name="weights",
-        )
-
-        self.current_weights = cp.Parameter(
-            self.n_assets,
-            name="current_weights",
-        )
-        self.mean = cp.Parameter(
-            (self.horizons, self.n_assets),
-            name="mean",
-        )
-        self.transaction_cost = cp.Parameter(
-            nonneg=True,
-            name="transaction_cost",
-        )
-
-        self.risk_factors = [
-            cp.Parameter(
-                (self.n_assets, self.n_assets),
-                name=f"risk_factor_{h}",
-            )
-            for h in range(self.horizons)
-        ]
-
-    def _set_values(
-        self,
-        horizon_moments: HorizonMoments,
-        risk_aversion: float,
-        current_weights: NDArray[np.floating],
-        transaction_cost: float,
-    ) -> None:
-        self.current_weights.value = current_weights
-        self.mean.value = horizon_moments.mean
-        self.transaction_cost.value = transaction_cost
-        for horizon, covariance in enumerate(horizon_moments.covariances):
-            if horizon >= self.horizons:
-                break
-            self.risk_factors[horizon].value = np.sqrt(
-                risk_aversion
-            ) * _covariance_sqrt_factor(covariance)
-
-    @staticmethod
-    def _clean(w: np.ndarray, tol: float = 1e-6) -> np.ndarray:
-        w = np.asarray(w, dtype=float).copy()
-        w[np.abs(w) < tol] = 0.0
-        w = np.maximum(w, 0.0)
-
-        total = w.sum()
-
-        if total <= tol:
-            raise ValueError("Cannot normalise weights because their sum is zero.")
-
-        return w / total
-
-    @staticmethod
-    def _readable(w: np.ndarray, assets: Sequence[str]) -> dict[str, float]:
-        return dict(zip(assets, np.round(w, 6)))
-
-    def _result(
-        self,
-        horizon_moments: HorizonMoments,
-        current_weights: NDArray[np.floating],
-    ) -> dict:
-        planned_trades = np.asarray(self.trades.value, dtype=float)
-        planned_weights = np.asarray(self.weights.value, dtype=float)
-
-        target_weights = self._clean(planned_weights[0])
-        first_trade = target_weights - current_weights
-
-        return {
-            "status": self.problem.status,
-            "objective_value": self.problem.value,
-            "target_weights": target_weights,
-            "target_weights_by_asset": self._readable(
-                target_weights,
-                horizon_moments.assets,
-            ),
-            "first_trade_weights": first_trade,
-            "first_trade_by_asset": self._readable(
-                first_trade,
-                horizon_moments.assets,
-            ),
-            "planned_trades": planned_trades,
-            "planned_weights": planned_weights,
-            "solver_stats": self.problem.solver_stats,
-        }
+        self.problem = cp.Problem(cp.Maximize(cp.sum(terms)), cons)
 
     def solve(
         self,
-        horizon_moments: HorizonMoments,
-        risk_aversion: float,
+        moments: HorizonMoments,
         current_weights: NDArray[np.floating],
-        transaction_cost: float = 0.005,
-        solver: str | None = None,
+        inputs: dict[str, Any] | None = None,
         **solver_options,
-    ) -> dict:
-        self._set_values(
-            horizon_moments=horizon_moments,
-            risk_aversion=risk_aversion,
-            current_weights=current_weights,
-            transaction_cost=transaction_cost,
-        )
-        solver_kwargs = {"enforce_dpp": True, "warm_start": True, **solver_options}
-        if solver is not None:
-            solver_kwargs["solver"] = solver
+    ) -> MPOResult:
+        self.current_weights.value = current_weights
+        full_inputs = {"moments": moments, **(inputs or {})}
 
-        self.problem.solve(**solver_kwargs)
+        for term, params, w_param in zip(
+            self.objective.terms, self._term_params, self._term_weights
+        ):
+            get_objective_handler(term.spec).update(term.spec, params, full_inputs)
+            w_param.value = term.weight
 
+        self.problem.solve(enforce_dpp=True, warm_start=True, **solver_options)
         if self.problem.status not in {"optimal", "optimal_inaccurate"}:
             raise RuntimeError(f"Optimization failed: {self.problem.status}")
 
-        return self._result(
-            horizon_moments=horizon_moments,
-            current_weights=current_weights,
+        weights_val = self.weights.value
+        trades_val = self.trades.value
+        obj_val = self.problem.value
+        assert weights_val is not None, "weights.value is None after solve"
+        assert trades_val is not None, "trades.value is None after solve"
+        assert obj_val is not None, "problem.value is None after solve"
+
+        return MPOResult(
+            assets=moments.assets,
+            planned_weights=weights_val,
+            planned_trades=trades_val,
+            initial_weights=current_weights,
+            status=cast(SolverStatus, self.problem.status),
+            objective_value=float(obj_val),
+            solver_stats=self.problem.solver_stats,
         )

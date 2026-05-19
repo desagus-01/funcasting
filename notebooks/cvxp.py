@@ -4,9 +4,15 @@ import logging
 import numpy as np
 from pipelines.forecasting import AssetUniverse, run_n_steps_forecast
 from policy import LogConfig
-from portfolio.policy.constraints import FullyInvested, LongOnly, MaxWeight, MinWeight
 from portfolio.policy.moments import HorizonMoments
-from portfolio.policy.optimization import MeanCovMPO, mpo_mean_cov
+from portfolio.policy.objectives.specs import (
+    CovarianceRisk,
+    ExpectedReturn,
+    ObjectiveSpec,
+    TransactionCost,
+    WeightedTerm,
+)
+from portfolio.policy.optimization import MultiPeriodOptimizer
 from probability.distributions import state_smooth_probs
 from scenarios.panel import ScenarioPanel
 from utils.log import setup_logging
@@ -79,40 +85,21 @@ forecast_moms = HorizonMoments.from_forecast_paths(forecasts, horizons=10)
 assets = forecast_moms.assets
 
 
-x = mpo_mean_cov(
-    forecast_moms,
-    horizons=10,
-    n_assets=len(assets),
-    risk_aversion=0.8,
-    current_weights=np.full(len(assets), 1 / len(assets)),
-    transaction_cost=0.005,
-    constraints=[
-        LongOnly(),
-        FullyInvested(),
-        MaxWeight(0.3),
-        MinWeight(limit=0.02),
-    ],
-)
+def mean_cov_mpo(horizons, n_assets, risk_aversion, transaction_cost, constraints=None):
+    objective = ObjectiveSpec(
+        terms=(
+            WeightedTerm(1.0, ExpectedReturn()),
+            WeightedTerm(risk_aversion, CovarianceRisk()),
+            WeightedTerm(
+                transaction_cost,
+                TransactionCost(cost=1.0, market_impact=0.0, exponent=1.0),
+            ),
+        )
+    )
+    return MultiPeriodOptimizer(objective, horizons, n_assets, constraints)
 
-x["target_weights_by_asset"]
-# %%
 
-optimizer = MeanCovMPO(
-    horizons=10,
-    n_assets=len(assets),
-    constraints=[
-        LongOnly(),
-        FullyInvested(),
-        MaxWeight(0.3),
-        MinWeight(limit=0.02),
-    ],
-)
-
-# %%
-res = optimizer.solve(
-    horizon_moments=forecast_moms,
-    risk_aversion=0.5,
+x = mean_cov_mpo(10, len(assets), 0.6, 0.001).solve(
+    moments=forecast_moms,
     current_weights=np.full(len(assets), 1 / len(assets)),
 )
-
-res["target_weights_by_asset"]

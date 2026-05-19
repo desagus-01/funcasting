@@ -8,10 +8,8 @@ from portfolio.policy.constraints import (
     PortfolioConstraint,
     TurnoverLimit,
 )
-from portfolio.policy.optimization import mpo_mean_cov
 
 __all__ = [
-    "mpo_mean_cov",
     "PortfolioConstraint",
     "DEFAULT_CONSTRAINTS",
     "LongOnly",
