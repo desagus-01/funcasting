@@ -1,0 +1,267 @@
+from typing import Any
+
+import cvxpy as cp
+import numpy as np
+from numpy.typing import NDArray
+from portfolio.policy.objectives.protocol import register_objective
+from portfolio.policy.objectives.specs import (
+    CovarianceRisk,
+    ExpectedReturn,
+    HoldingCost,
+    TransactionCost,
+)
+
+# ---------------------------------------------------------------------------
+# Internal math helpers
+# ---------------------------------------------------------------------------
+
+
+def _cov_sqrt_factor(covariance: NDArray[np.floating]) -> NDArray[np.floating]:
+    """
+    Return L such that L.T @ L ≈ covariance.
+
+    Uses a symmetric eigen-decomposition so the result is well-defined even
+    when the covariance is only positive *semi*-definite.  Negative eigenvalues
+    (numerical noise) are clamped to zero before taking the square root.
+    """
+    cov = 0.5 * (covariance + covariance.T)  # enforce symmetry
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    eigvals = np.maximum(eigvals, 0.0)  # clip numerical negatives
+    return np.diag(np.sqrt(eigvals)) @ eigvecs.T
+
+
+# ---------------------------------------------------------------------------
+# ExpectedReturn
+# ---------------------------------------------------------------------------
+
+
+@register_objective(ExpectedReturn)
+class ExpectedReturnHandler:
+    """
+    Maximise the probability-weighted expected return at each horizon.
+
+    The optional ``decay`` on the spec discounts the forecast confidence for
+    far-future horizons:  contribution at step h = decay^h * mean_h @ w_h.
+    """
+
+    def allocate(
+        self, spec: ExpectedReturn, horizons: int, n_assets: int
+    ) -> dict[str, Any]:
+        return {"mean": cp.Parameter((horizons, n_assets), name="mean")}
+
+    def compile(
+        self,
+        spec: ExpectedReturn,
+        params: dict[str, Any],
+        weights_h: cp.Expression,
+        trades_h: cp.Expression,
+        horizon: int,
+    ) -> cp.Expression:
+        decay_factor = spec.decay**horizon
+        return decay_factor * (params["mean"][horizon, :] @ weights_h)
+
+    def update(
+        self, spec: ExpectedReturn, params: dict[str, Any], inputs: dict[str, Any]
+    ) -> None:
+        """
+        Expected ``inputs`` keys:
+          ``"moments"``  – a ``HorizonMoments`` instance.
+        """
+        params["mean"].value = inputs["moments"].mean
+
+
+# ---------------------------------------------------------------------------
+# CovarianceRisk
+# ---------------------------------------------------------------------------
+
+
+@register_objective(CovarianceRisk)
+class CovarianceRiskHandler:
+    """
+    Penalise quadratic portfolio variance at each horizon.
+
+    The compile expression is   -||L_h @ w_h||^2  where L_h is the
+    symmetric square-root of the horizon-h covariance matrix.  When
+    maximised with a positive weight (the risk-aversion coefficient in
+    ``WeightedTerm``), this minimises variance.
+
+    One ``cp.Parameter`` per horizon is allocated because CVXPY does not
+    support 3-D parameters.
+    """
+
+    def allocate(
+        self, spec: CovarianceRisk, horizons: int, n_assets: int
+    ) -> dict[str, Any]:
+        return {
+            f"cov_sqrt_{h}": cp.Parameter(
+                (n_assets, n_assets),
+                name=f"cov_sqrt_{h}",
+            )
+            for h in range(horizons)
+        }
+
+    def compile(
+        self,
+        spec: CovarianceRisk,
+        params: dict[str, Any],
+        weights_h: cp.Expression,
+        trades_h: cp.Expression,
+        horizon: int,
+    ) -> cp.Expression:
+        return -cp.sum_squares(params[f"cov_sqrt_{horizon}"] @ weights_h)
+
+    def update(
+        self, spec: CovarianceRisk, params: dict[str, Any], inputs: dict[str, Any]
+    ) -> None:
+        """
+        Expected ``inputs`` keys:
+          ``"moments"``  – a ``HorizonMoments`` instance.
+        """
+        moments = inputs["moments"]
+        for h in range(moments.n_horizons):
+            key = f"cov_sqrt_{h}"
+            if key in params:
+                params[key].value = _cov_sqrt_factor(moments.covariances[h])
+
+
+# ---------------------------------------------------------------------------
+# TransactionCost
+# ---------------------------------------------------------------------------
+
+
+@register_objective(TransactionCost)
+class TransactionCostHandler:
+    """
+    Penalise trading costs at each horizon.
+
+    Two components are combined:
+
+    1. **Linear cost** (e.g. half bid-ask spread)::
+
+           a_i * |z_i|   where  a_i = spec.cost  (uniform across assets)
+
+    2. **Market-impact cost** (Almgren-style power law)::
+
+           b * sigma_i / V_i^(p-1) * |z_i|^p
+
+       where ``b = spec.market_impact``, ``sigma_i`` is the per-asset
+       period volatility (derived from the horizon-0 covariance diagonal),
+       ``V_i`` is the per-asset average daily volume (from ``inputs``), and
+       ``p = spec.exponent`` (1.5 by default → square-root impact).
+
+    If volume data is unavailable, the impact coefficient falls back to
+    ``b * sigma_i`` (i.e. the volume denominator is dropped).
+
+    The expression is negative so that maximising it minimises costs.
+    """
+
+    def allocate(
+        self, spec: TransactionCost, horizons: int, n_assets: int
+    ) -> dict[str, Any]:
+        return {
+            # Per-asset linear cost coefficient  a_i
+            "tc_linear": cp.Parameter(n_assets, nonneg=True, name="tc_linear"),
+            # Per-asset market-impact coefficient  b * sigma_i / V_i^(p-1)
+            "tc_impact": cp.Parameter(n_assets, nonneg=True, name="tc_impact"),
+        }
+
+    def compile(
+        self,
+        spec: TransactionCost,
+        params: dict[str, Any],
+        weights_h: cp.Expression,
+        trades_h: cp.Expression,
+        horizon: int,
+    ) -> cp.Expression:
+        # Linear term: sum_i a_i * |z_i|
+        linear = cp.sum(cp.multiply(params["tc_linear"], cp.abs(trades_h)))
+
+        # Power-law impact term: sum_i c_i * |z_i|^p
+        # cp.power(cp.abs(z), p) is valid for p >= 1 via CVXPY's power-cone
+        # support; nonneg parameters scaling a convex expression remain DPP.
+        impact = cp.sum(
+            cp.multiply(
+                params["tc_impact"],
+                cp.power(cp.abs(trades_h), spec.exponent),
+            )
+        )
+
+        return -1.0 * (linear + impact)  # type: ignore[return-value]  # cvxpy stubs under-specify cp.power return type
+
+    def update(
+        self, spec: TransactionCost, params: dict[str, Any], inputs: dict[str, Any]
+    ) -> None:
+        """
+        Expected ``inputs`` keys:
+          ``"moments"``  – a ``HorizonMoments`` instance.
+          ``"volume"``   – per-asset ADV, shape ``(n_assets,)`` (optional).
+        """
+        moments = inputs["moments"]
+        n = moments.n_assets
+
+        # Uniform linear cost
+        params["tc_linear"].value = np.full(n, spec.cost)
+
+        # Per-asset volatility from the horizon-0 covariance diagonal
+        sigma = np.sqrt(np.maximum(np.diag(moments.covariances[0]), 0.0))
+
+        volume: NDArray[np.floating] | None = inputs.get("volume")
+        if volume is not None and np.all(volume > 0):
+            vol_factor = volume ** (spec.exponent - 1.0)
+            impact_coeff = spec.market_impact * sigma / vol_factor
+        else:
+            # Degrade gracefully: drop the volume denominator
+            impact_coeff = spec.market_impact * sigma
+
+        params["tc_impact"].value = np.maximum(impact_coeff, 0.0)
+
+
+# ---------------------------------------------------------------------------
+# HoldingCost
+# ---------------------------------------------------------------------------
+
+
+@register_objective(HoldingCost)
+class HoldingCostHandler:
+    """
+    Penalise the cost of holding short positions overnight.
+
+    The per-period short fee is::
+
+        short_fees_per_period = (spec.short_fees / 100) / periods_per_year
+
+    Applied as::
+
+        -short_fees_per_period * sum_i max(-w_i, 0)
+
+    ``cp.neg(x) = max(-x, 0)``, so ``cp.sum(cp.neg(w))`` is the total
+    magnitude of short weight, charged at the borrowing rate each period.
+
+    The expression is negative so that maximising it minimises holding costs.
+    """
+
+    def allocate(
+        self, spec: HoldingCost, horizons: int, n_assets: int
+    ) -> dict[str, Any]:
+        return {"hc_short_rate": cp.Parameter(nonneg=True, name="hc_short_rate")}
+
+    def compile(
+        self,
+        spec: HoldingCost,
+        params: dict[str, Any],
+        weights_h: cp.Expression,
+        trades_h: cp.Expression,
+        horizon: int,
+    ) -> cp.Expression:
+        return -params["hc_short_rate"] * cp.sum(cp.neg(weights_h))
+
+    def update(
+        self, spec: HoldingCost, params: dict[str, Any], inputs: dict[str, Any]
+    ) -> None:
+        """
+        Expected ``inputs`` keys:
+          ``"periods_per_year"``  – int, trading periods per year (default 252).
+        """
+        periods_per_year: int = inputs.get("periods_per_year", 252)
+        annual_rate = spec.short_fees / 100.0
+        params["hc_short_rate"].value = annual_rate / periods_per_year

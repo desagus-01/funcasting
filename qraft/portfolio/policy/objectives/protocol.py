@@ -20,7 +20,7 @@ class MPOObjectiveHandler(Protocol):
         spec,
         params: dict[str, Any],
         weights_at_horizon: cp.Expression,
-        trades_at_horizong: cp.Expression,
+        trades_at_horizon: cp.Expression,
         horizon: int,
     ) -> cp.Expression:
         """
@@ -37,3 +37,45 @@ class MPOObjectiveHandler(Protocol):
         self, spec, params: dict[str, cp.Parameter], inputs: dict[str, Any]
     ) -> None:
         pass
+
+
+_REGISTRY: dict[type, MPOObjectiveHandler] = {}
+
+
+def _validate_handler(handler: object) -> None:
+    required = ("allocate", "compile", "update")
+
+    for name in required:
+        method = getattr(handler, name, None)
+
+        if method is None:
+            raise TypeError(
+                f"{handler.__class__.__name__} is not a valid ObjectiveHandler: "
+                f"missing method {name!r}."
+            )
+
+        if not callable(method):
+            raise TypeError(
+                f"{handler.__class__.__name__}.{name} exists but is not callable."
+            )
+
+
+def register_objective(spec_type: type):
+    def decorator(handler_cls: type):
+        handler = handler_cls()
+
+        _validate_handler(handler)
+
+        _REGISTRY[spec_type] = handler
+        return handler_cls
+
+    return decorator
+
+
+def get_objective_handler(spec: object) -> MPOObjectiveHandler:
+    handler = _REGISTRY.get(type(spec))
+
+    if handler is None:
+        raise TypeError(f"No objective handler registered for {type(spec).__name__}.")
+
+    return handler
