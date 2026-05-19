@@ -11,10 +11,6 @@ from portfolio.policy.objectives.specs import (
     TransactionCost,
 )
 
-# ---------------------------------------------------------------------------
-# Internal math helpers
-# ---------------------------------------------------------------------------
-
 
 def _cov_sqrt_factor(covariance: NDArray[np.floating]) -> NDArray[np.floating]:
     """
@@ -30,12 +26,9 @@ def _cov_sqrt_factor(covariance: NDArray[np.floating]) -> NDArray[np.floating]:
     return np.diag(np.sqrt(eigvals)) @ eigvecs.T
 
 
-# ---------------------------------------------------------------------------
-# ExpectedReturn
-# ---------------------------------------------------------------------------
+register_objective(ExpectedReturn)
 
 
-@register_objective(ExpectedReturn)
 class ExpectedReturnHandler:
     """
     Maximise the probability-weighted expected return at each horizon.
@@ -68,11 +61,6 @@ class ExpectedReturnHandler:
           ``"moments"``  – a ``HorizonMoments`` instance.
         """
         params["mean"].value = inputs["moments"].mean
-
-
-# ---------------------------------------------------------------------------
-# CovarianceRisk
-# ---------------------------------------------------------------------------
 
 
 @register_objective(CovarianceRisk)
@@ -122,11 +110,6 @@ class CovarianceRiskHandler:
             key = f"cov_sqrt_{h}"
             if key in params:
                 params[key].value = _cov_sqrt_factor(moments.covariances[h])
-
-
-# ---------------------------------------------------------------------------
-# TransactionCost
-# ---------------------------------------------------------------------------
 
 
 @register_objective(TransactionCost)
@@ -214,11 +197,6 @@ class TransactionCostHandler:
             impact_coeff = spec.market_impact * sigma
 
         params["tc_impact"].value = np.maximum(impact_coeff, 0.0)
-
-
-# ---------------------------------------------------------------------------
-# HoldingCost
-# ---------------------------------------------------------------------------
 
 
 @register_objective(HoldingCost)
