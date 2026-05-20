@@ -127,11 +127,13 @@ class MultiPeriodOptimizer:
         objective: ObjectiveSpec,
         horizons: int,
         n_assets: int,
+        n_scenarios: int,
         constraints: Sequence[PortfolioConstraint] | None = None,
     ) -> None:
         self.objective = objective
         self.horizons = horizons
         self.n_assets = n_assets
+        self.n_scenarios = n_scenarios
         self.constraints = constraints
         self.weights = cp.Variable((horizons, n_assets), name="weights")
         self.trades = cp.Variable((horizons, n_assets), name="trades")
@@ -140,7 +142,9 @@ class MultiPeriodOptimizer:
         self._term_params: list[dict[str, Any]] = []
         for term in objective.terms:
             handler = get_objective_handler(term.spec)
-            self._term_params.append(handler.allocate(term.spec, horizons, n_assets))
+            self._term_params.append(
+                handler.allocate(term.spec, horizons, n_assets, n_scenarios=n_scenarios)
+            )
 
         self._build_problem()
 
@@ -158,9 +162,9 @@ class MultiPeriodOptimizer:
 
             for term, params in zip(self.objective.terms, self._term_params):
                 handler = get_objective_handler(term.spec)
-                terms.append(
-                    term.weight * handler.compile(term.spec, params, w_h, z_h, h)
-                )
+                expr, aux_constraints = handler.compile(term.spec, params, w_h, z_h, h)
+                terms.append(term.weight * expr)
+                constraints += aux_constraints
 
             prev = w_h
 

@@ -37,7 +37,7 @@ class ExpectedReturnHandler:
     """
 
     def allocate(
-        self, spec: ExpectedReturn, horizons: int, n_assets: int
+        self, spec: ExpectedReturn, horizons: int, n_assets: int, **_kwargs
     ) -> dict[str, Any]:
         return {"mean": cp.Parameter((horizons, n_assets), name="mean")}
 
@@ -48,9 +48,9 @@ class ExpectedReturnHandler:
         weights_h: cp.Expression,
         trades_h: cp.Expression,
         horizon: int,
-    ) -> cp.Expression:
+    ) -> tuple[cp.Expression, list[cp.Constraint]]:
         decay_factor = spec.decay**horizon
-        return decay_factor * (params["mean"][horizon, :] @ weights_h)
+        return (decay_factor * (params["mean"][horizon, :] @ weights_h), [])
 
     def update(
         self, spec: ExpectedReturn, params: dict[str, Any], inputs: dict[str, Any]
@@ -63,15 +63,34 @@ class ExpectedReturnHandler:
 
 
 @register_objective(CVaRRisk)
-class CvARRiskHandler:
-    def allocate(self, spec: CVaRRisk, horizons: int, n_assets: int) -> dict[str, Any]:
-        return {
-            f"cvar_{h}": cp.Parameter(
-                (n_assets, n_assets),
-                name=f"cov_sqrt_{h}",
-            )
-            for h in range(horizons)
+class CVaRRiskHandler:
+    """
+    Penalise Conditional Value-at-Risk via the Rockafellar-Uryasev LP.
+
+    For each horizon h with scenario returns R_h (shape (S, N)),
+    weight w_h, and probabilities p (shape (S,)):
+
+        CVaR_α(w_h) = min over ζ, u≥0 of   ζ + (1/α) · p^T u
+                     s.t.                  u ≥ -R_h w_h - ζ
+
+    Returned as a maximisation contribution: -CVaR.
+    """
+
+    def allocate(
+        self, spec: CVaRRisk, horizons: int, n_assets: int, n_scenarios: int
+    ) -> dict[str, cp.Parameter | cp.Variable]:
+        if not 0.0 < spec.alpha <= 1.0:
+            raise ValueError(f"CVaR alpha must be in (0, 1], got {spec.alpha}")
+
+        # Probabilities are scenario-level and shared across horizons.
+        params: dict[str, Any] = {
+            "probs": cp.Parameter(n_scenarios, name="cvar_probs", nonneg=True),
         }
+        for h in range(horizons):
+            params[f"R_{h}"] = cp.Parameter((n_scenarios, n_assets), name=f"cvar_R_{h}")
+            params[f"zeta_{h}"] = cp.Variable(name=f"cvar_zeta_{h}")
+            params[f"u_{h}"] = cp.Variable(n_scenarios, nonneg=True, name=f"cvar_u_{h}")
+        return params
 
     def compile(
         self,
@@ -80,50 +99,41 @@ class CvARRiskHandler:
         weights_h: cp.Expression,
         trades_h: cp.Expression,
         horizon: int,
-    ) -> cp.Expression:
-        # sum_squares(affine_in_w) is always convex → DCP + DPP compliant.
-        return -cp.sum_squares(params[f"cov_sqrt_{horizon}"].T @ weights_h)
+    ) -> tuple[cp.Expression, list[cp.Constraint]]:
+        R = params[f"R_{horizon}"]
+        p = params["probs"]
+        zeta = params[f"zeta_{horizon}"]
+        u = params[f"u_{horizon}"]
+
+        loss = -R @ weights_h
+        cvar = zeta + (1.0 / spec.alpha) * (p @ u)
+
+        aux = [u >= loss - zeta]
+        return -cvar, aux
 
     def update(
-        self, spec: CVaRRisk, params: dict[str, Any], inputs: dict[str, Any]
+        self,
+        spec: CVaRRisk,
+        params: dict[str, Any],
+        inputs: dict[str, Any],
     ) -> None:
-        """
-        Expected ``inputs`` keys:
-          ``"moments"``  – a ``HorizonMoments`` instance.
-        """
         moments = inputs["moments"]
+        params["probs"].value = np.asarray(moments.scenario_probs, dtype=float)
         for h in range(moments.n_horizons):
-            key = f"cov_sqrt_{h}"
+            key = f"R_{h}"
             if key in params:
-                params[key].value = _project_on_psd_cone_and_factorize(
-                    moments.covariances[h]
-                )
+                params[key].value = moments.scenario_returns[:, h, :]
 
 
 @register_objective(CovarianceRisk)
 class CovarianceRiskHandler:
     """
     Penalise quadratic portfolio variance at each horizon.
-
-    Follows the same pattern as cvxportfolio's ``FullCovariance``:
-
-    1. Allocate a plain ``cp.Parameter((n, n))`` per horizon to hold the
-       PSD square-root factor  F  (NOT the full covariance matrix).
-    2. Compile as ``-cp.sum_squares(F_h.T @ w_h)``.
-       ``sum_squares`` of an affine-in-w expression is always convex, so
-       CVXPY can confirm curvature without inspecting the parameter value.
-       This makes the expression both DCP- and DPP-compliant.
-    3. Update by calling ``_project_on_psd_cone_and_factorize`` which
-       returns  F = eigvec @ diag(sqrt(λ))  with negative eigenvalues
-       clamped to zero.
-
-    One ``cp.Parameter`` per horizon is allocated because CVXPY does not
-    support 3-D parameters.
     """
 
     def allocate(
-        self, spec: CovarianceRisk, horizons: int, n_assets: int
-    ) -> dict[str, Any]:
+        self, spec: CovarianceRisk, horizons: int, n_assets: int, **_kwargs
+    ) -> dict[str, cp.Parameter]:
         return {
             f"cov_sqrt_{h}": cp.Parameter(
                 (n_assets, n_assets),
@@ -139,9 +149,9 @@ class CovarianceRiskHandler:
         weights_h: cp.Expression,
         trades_h: cp.Expression,
         horizon: int,
-    ) -> cp.Expression:
+    ) -> tuple[cp.Expression, list[cp.Constraint]]:
         # sum_squares(affine_in_w) is always convex → DCP + DPP compliant.
-        return -cp.sum_squares(params[f"cov_sqrt_{horizon}"].T @ weights_h)
+        return (-cp.sum_squares(params[f"cov_sqrt_{horizon}"].T @ weights_h), [])
 
     def update(
         self, spec: CovarianceRisk, params: dict[str, Any], inputs: dict[str, Any]
@@ -186,7 +196,7 @@ class TransactionCostHandler:
     """
 
     def allocate(
-        self, spec: TransactionCost, horizons: int, n_assets: int
+        self, spec: TransactionCost, horizons: int, n_assets: int, **_kwargs
     ) -> dict[str, Any]:
         return {
             # Per-asset linear cost coefficient  a_i
@@ -202,7 +212,7 @@ class TransactionCostHandler:
         weights_h: cp.Expression,
         trades_h: cp.Expression,
         horizon: int,
-    ) -> cp.Expression:
+    ) -> tuple[cp.Expression, list[cp.Constraint]]:
         # Linear term: sum_i a_i * |z_i|
         linear = cp.sum(cp.multiply(params["tc_linear"], cp.abs(trades_h)))
 
@@ -216,7 +226,7 @@ class TransactionCostHandler:
             )
         )
 
-        return -1.0 * (linear + impact)  # type: ignore[return-value]  # cvxpy stubs under-specify cp.power return type
+        return (-1.0 * (linear + impact), [])  # type: ignore[return-value]  # cvxpy stubs under-specify cp.power return type
 
     def update(
         self, spec: TransactionCost, params: dict[str, Any], inputs: dict[str, Any]
@@ -266,7 +276,7 @@ class HoldingCostHandler:
     """
 
     def allocate(
-        self, spec: HoldingCost, horizons: int, n_assets: int
+        self, spec: HoldingCost, horizons: int, n_assets: int, **_kwargs
     ) -> dict[str, Any]:
         return {"hc_short_rate": cp.Parameter(nonneg=True, name="hc_short_rate")}
 
@@ -277,8 +287,8 @@ class HoldingCostHandler:
         weights_h: cp.Expression,
         trades_h: cp.Expression,
         horizon: int,
-    ) -> cp.Expression:
-        return -params["hc_short_rate"] * cp.sum(cp.neg(weights_h))
+    ) -> tuple[cp.Expression, list[cp.Constraint]]:
+        return (-params["hc_short_rate"] * cp.sum(cp.neg(weights_h)), [])
 
     def update(
         self, spec: HoldingCost, params: dict[str, Any], inputs: dict[str, Any]

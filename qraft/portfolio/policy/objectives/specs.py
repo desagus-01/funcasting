@@ -60,7 +60,7 @@ class HoldingCost:
 @dataclass(frozen=True)
 class WeightedTerm:
     weight: float
-    spec: ExpectedReturn | CovarianceRisk | TransactionCost | HoldingCost
+    spec: ExpectedReturn | CovarianceRisk | TransactionCost | HoldingCost | CVaRRisk
 
 
 @dataclass(frozen=True)

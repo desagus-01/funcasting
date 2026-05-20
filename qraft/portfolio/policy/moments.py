@@ -6,7 +6,7 @@ import polars as pl
 from numpy.typing import NDArray
 from pipelines.forecasting import AssetSubset, ForecastPaths
 from portfolio.forecast import PnL_OPTIONS, pnl_from_values
-from portfolio.risk import cvar
+from scenarios.types import ProbVector
 from time_series.estimation import (
     weighted_correlation,
     weighted_covariance,
@@ -108,6 +108,21 @@ class HorizonMoments:
     correlations: NDArray[np.floating]
     covariances: NDArray[np.floating]
     mean: NDArray[np.floating]
+    scenario_returns: NDArray[np.floating]
+    scenario_probs: ProbVector
+
+    def __post_init__(self) -> None:
+        n_h, n_a = self.mean.shape
+        if self.scenario_returns.shape[1:] != (n_h, n_a):
+            raise ValueError(
+                f"scenario_returns shape {self.scenario_returns.shape} "
+                f"inconsistent with mean shape {self.mean.shape}"
+            )
+        if self.scenario_returns.shape[0] != len(self.scenario_probs):
+            raise ValueError(
+                f"scenario_returns has {self.scenario_returns.shape[0]} paths "
+                f"but scenario_probs has length {len(self.scenario_probs)}"
+            )
 
     @property
     def n_horizons(self) -> int:
@@ -149,15 +164,17 @@ class HorizonMoments:
         means: NDArray[np.floating],
         covariances: NDArray[np.floating],
         correlations: NDArray[np.floating],
+        scenario_returns: NDArray[np.floating],
         expectation_tolerance: float | None,
     ) -> tuple[
         list[str],
         NDArray[np.floating],
         NDArray[np.floating],
         NDArray[np.floating],
+        NDArray[np.floating],
     ]:
         if expectation_tolerance is None:
-            return assets, means, covariances, correlations
+            return assets, means, covariances, correlations, scenario_returns
 
         if expectation_tolerance < 0:
             raise ValueError("expectation_tolerance must be non-negative.")
@@ -170,7 +187,7 @@ class HorizonMoments:
                 "No assets dropped. All expected returns are within ±%.6e.",
                 expectation_tolerance,
             )
-            return assets, means, covariances, correlations
+            return assets, means, covariances, correlations, scenario_returns
 
         keep_idx = np.where(~drop_mask)[0]
         drop_idx = np.where(drop_mask)[0]
@@ -184,11 +201,9 @@ class HorizonMoments:
         for asset_idx in drop_idx:
             asset = assets[asset_idx]
             bad_horizons = np.where(breached[:, asset_idx])[0]
-
             offending_values = ", ".join(
                 f"horizon {h + 1}: mean={means[h, asset_idx]:.6e}" for h in bad_horizons
             )
-
             logger.warning(
                 "Dropping asset %s because expected return breached ±%.6e. "
                 "Offending values: %s",
@@ -201,6 +216,7 @@ class HorizonMoments:
         filtered_means = means[:, keep_idx]
         filtered_covariances = covariances[:, keep_idx][:, :, keep_idx]
         filtered_correlations = correlations[:, keep_idx][:, :, keep_idx]
+        filtered_scenario_returns = scenario_returns[:, :, keep_idx]
 
         logger.warning(
             "Dropped %d asset(s) due to expectation_tolerance=%.6e. "
@@ -215,6 +231,7 @@ class HorizonMoments:
             filtered_means,
             filtered_covariances,
             filtered_correlations,
+            filtered_scenario_returns,
         )
 
     @classmethod
@@ -273,21 +290,16 @@ class HorizonMoments:
             means[h] = weighted_mean(data=pnl_matrix, prob=prob)
             covs[h] = weighted_covariance(data=pnl_matrix, prob=prob)
             corrs[h] = weighted_correlation(data=pnl_matrix, prob=prob)
-            print(
-                cvar(
-                    distribution=pnl_matrix,
-                    prob=prob,
-                    method="empirical",
-                    distribution_type="pnl",
-                )
-            )
 
-        assets, means, covs, corrs = cls._drop_assets_by_expectation_tolerance(
-            assets=assets,
-            means=means,
-            covariances=covs,
-            correlations=corrs,
-            expectation_tolerance=expectation_tolerance,
+        assets, means, covs, corrs, inc_returns = (
+            cls._drop_assets_by_expectation_tolerance(
+                assets=assets,
+                means=means,
+                covariances=covs,
+                correlations=corrs,
+                expectation_tolerance=expectation_tolerance,
+                scenario_returns=inc_returns,
+            )
         )
 
         return cls(
@@ -295,4 +307,6 @@ class HorizonMoments:
             correlations=corrs,
             covariances=covs,
             mean=means,
+            scenario_returns=inc_returns,
+            scenario_probs=prob,
         )

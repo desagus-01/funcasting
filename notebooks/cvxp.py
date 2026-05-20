@@ -10,7 +10,7 @@ from portfolio.policy.moments import (
     HorizonMoments,
     incremental_returns_from_forecast_paths,
 )
-from portfolio.pre_built import classic_mpo
+from portfolio.pre_built import classic_mpo, cvar_mpo
 from portfolio.risk import cvar
 from probability.distributions import state_smooth_probs
 from scenarios.panel import ScenarioPanel
@@ -102,4 +102,14 @@ x = classic_mpo(
     verbose=True,
 )
 # %%
-x.target_weights_by_asset
+y = cvar_mpo(
+    10,
+    len(assets),
+    1.0,
+    0.005,
+    forecast_moms,
+    np.full(len(assets), 1 / len(assets)),
+    constraints=[LongOnly(), MaxWeight(limit=0.3)],
+    verbose=True,
+    solver="CLARABEL",
+)

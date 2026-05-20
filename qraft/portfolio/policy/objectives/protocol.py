@@ -4,16 +4,19 @@ import cvxpy as cp
 
 
 class MPOObjectiveHandler(Protocol):
-    def allocate(self, spec, horizons: int, n_assets: int) -> dict[str, Any]:
+    def allocate(
+        self, spec, horizons: int, n_assets: int, n_scenarios: int
+    ) -> dict[str, cp.Parameter]:
         """
         Called ONCE at the start of a backtest.
 
         Create and return all CVXPY Parameter objects this term needs.
-        Parameters are sized to the universe (n_assets MUST include cash).
+        Parameters are sized to the universe.
 
         Example return value:
-          {"r_hat": cp.Parameter(n_assets - 1)}
+          {"r_hat": cp.Parameter(n_assets)}
         """
+        pass
 
     def compile(
         self,
@@ -22,7 +25,7 @@ class MPOObjectiveHandler(Protocol):
         weights_at_horizon: cp.Expression,
         trades_at_horizon: cp.Expression,
         horizon: int,
-    ) -> cp.Expression:
+    ) -> tuple[cp.Expression, list[cp.Constraint]]:
         """
         Called ONCE after allocate()
 
@@ -32,6 +35,7 @@ class MPOObjectiveHandler(Protocol):
 
         The expression should be written as something to MAXIMISE.
         """
+        pass
 
     def update(
         self, spec, params: dict[str, cp.Parameter], inputs: dict[str, Any]
