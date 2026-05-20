@@ -10,6 +10,11 @@ class CovarianceRisk:
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class CVaRRisk:
+    alpha: float = 0.05
+
+
 @dataclass(frozen=True)
 class ExpectedReturn:
     """

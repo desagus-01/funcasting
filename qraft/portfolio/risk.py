@@ -7,8 +7,7 @@ import numpy as np
 import polars as pl
 from numpy.lib.array_utils import normalize_axis_index
 from numpy.typing import NDArray
-
-from portfolio import PortfolioForecast
+from portfolio.forecast import PortfolioForecast
 from scenarios.panel import ScenarioPanel
 from scenarios.types import ProbVector
 
@@ -96,12 +95,6 @@ class LossDistribution:
         portfolio_forecast: PortfolioForecast,
         horizon: int,
     ) -> LossDistribution:
-        """
-        Build from PortfolioForecast without PortfolioForecast importing this class.
-
-        This avoids a circular dependency:
-            portfolio.forecast -> portfolio.risk
-        """
         horizon_panel = portfolio_forecast.at_period(horizon)
         return cls.from_panel(horizon_panel, horizon=horizon, loss_col="loss")
 
@@ -234,7 +227,7 @@ def cvar(
 ) -> NDArray[np.floating]:
     var_cutoff = var(
         distribution=distribution,
-        prob=prob,
+        prob=prob if method == "empirical" else None,
         method=method,
         alpha=alpha,
         distribution_type=distribution_type,

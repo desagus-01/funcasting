@@ -1,6 +1,3 @@
-
-
-
 ## Signals
 - [ ] Add basic raw signals
     - [ ] Distinguish between market-wide and cross-sectional
@@ -16,10 +13,13 @@
 - [x] Implement Multi period optimization (MPO) ✅ 2026-05-20
     - [x] Simple implementation ✅ 2026-05-18
     - [x] make constraints easier ✅ 2026-05-19
-    - [ ] make objectives easier
+    - [x] make objectives easier ✅ 2026-05-20
+- [ ] Apply CVAR optimization in this framework
+- [ ] Create efficient frontier?
 - [ ] Review and implement better covariances techniques
     - [ ] Look at 72.2.1
     - [ ] Also look at expectations etc as currently some are very high (ties in with bad forecasts in general)
+- [ ] Decide how to tackle invest. univese problem as want to keep optimizer as convex (meaning it won't auto remove (ie put to 0) bad assets)
 
 
 ## Simulation

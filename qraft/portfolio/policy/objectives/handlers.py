@@ -6,6 +6,7 @@ from numpy.typing import NDArray
 from portfolio.policy.objectives.protocol import register_objective
 from portfolio.policy.objectives.specs import (
     CovarianceRisk,
+    CVaRRisk,
     ExpectedReturn,
     HoldingCost,
     TransactionCost,
@@ -18,8 +19,6 @@ def _project_on_psd_cone_and_factorize(
     """
     Return F such that F @ F.T ≈ covariance, with negative eigenvalues clamped.
 
-    Mirrors cvxportfolio's ``project_on_psd_cone_and_factorize``.  The factor
-    is stored as the *right* factor (eigvec @ diag(sqrt(λ))) so that the
     DPP-compliant CVXPY expression is ``cp.sum_squares(F.T @ w)``.
     """
     cov = 0.5 * (covariance + covariance.T)
@@ -63,6 +62,44 @@ class ExpectedReturnHandler:
         params["mean"].value = inputs["moments"].mean
 
 
+@register_objective(CVaRRisk)
+class CvARRiskHandler:
+    def allocate(self, spec: CVaRRisk, horizons: int, n_assets: int) -> dict[str, Any]:
+        return {
+            f"cvar_{h}": cp.Parameter(
+                (n_assets, n_assets),
+                name=f"cov_sqrt_{h}",
+            )
+            for h in range(horizons)
+        }
+
+    def compile(
+        self,
+        spec: CVaRRisk,
+        params: dict[str, Any],
+        weights_h: cp.Expression,
+        trades_h: cp.Expression,
+        horizon: int,
+    ) -> cp.Expression:
+        # sum_squares(affine_in_w) is always convex → DCP + DPP compliant.
+        return -cp.sum_squares(params[f"cov_sqrt_{horizon}"].T @ weights_h)
+
+    def update(
+        self, spec: CVaRRisk, params: dict[str, Any], inputs: dict[str, Any]
+    ) -> None:
+        """
+        Expected ``inputs`` keys:
+          ``"moments"``  – a ``HorizonMoments`` instance.
+        """
+        moments = inputs["moments"]
+        for h in range(moments.n_horizons):
+            key = f"cov_sqrt_{h}"
+            if key in params:
+                params[key].value = _project_on_psd_cone_and_factorize(
+                    moments.covariances[h]
+                )
+
+
 @register_objective(CovarianceRisk)
 class CovarianceRiskHandler:
     """
@@ -104,7 +141,6 @@ class CovarianceRiskHandler:
         horizon: int,
     ) -> cp.Expression:
         # sum_squares(affine_in_w) is always convex → DCP + DPP compliant.
-        # Using F.T (right factor transposed) mirrors cvxportfolio exactly.
         return -cp.sum_squares(params[f"cov_sqrt_{horizon}"].T @ weights_h)
 
     def update(

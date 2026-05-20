@@ -5,16 +5,13 @@ import numpy as np
 from pipelines.forecasting import AssetUniverse, run_n_steps_forecast
 from policy import LogConfig
 from portfolio.policy import LongOnly
-from portfolio.policy.constraints import MaxWeight, MinWeight
-from portfolio.policy.moments import HorizonMoments
-from portfolio.policy.objectives.specs import (
-    CovarianceRisk,
-    ExpectedReturn,
-    ObjectiveSpec,
-    TransactionCost,
-    WeightedTerm,
+from portfolio.policy.constraints import MaxWeight
+from portfolio.policy.moments import (
+    HorizonMoments,
+    incremental_returns_from_forecast_paths,
 )
-from portfolio.policy.optimization import MultiPeriodOptimizer
+from portfolio.pre_built import classic_mpo
+from portfolio.risk import cvar
 from probability.distributions import state_smooth_probs
 from scenarios.panel import ScenarioPanel
 from utils.log import setup_logging
@@ -42,7 +39,7 @@ cols_to_keep = [
 
 data = data.select(cols_to_keep)
 
-tradable_assets = list(data.columns[10:50])
+tradable_assets = list(data.columns[10:15])
 factors_cols = list(factors_cols)
 universe = AssetUniverse(assets=tradable_assets, factors=factors_cols)
 data = data.select("date", *universe.all_tickers)
@@ -80,52 +77,29 @@ forecasts = run_n_steps_forecast(
     back_to_price=True,
 )
 
+# %%
+rets = incremental_returns_from_forecast_paths(forecasts)
+
+cvar(rets["MPWR"], forecasts.path_probs, "quantile")
 
 # %%
 h = 10
 forecast_moms = HorizonMoments.from_forecast_paths(
     forecasts, horizons=10, expectation_tolerance=1.0
 )
+
+# %%
 assets = forecast_moms.assets
 
 
-# %%
-def mean_cov_mpo(
-    horizons,
-    n_assets,
-    risk_aversion,
-    transaction_cost,
-    moments,
-    current_weights,
-    constraints=None,
-    **solver_options,
-):
-    objective = ObjectiveSpec(
-        terms=(
-            WeightedTerm(1.0, ExpectedReturn()),
-            WeightedTerm(risk_aversion, CovarianceRisk()),
-            WeightedTerm(
-                transaction_cost,
-                TransactionCost(cost=1.0, market_impact=0.0, exponent=1.0),
-            ),
-        )
-    )
-    return MultiPeriodOptimizer(
-        objective=objective,
-        horizons=horizons,
-        n_assets=n_assets,
-        constraints=constraints,
-    ).solve(moments, current_weights, inputs=None, **solver_options)
-
-
-x = mean_cov_mpo(
+x = classic_mpo(
     10,
     len(assets),
-    0.6,
-    0.001,
+    2.0,
+    0.005,
     forecast_moms,
     np.full(len(assets), 1 / len(assets)),
-    constraints=[LongOnly(), MaxWeight(limit=0.3), MinWeight(limit=0.02)],
+    constraints=[LongOnly(), MaxWeight(limit=0.3)],
     verbose=True,
 )
 # %%

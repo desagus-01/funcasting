@@ -15,6 +15,92 @@ from time_series.estimation import (
 logger = logging.getLogger(__name__)
 
 
+def incremental_returns_for_asset(
+    price_paths: NDArray[np.floating],
+    initial_price: float,
+    horizons: int,
+    pnl_type: PnL_OPTIONS = "relative",
+) -> NDArray[np.floating]:
+    """
+    Compute incremental period-over-period returns for a single asset.
+
+    Parameters
+    ----------
+    price_paths:
+        Simulated price paths of shape ``(n_paths, n_horizons)``.
+    initial_price:
+        The price at ``t_0`` (before the first forecast step).
+    horizons:
+        Number of forecast horizons to retain.
+    pnl_type:
+        Return type — ``"relative"`` (default), ``"absolute"``, or ``"log"``.
+
+    Returns
+    -------
+    NDArray of shape ``(n_paths, horizons)`` containing the incremental
+    return from ``t_{h-1}`` to ``t_h`` for each path and horizon.
+    """
+    n_paths = price_paths.shape[0]
+    t0_col = np.full((n_paths, 1), initial_price, dtype=float)
+    values = np.concatenate([t0_col, price_paths], axis=1)
+    inc = pnl_from_values(values, mode=pnl_type)
+    return inc[:, :horizons]
+
+
+def incremental_returns_from_forecast_paths(
+    forecast_paths: ForecastPaths,
+    horizons: int | None = None,
+    subset: AssetSubset = "tradable",
+    pnl_type: PnL_OPTIONS = "relative",
+) -> dict[str, NDArray[np.floating]]:
+    """
+    Compute incremental period-over-period returns for every asset in a
+    :class:`ForecastPaths` object.
+
+    Parameters
+    ----------
+    forecast_paths:
+        Simulated price paths and associated metadata.
+    horizons:
+        Number of forecast horizons to retain. Defaults to all available
+        horizons in ``forecast_paths``.
+    subset:
+        Which assets to include (``"tradable"``, ``"factors"``, ``"all"``).
+    pnl_type:
+        Return type — ``"relative"`` (default), ``"absolute"``, or ``"log"``.
+
+    Returns
+    -------
+    dict mapping each asset name to an NDArray of shape
+    ``(n_paths, horizons)`` containing the incremental return from
+    ``t_{h-1}`` to ``t_h`` for each path and horizon.
+    """
+    paths = forecast_paths._paths_for(subset)
+    if not paths:
+        raise ValueError(f"No paths available for subset={subset!r}")
+
+    max_horizons = forecast_paths.n_horizons
+    if horizons is None:
+        horizons = max_horizons
+    if horizons > max_horizons:
+        raise ValueError(
+            f"horizons={horizons} exceeds the number of available forecast "
+            f"steps ({max_horizons})."
+        )
+
+    initial_prices = forecast_paths.initial_prices
+
+    return {
+        asset: incremental_returns_for_asset(
+            price_paths=price_paths,
+            initial_price=initial_prices[asset],
+            horizons=horizons,
+            pnl_type=pnl_type,
+        )
+        for asset, price_paths in paths.items()
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class HorizonMoments:
     assets: list[str]
@@ -160,33 +246,22 @@ class HorizonMoments:
             If provided, drop any asset whose expected return breaches
             ``±expectation_tolerance`` at any horizon.
         """
-        paths = forecast_paths._paths_for(subset)
-        if not paths:
-            raise ValueError(f"No paths available for subset={subset!r}")
+        pnl_by_asset = incremental_returns_from_forecast_paths(
+            forecast_paths=forecast_paths,
+            horizons=horizons,
+            subset=subset,
+            pnl_type=pnl_type,
+        )
 
-        max_horizons = forecast_paths.n_horizons
-        if horizons is None:
-            horizons = max_horizons
-        if horizons > max_horizons:
-            raise ValueError(
-                f"horizons={horizons} exceeds the number of available forecast "
-                f"steps ({max_horizons})."
-            )
-
-        assets = list(paths.keys())
+        assets = list(pnl_by_asset.keys())
         n_assets = len(assets)
+        horizons = next(iter(pnl_by_asset.values())).shape[1]
         prob = forecast_paths.path_probs
-        initial_prices = forecast_paths.initial_prices
         n_paths = forecast_paths.n_paths
 
         inc_returns = np.empty((n_paths, horizons, n_assets), dtype=float)
-
-        for col_idx, (asset, price_paths) in enumerate(paths.items()):
-            t0 = initial_prices[asset]
-            t0_col = np.full((n_paths, 1), t0, dtype=float)
-            values = np.concatenate([t0_col, price_paths], axis=1)
-            inc = pnl_from_values(values, mode=pnl_type)
-            inc_returns[:, :, col_idx] = inc[:, :horizons]
+        for col_idx, (asset, asset_returns) in enumerate(pnl_by_asset.items()):
+            inc_returns[:, :, col_idx] = asset_returns
 
         means = np.empty((horizons, n_assets), dtype=float)
         covs = np.empty((horizons, n_assets, n_assets), dtype=float)
