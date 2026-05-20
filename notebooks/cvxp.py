@@ -80,7 +80,7 @@ forecasts = run_n_steps_forecast(
 # %%
 rets = incremental_returns_from_forecast_paths(forecasts)
 
-cvar(rets["MPWR"], forecasts.path_probs, "quantile")
+cvar(rets["BAC"], forecasts.path_probs, "empirical", distribution_type="pnl")
 
 # %%
 h = 10
@@ -90,7 +90,6 @@ forecast_moms = HorizonMoments.from_forecast_paths(
 
 # %%
 assets = forecast_moms.assets
-
 
 x = classic_mpo(
     10,

@@ -6,6 +6,7 @@ import polars as pl
 from numpy.typing import NDArray
 from pipelines.forecasting import AssetSubset, ForecastPaths
 from portfolio.forecast import PnL_OPTIONS, pnl_from_values
+from portfolio.risk import cvar
 from time_series.estimation import (
     weighted_correlation,
     weighted_covariance,
@@ -272,6 +273,14 @@ class HorizonMoments:
             means[h] = weighted_mean(data=pnl_matrix, prob=prob)
             covs[h] = weighted_covariance(data=pnl_matrix, prob=prob)
             corrs[h] = weighted_correlation(data=pnl_matrix, prob=prob)
+            print(
+                cvar(
+                    distribution=pnl_matrix,
+                    prob=prob,
+                    method="empirical",
+                    distribution_type="pnl",
+                )
+            )
 
         assets, means, covs, corrs = cls._drop_assets_by_expectation_tolerance(
             assets=assets,

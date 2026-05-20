@@ -181,6 +181,31 @@ def _loss_value_from_pnl(
     return -performance
 
 
+def _tail_cutoff(
+    distribution: NDArray[np.floating],
+    prob: ProbVector | None,
+    method: Literal["empirical", "quantile"],
+    alpha: float,
+    axis: int,
+    distribution_type: Literal["pnl", "loss"],
+) -> NDArray[np.floating]:
+    q = alpha if distribution_type == "pnl" else 1 - alpha
+
+    if method == "empirical" and prob is not None:
+        return np.quantile(
+            distribution,
+            q,
+            axis=axis,
+            method="inverted_cdf",
+            weights=prob,
+        )
+
+    if method == "quantile" and prob is None:
+        return np.quantile(distribution, q, axis=axis)
+
+    raise ValueError("Must choose either empirical with prob or quantile without prob.")
+
+
 def var(
     distribution: NDArray[np.floating],
     prob: ProbVector | None,
@@ -190,57 +215,47 @@ def var(
     *,
     distribution_type: Literal["pnl", "loss"] = "loss",
 ) -> NDArray[np.floating]:
-    if not (0.0 < alpha < 1.0):
-        raise ValueError("alpha must be between 0 and 1 (exclusive)")
-    if distribution.ndim == 0:
-        raise ValueError("distribution must have at least 1 dimension")
-    if distribution_type not in {"pnl", "loss"}:
-        raise ValueError("distribution_type must be either 'pnl' or 'loss'")
-    if method not in {"empirical", "quantile"}:
-        raise ValueError("method must be either 'empirical' or 'quantile'")
-
     axis = normalize_axis_index(axis, distribution.ndim)
-    q = alpha if distribution_type == "pnl" else 1 - alpha
 
-    if method == "empirical" and (prob is not None):
-        quantile_val = np.quantile(
-            distribution, q, axis=axis, method="inverted_cdf", weights=prob
-        )
-    elif (method == "quantile") and (prob is None):
-        quantile_val = np.quantile(distribution, q, axis=axis)
-    else:
-        raise ValueError(
-            "Must choose either empirical or quantile methods with corresponding prob vector."
-        )
+    cutoff = _tail_cutoff(
+        distribution=distribution,
+        prob=prob,
+        method=method,
+        alpha=alpha,
+        axis=axis,
+        distribution_type=distribution_type,
+    )
 
-    return quantile_val if distribution_type == "loss" else -quantile_val
+    return cutoff if distribution_type == "loss" else -cutoff
 
 
 def cvar(
     distribution: NDArray[np.floating],
-    prob: ProbVector,
+    prob: ProbVector | None,
     method: Literal["empirical", "quantile"] = "quantile",
     alpha: float = 0.05,
     axis: int = 0,
     *,
     distribution_type: Literal["pnl", "loss"] = "loss",
 ) -> NDArray[np.floating]:
-    var_cutoff = var(
+    axis = normalize_axis_index(axis, distribution.ndim)
+
+    cutoff = _tail_cutoff(
         distribution=distribution,
         prob=prob if method == "empirical" else None,
         method=method,
         alpha=alpha,
+        axis=axis,
         distribution_type=distribution_type,
     )
-    expanded_cutoff = np.expand_dims(var_cutoff, axis=axis)
+
+    expanded_cutoff = np.expand_dims(cutoff, axis=axis)
 
     if distribution_type == "pnl":
         tail_mask = distribution <= expanded_cutoff
         tail_values = np.where(tail_mask, distribution, np.nan)
-        cvar = -np.nanmean(tail_values, axis=axis)
-    else:
-        tail_mask = distribution >= expanded_cutoff
-        tail_values = np.where(tail_mask, distribution, np.nan)
-        cvar = np.nanmean(tail_values, axis=axis)
+        return -np.nanmean(tail_values, axis=axis)
 
-    return cvar
+    tail_mask = distribution >= expanded_cutoff
+    tail_values = np.where(tail_mask, distribution, np.nan)
+    return np.nanmean(tail_values, axis=axis)
