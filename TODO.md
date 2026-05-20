@@ -1,3 +1,6 @@
+
+
+
 ## Signals
 - [ ] Add basic raw signals
     - [ ] Distinguish between market-wide and cross-sectional
@@ -8,14 +11,15 @@
 - [ ] Processed signals to expected returns (Characteristics)
 
 ## Optimization
-- [ ] Start with simple MV optimization
+- [x] Start with simple MV optimization ✅ 2026-05-20
     - [x] Calculate first two moments of simulations ✅ 2026-05-15
-    - [ ] Review and implement better covariances techniques
-        - [ ] Look at 72.2.1
-- [ ] Implement Multi period optimization (MPO) 
+- [x] Implement Multi period optimization (MPO) ✅ 2026-05-20
     - [x] Simple implementation ✅ 2026-05-18
     - [x] make constraints easier ✅ 2026-05-19
     - [ ] make objectives easier
+- [ ] Review and implement better covariances techniques
+    - [ ] Look at 72.2.1
+    - [ ] Also look at expectations etc as currently some are very high (ties in with bad forecasts in general)
 
 
 ## Simulation

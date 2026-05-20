@@ -6,7 +6,6 @@ import numpy as np
 from cvxpy import Constraint, Expression
 from numpy.typing import NDArray
 from portfolio.policy import PortfolioConstraint
-from portfolio.policy.constraints import DEFAULT_CONSTRAINTS
 from portfolio.policy.moments import HorizonMoments
 from portfolio.policy.objectives.protocol import get_objective_handler
 from portfolio.policy.objectives.specs import ObjectiveSpec
@@ -133,45 +132,39 @@ class MultiPeriodOptimizer:
         self.objective = objective
         self.horizons = horizons
         self.n_assets = n_assets
-        self.constraints = list(
-            DEFAULT_CONSTRAINTS if constraints is None else constraints
-        )
-
+        self.constraints = constraints
         self.weights = cp.Variable((horizons, n_assets), name="weights")
         self.trades = cp.Variable((horizons, n_assets), name="trades")
         self.current_weights = cp.Parameter(n_assets, name="current_weights")
 
         self._term_params: list[dict[str, Any]] = []
-        self._term_weights: list[cp.Parameter] = []
         for term in objective.terms:
             handler = get_objective_handler(term.spec)
             self._term_params.append(handler.allocate(term.spec, horizons, n_assets))
-            self._term_weights.append(
-                cp.Parameter(nonneg=True, name=f"w_{type(term.spec).__name__}")
-            )
 
         self._build_problem()
 
     def _build_problem(self) -> None:
         prev = self.current_weights
         terms: list[cp.Expression] = []
-        cons: list[cp.Constraint] = []
+        constraints: list[cp.Constraint] = []
 
         for h in range(self.horizons):
             w_h, z_h = self.weights[h, :], self.trades[h, :]
-            cons += _structural_constraints(z_h, w_h, prev)
-            for c in self.constraints:
-                cons += c.compile_to_cvxpy(w_h, z_h)
+            constraints += _structural_constraints(z_h, w_h, prev)
+            if self.constraints is not None:
+                for c in self.constraints:
+                    constraints += c.compile_to_cvxpy(w_h, z_h)
 
-            for term, params, w_param in zip(
-                self.objective.terms, self._term_params, self._term_weights
-            ):
+            for term, params in zip(self.objective.terms, self._term_params):
                 handler = get_objective_handler(term.spec)
-                terms.append(w_param * handler.compile(term.spec, params, w_h, z_h, h))
+                terms.append(
+                    term.weight * handler.compile(term.spec, params, w_h, z_h, h)
+                )
 
             prev = w_h
 
-        self.problem = cp.Problem(cp.Maximize(cp.sum(terms)), cons)
+        self.problem = cp.Problem(cp.Maximize(cp.sum(terms)), constraints)
 
     def solve(
         self,
@@ -183,13 +176,14 @@ class MultiPeriodOptimizer:
         self.current_weights.value = current_weights
         full_inputs = {"moments": moments, **(inputs or {})}
 
-        for term, params, w_param in zip(
-            self.objective.terms, self._term_params, self._term_weights
-        ):
+        for term, params in zip(self.objective.terms, self._term_params):
             get_objective_handler(term.spec).update(term.spec, params, full_inputs)
-            w_param.value = term.weight
 
-        self.problem.solve(enforce_dpp=True, warm_start=True, **solver_options)
+        self.problem.solve(
+            enforce_dpp=True,
+            warm_start=True,
+            **solver_options,
+        )
         if self.problem.status not in {"optimal", "optimal_inaccurate"}:
             raise RuntimeError(f"Optimization failed: {self.problem.status}")
 

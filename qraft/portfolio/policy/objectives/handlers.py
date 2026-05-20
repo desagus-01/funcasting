@@ -12,18 +12,20 @@ from portfolio.policy.objectives.specs import (
 )
 
 
-def _cov_sqrt_factor(covariance: NDArray[np.floating]) -> NDArray[np.floating]:
+def _project_on_psd_cone_and_factorize(
+    covariance: NDArray[np.floating],
+) -> NDArray[np.floating]:
     """
-    Return L such that L.T @ L ≈ covariance.
+    Return F such that F @ F.T ≈ covariance, with negative eigenvalues clamped.
 
-    Uses a symmetric eigen-decomposition so the result is well-defined even
-    when the covariance is only positive *semi*-definite.  Negative eigenvalues
-    (numerical noise) are clamped to zero before taking the square root.
+    Mirrors cvxportfolio's ``project_on_psd_cone_and_factorize``.  The factor
+    is stored as the *right* factor (eigvec @ diag(sqrt(λ))) so that the
+    DPP-compliant CVXPY expression is ``cp.sum_squares(F.T @ w)``.
     """
     cov = 0.5 * (covariance + covariance.T)
     eigvals, eigvecs = np.linalg.eigh(cov)
-    eigvals = np.maximum(eigvals, 0.0)  # clip numerical negatives
-    return np.diag(np.sqrt(eigvals)) @ eigvecs.T
+    eigvals = np.maximum(eigvals, 0.0)
+    return eigvecs @ np.diag(np.sqrt(eigvals))
 
 
 @register_objective(ExpectedReturn)
@@ -66,10 +68,17 @@ class CovarianceRiskHandler:
     """
     Penalise quadratic portfolio variance at each horizon.
 
-    The compile expression is   -||L_h @ w_h||^2  where L_h is the
-    symmetric square-root of the horizon-h covariance matrix.  When
-    maximised with a positive weight (the risk-aversion coefficient in
-    ``WeightedTerm``), this minimises variance.
+    Follows the same pattern as cvxportfolio's ``FullCovariance``:
+
+    1. Allocate a plain ``cp.Parameter((n, n))`` per horizon to hold the
+       PSD square-root factor  F  (NOT the full covariance matrix).
+    2. Compile as ``-cp.sum_squares(F_h.T @ w_h)``.
+       ``sum_squares`` of an affine-in-w expression is always convex, so
+       CVXPY can confirm curvature without inspecting the parameter value.
+       This makes the expression both DCP- and DPP-compliant.
+    3. Update by calling ``_project_on_psd_cone_and_factorize`` which
+       returns  F = eigvec @ diag(sqrt(λ))  with negative eigenvalues
+       clamped to zero.
 
     One ``cp.Parameter`` per horizon is allocated because CVXPY does not
     support 3-D parameters.
@@ -94,7 +103,9 @@ class CovarianceRiskHandler:
         trades_h: cp.Expression,
         horizon: int,
     ) -> cp.Expression:
-        return -cp.sum_squares(params[f"cov_sqrt_{horizon}"] @ weights_h)
+        # sum_squares(affine_in_w) is always convex → DCP + DPP compliant.
+        # Using F.T (right factor transposed) mirrors cvxportfolio exactly.
+        return -cp.sum_squares(params[f"cov_sqrt_{horizon}"].T @ weights_h)
 
     def update(
         self, spec: CovarianceRisk, params: dict[str, Any], inputs: dict[str, Any]
@@ -107,7 +118,9 @@ class CovarianceRiskHandler:
         for h in range(moments.n_horizons):
             key = f"cov_sqrt_{h}"
             if key in params:
-                params[key].value = _cov_sqrt_factor(moments.covariances[h])
+                params[key].value = _project_on_psd_cone_and_factorize(
+                    moments.covariances[h]
+                )
 
 
 @register_objective(TransactionCost)

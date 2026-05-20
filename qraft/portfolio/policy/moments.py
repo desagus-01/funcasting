@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 
 import numpy as np
@@ -10,6 +11,8 @@ from time_series.estimation import (
     weighted_covariance,
     weighted_mean,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +56,80 @@ class HorizonMoments:
     def covariance_frame(self, horizon: int = 0) -> pl.DataFrame:
         return self._matrix_frame(self.covariances, horizon)
 
+    @staticmethod
+    def _drop_assets_by_expectation_tolerance(
+        assets: list[str],
+        means: NDArray[np.floating],
+        covariances: NDArray[np.floating],
+        correlations: NDArray[np.floating],
+        expectation_tolerance: float | None,
+    ) -> tuple[
+        list[str],
+        NDArray[np.floating],
+        NDArray[np.floating],
+        NDArray[np.floating],
+    ]:
+        if expectation_tolerance is None:
+            return assets, means, covariances, correlations
+
+        if expectation_tolerance < 0:
+            raise ValueError("expectation_tolerance must be non-negative.")
+
+        breached = np.abs(means) > expectation_tolerance
+        drop_mask = np.any(breached, axis=0)
+
+        if not np.any(drop_mask):
+            logger.info(
+                "No assets dropped. All expected returns are within ±%.6e.",
+                expectation_tolerance,
+            )
+            return assets, means, covariances, correlations
+
+        keep_idx = np.where(~drop_mask)[0]
+        drop_idx = np.where(drop_mask)[0]
+
+        if len(keep_idx) == 0:
+            raise ValueError(
+                "All assets were dropped because their expected returns exceeded "
+                f"±{expectation_tolerance}."
+            )
+
+        for asset_idx in drop_idx:
+            asset = assets[asset_idx]
+            bad_horizons = np.where(breached[:, asset_idx])[0]
+
+            offending_values = ", ".join(
+                f"horizon {h + 1}: mean={means[h, asset_idx]:.6e}" for h in bad_horizons
+            )
+
+            logger.warning(
+                "Dropping asset %s because expected return breached ±%.6e. "
+                "Offending values: %s",
+                asset,
+                expectation_tolerance,
+                offending_values,
+            )
+
+        filtered_assets = [assets[i] for i in keep_idx]
+        filtered_means = means[:, keep_idx]
+        filtered_covariances = covariances[:, keep_idx][:, :, keep_idx]
+        filtered_correlations = correlations[:, keep_idx][:, :, keep_idx]
+
+        logger.warning(
+            "Dropped %d asset(s) due to expectation_tolerance=%.6e. "
+            "Remaining assets: %d.",
+            len(drop_idx),
+            expectation_tolerance,
+            len(filtered_assets),
+        )
+
+        return (
+            filtered_assets,
+            filtered_means,
+            filtered_covariances,
+            filtered_correlations,
+        )
+
     @classmethod
     def from_forecast_paths(
         cls,
@@ -60,11 +137,12 @@ class HorizonMoments:
         horizons: int | None = None,
         subset: AssetSubset = "tradable",
         pnl_type: PnL_OPTIONS = "relative",
+        expectation_tolerance: float | None = 1.0,
     ) -> "HorizonMoments":
         """
         Build stacked multi-horizon moments from simulated price paths.
 
-        Moments at each horizon h use the **incremental** (period-over-period)
+        Moments at each horizon h use the incremental period-over-period
         return from t_{h-1} to t_h, not the cumulative return from t_0.
 
         Parameters
@@ -77,7 +155,10 @@ class HorizonMoments:
         subset:
             Which assets to include (``"tradable"``, ``"factors"``, ``"all"``).
         pnl_type:
-            Return type — ``"relative"`` (default), ``"absolute"``, or ``"log"``.
+            Return type — ``"relative"`` default, ``"absolute"``, or ``"log"``.
+        expectation_tolerance:
+            If provided, drop any asset whose expected return breaches
+            ``±expectation_tolerance`` at any horizon.
         """
         paths = forecast_paths._paths_for(subset)
         if not paths:
@@ -98,28 +179,32 @@ class HorizonMoments:
         initial_prices = forecast_paths.initial_prices
         n_paths = forecast_paths.n_paths
 
-        # inc_returns[path, horizon, asset] — incremental return at each step
         inc_returns = np.empty((n_paths, horizons, n_assets), dtype=float)
 
         for col_idx, (asset, price_paths) in enumerate(paths.items()):
             t0 = initial_prices[asset]
             t0_col = np.full((n_paths, 1), t0, dtype=float)
-            # values shape: (n_paths, n_forecast_horizons + 1)  [t0 prepended]
             values = np.concatenate([t0_col, price_paths], axis=1)
-            # inc shape: (n_paths, n_forecast_horizons) — return from t_{h-1} to t_h
             inc = pnl_from_values(values, mode=pnl_type)
             inc_returns[:, :, col_idx] = inc[:, :horizons]
 
-        # Stack moments across horizons
         means = np.empty((horizons, n_assets), dtype=float)
         covs = np.empty((horizons, n_assets, n_assets), dtype=float)
         corrs = np.empty((horizons, n_assets, n_assets), dtype=float)
 
         for h in range(horizons):
-            pnl_matrix = inc_returns[:, h, :]  # (n_paths, n_assets)
+            pnl_matrix = inc_returns[:, h, :]
             means[h] = weighted_mean(data=pnl_matrix, prob=prob)
             covs[h] = weighted_covariance(data=pnl_matrix, prob=prob)
             corrs[h] = weighted_correlation(data=pnl_matrix, prob=prob)
+
+        assets, means, covs, corrs = cls._drop_assets_by_expectation_tolerance(
+            assets=assets,
+            means=means,
+            covariances=covs,
+            correlations=corrs,
+            expectation_tolerance=expectation_tolerance,
+        )
 
         return cls(
             assets=assets,

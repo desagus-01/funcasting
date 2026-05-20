@@ -4,6 +4,8 @@ import logging
 import numpy as np
 from pipelines.forecasting import AssetUniverse, run_n_steps_forecast
 from policy import LogConfig
+from portfolio.policy import LongOnly
+from portfolio.policy.constraints import MaxWeight, MinWeight
 from portfolio.policy.moments import HorizonMoments
 from portfolio.policy.objectives.specs import (
     CovarianceRisk,
@@ -40,7 +42,7 @@ cols_to_keep = [
 
 data = data.select(cols_to_keep)
 
-tradable_assets = list(data.columns[10:20])
+tradable_assets = list(data.columns[10:50])
 factors_cols = list(factors_cols)
 universe = AssetUniverse(assets=tradable_assets, factors=factors_cols)
 data = data.select("date", *universe.all_tickers)
@@ -81,11 +83,23 @@ forecasts = run_n_steps_forecast(
 
 # %%
 h = 10
-forecast_moms = HorizonMoments.from_forecast_paths(forecasts, horizons=10)
+forecast_moms = HorizonMoments.from_forecast_paths(
+    forecasts, horizons=10, expectation_tolerance=1.0
+)
 assets = forecast_moms.assets
 
 
-def mean_cov_mpo(horizons, n_assets, risk_aversion, transaction_cost, constraints=None):
+# %%
+def mean_cov_mpo(
+    horizons,
+    n_assets,
+    risk_aversion,
+    transaction_cost,
+    moments,
+    current_weights,
+    constraints=None,
+    **solver_options,
+):
     objective = ObjectiveSpec(
         terms=(
             WeightedTerm(1.0, ExpectedReturn()),
@@ -96,10 +110,23 @@ def mean_cov_mpo(horizons, n_assets, risk_aversion, transaction_cost, constraint
             ),
         )
     )
-    return MultiPeriodOptimizer(objective, horizons, n_assets, constraints)
+    return MultiPeriodOptimizer(
+        objective=objective,
+        horizons=horizons,
+        n_assets=n_assets,
+        constraints=constraints,
+    ).solve(moments, current_weights, inputs=None, **solver_options)
 
 
-x = mean_cov_mpo(10, len(assets), 0.6, 0.001).solve(
-    moments=forecast_moms,
-    current_weights=np.full(len(assets), 1 / len(assets)),
+x = mean_cov_mpo(
+    10,
+    len(assets),
+    0.6,
+    0.001,
+    forecast_moms,
+    np.full(len(assets), 1 / len(assets)),
+    constraints=[LongOnly(), MaxWeight(limit=0.3), MinWeight(limit=0.02)],
+    verbose=True,
 )
+# %%
+x.target_weights_by_asset
